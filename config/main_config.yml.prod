@@ -1,0 +1,28 @@
+
+mongodb_names:  #db and collections names for mongodb
+  db: pva         #db name
+  coll_profiles: telegram_profile #stores profiles of registered users
+  coll_tokens_log: tokens_log #stores token usage logs
+  coll_errors_log: errors_log #stores erros logs
+  coll_dialogs: telegram_dialogs #stores active dialogs
+  coll_reg_log: telegram_reg_log #stores registration/unregistration events
+  coll_models: models_openai #stores list of actual open ai models
+
+mongodb_connections: #stores connection strings to mongo db
+  prod: mongodb://chatbot-mongo-db:27017 #recomended to use internal network of doker-compose
+  dev: your_connection_string #can be any connection string
+  options:
+    useNewUrlParser: true
+    useUnifiedTopology: true
+    useFindAndModify: false
+    useCreateIndex: true
+    poolSize: 100
+
+http_options:
+  SUCCESS_CODE: 200
+
+telegram_options:
+  send_throttle_ms: 1000 #Send only one message per second
+  debounceMs: 1000 #Wait for other parts of the message
+  big_message_threshold: 2000 #3000 symbols msgs are considered big 
+  big_outgoing_message_threshold: 3900 #After this threshold bot makes second message

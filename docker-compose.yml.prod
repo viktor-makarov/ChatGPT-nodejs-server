@@ -1,0 +1,56 @@
+version: '3.7'
+
+services:
+  chatbot-prod:
+    image: truvoruwka/chatbot_open_ai:1.0.0
+    container_name: chatbot-prod
+    command: node ./bin/www_prod
+    restart: unless-stopped
+    environment:
+      PROD_RUN: 'true'
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN_PROD}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      REGISTRATION_KEY: ${REGISTRATION_KEY_PROD}
+      ADMIN_KEY: ${ADMIN_KEY_PROD}
+      MONGODB_CONNECTION: ${MONGODB_CONNECTION_PROD}
+    networks:
+      - chatbot_prod
+    depends_on:
+      - chatbot-mongo-db
+  chatbot-mongo-db:
+    container_name: chatbot-prod-mongo-db
+    image: mongo:5.0.3
+    volumes:
+      - mongo_db_chatbot_prod:/data/db
+      - mongo_chatbot_prod:/data/configdb
+    ports:
+      - XXXXXX:27017 #Used also to connect from Compas
+    restart: unless-stopped
+    #command: [--auth]
+    networks:
+      - chatbot_prod
+  #chatbot-preprod-mongo-db:
+  #  container_name: chatbot-preprod-mongo-db
+  #  image: mongo:5.0.3
+  #  volumes:
+  #    - mongo_db_chatbot_pre_prod:/data/db
+  #    - mongo_chatbot_pre_prod:/data/configdb
+  #  ports:
+  #    - 29443:27017 #Used also to connect from Compas
+  #  restart: unless-stopped
+  #  #command: [--auth]
+
+networks:
+  chatbot_prod:
+    name: chatbot_prod
+    driver: bridge
+
+volumes:
+  mongo_db_chatbot_prod:
+#    external: true
+#  mongo_db_chatbot_pre_prod:
+#    external: true
+  mongo_chatbot_prod:
+#    external: true
+#S  mongo_chatbot_pre_prod:
+#    external: true

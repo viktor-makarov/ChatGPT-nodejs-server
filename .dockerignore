@@ -1,0 +1,12 @@
+node_modules
+.dockerignore
+pre-prod
+prod
+Dockerfile
+.gitignore
+.git
+.vs
+vault
+tmp/
+.env
+
