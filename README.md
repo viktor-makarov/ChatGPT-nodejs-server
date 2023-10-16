@@ -4,17 +4,18 @@ This is a Telegram chatbot that utilizes the OpenAI API. The chatbot is built on
 
 ## Main features ##
 
-* The chatbot has four modes: "assistant" for dialogue and three additional modes ("coderevier," "texteditor," and "translator") for preset tasks.
-* Users can send tasks to the chatbot using both text messages and voice messages. The voice messages are first transcribed using the Whisper technology from OpenAI. In addition to voice messages, users can also send Telegram video notes and other audio and video recordings, as long as they do not exceed 25 Mb in size.
-* The chatbot also offers a voice-to-text mode where users can send audio files (with a maximum size of 25 Mb) and receive the text, thanks to the Whisper technology from OpenAI.
+* The chatbot has four main modes: "assistant" for dialogue and three additional modes ("coderevier," "texteditor," and "translator") for preset tasks.
+* Additionally, the chatbot offers a voice-to-text mode where users can send audio files (with a maximum size of 25 Mb) and receive the text transcribed, thanks to the Whisper technology from OpenAI.
+* Users can send tasks to the chatbot using both text messages and voice messages. The voice messages are first transcribed using the Whisper technology from OpenAI. In addition to voice messages, users can also send Telegram video notes and other audio and video recordings, as long as they are within 25 Mb.
+* Users can regenerate completions using an inline keyboard button.
+* Users also can modify request settings using the /settings command, enabling them to choose the temperature and model parameters. 
+* Markdown formatting is applied to completions.
 * It also includes an admin mode with advanced options, such as sending messages to all users with /senttome and /sendtoall commands and generating usage reports with /reports command.
-* The chatbot handles user registration through a registration_key specified in the config. Admin privileges can be obtained by submitting an admin_key.
+* The chatbot handles user registration through a registration_key specified in the config. Also admin privileges can be obtained by submitting an admin_key.
 * It effectively handles OpenAI's replies in stream mode, so users start receiving replies soon after the request.
 * The chatbot can process incoming and outgoing messages as one message, even if they exceed 4000 characters.
-* Users can regenerate completions using an inline keyboard button.
-* Markdown formatting is applied to completions.
 * The chatbot logs errors, user registration events, and token usage to its database which enables the admin to request respective reports.
-* Users can modify request settings using the /settings command, enabling them to choose the temperature and model parameters. 
+
 
 
 ## ISSUES ##
@@ -23,7 +24,7 @@ This is a Telegram chatbot that utilizes the OpenAI API. The chatbot is built on
 
 ## TO DO ##
 * Fix the issue of inaccurate token count specifically in relation to prompts.
-* Conduct thorough testing of the recently introduced functions feature to ensure.
+* Conduct thorough testing of the recently introduced functions feature.
 
 ## How do I get set up for production? ##
 
@@ -38,9 +39,9 @@ This is a Telegram chatbot that utilizes the OpenAI API. The chatbot is built on
 * Rename `docker-compose.yml.prod` to `docker-compose.yml`.
 * Create a `.env` file in the root of the project and set the values for for `TELEGRAM_BOT_TOKEN_PROD`,`OPENAI_API_KEY`, `REGISTRATION_KEY_PROD`,  `ADMIN_KEY_PROD` and `MONGODB_CONNECTION_PROD`.
 * Set up external ports for MongoDB so that you could connect to it from external tools like Compass.
-* Start Docker Compose to run the chatbot. In this case you will be set up with my docker container. If you wish to adjust the config files to your requrements - refer to the the following development section.
+* Start Docker Compose to run the chatbot. In this case you will be set up with my docker container, stored at DockerHub. If you wish to adjust the config files to your requrements - refer to the the development section.
 * Verify the functionality of your Telegram chatbot.
-* Connect to your mongodb instanse and create a user that the chatbot will connect to the database with and grant nesessary permissions.
+* Connect to your mongodb instanse and create a user that the chatbot will connect to the database with and grant nesessary permissions to it.
 * In your `docker-compose.yml`, add ```command: [--auth]``` to the chatbot-mongo-db service. In `.env`, adjust the variable `MONGODB_CONNECTION_PROD` to include authentication credentials of the newly created user.
 * Restart docker-compose. Now you have secured your MongoDB from unauthorized access.
 
@@ -59,9 +60,7 @@ Before starting the development process, make sure you have the following prereq
 Follow these steps to start the development process:
 
 * Create or add to `.env` file in the root of the project the values for `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `REGISTRATION_KEY`, `ADMIN_KEY` and `MONGODB_CONNECTION_DEV`. They will be used in development mode. So, in your `.env` will live environmental parameters both for dev and prod, but in isolated variables.
-* In the `docker-compose.yml` file, uncomment the `chatbot-preprod-mongo-db` service and the corresponding volume and network configurations. This will provide a separate MongoDB instance for development purposes, isolating it from the production environment.
-* Rename `config/main_config.yml.prod` to `config/main_config.yml` and agjust if needed.
-*  other files in the `config` directory to meet your requirements.
+* Rename `config/main_config.yml.prod` to `config/main_config.yml` and adjust if needed.
 * *(Optional)* Read and adjust the other files in the `config` folder according to your specific requirements.
 * Restart Docker Compose to initiate the development MongoDB by executing:```docker-compose restart```
 * Once the development MongoDB is up and running, you can start the project live and confirm its functionality by running the following command:
@@ -111,3 +110,8 @@ Thank you for your contributions and happy coding!
 * Markdown formatting is applied to completions.
 * The chatbot logs errors, user registration events, and token usage to its database which enables the admin to request respective reports.
 * Users can modify request settings using the /settings command, enabling them to choose the temperature and model parameters. 
+
+### Version 1.0.3 - Bug fix - October 08, 2023
+* The bug which caused too many connections to database to be created and further caused the machine to be down.
+* added logs of unsuccessful login attempts
+* Minor bug fixes

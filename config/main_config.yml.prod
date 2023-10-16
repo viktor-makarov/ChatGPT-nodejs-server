@@ -17,6 +17,9 @@ mongodb_connections: #stores connection strings to mongo db
     useFindAndModify: false
     useCreateIndex: true
     poolSize: 100
+    maxPoolSize: 100
+    socketTimeoutMS: 45000
+    connectTimeoutMS: 30000
 
 http_options:
   SUCCESS_CODE: 200
@@ -26,3 +29,24 @@ telegram_options:
   debounceMs: 1000 #Wait for other parts of the message
   big_message_threshold: 2000 #3000 symbols msgs are considered big 
   big_outgoing_message_threshold: 3900 #After this threshold bot makes second message
+  commands:
+    - command: "/assistant"
+      description: "Ассистент (режим диалога)"
+    - command: "/texteditor"
+      description: "Редактор текста"
+    - command: "/codereviewer"
+      description: "Редактор кода"
+    - command: "/voicetotext"
+      description: "Голос в текст"
+    - command: "/translator"
+      description: "Переводчик"
+    - command: '/settings'
+      description: 'Настройки'
+    - command: "/resetdialogue"
+      description: "Новый диалог"
+    - command: "/help"
+      description: "Помощь"
+    - command: "/faq"
+      description: "Часто задаваемые вопросы"
+    - command: "/info"
+      description: "Информация о боте"

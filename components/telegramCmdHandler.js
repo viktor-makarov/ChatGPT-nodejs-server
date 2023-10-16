@@ -509,6 +509,17 @@ async function startHandler(botInstance, msg) {
     const prompt = msg.text.substring("/start".length).trim();
 
     if (prompt === "") {
+      await mongo.insert_reg_eventPromise(
+        msg.from.id,
+        msg.chat.id,
+        msg.from.is_bot,
+        msg.from.first_name,
+        msg.from.last_name,
+        msg.from.username,
+        msg.from.language_code,
+        "failed register attempt",
+        "user's command"
+      );
       return { text: msqTemplates.blank_registration };
     }
 
@@ -546,9 +557,21 @@ async function startHandler(botInstance, msg) {
       err.user_message = msqTemplates.incorrect_code;
       err.mongodblog = false;
       err.place_in_code = err.place_in_code || arguments.callee.name
+      await mongo.insert_reg_eventPromise(
+        msg.from.id,
+        msg.chat.id,
+        msg.from.is_bot,
+        msg.from.first_name,
+        msg.from.last_name,
+        msg.from.username,
+        msg.from.language_code,
+        "failed register attempt",
+        "user's command"
+      );git 
       throw err
     }
 }
+
 
 function helpHandler(botInstance, msg) {
     if (adminArray.includes(msg.from.id)) {

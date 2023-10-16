@@ -1,9 +1,7 @@
 //Подключаем и настраиваем OpenAI
 const {
   Configuration,
-  OpenAIApi,
-  ChatCompletionResponseMessageRoleEnum,
-  ChatCompletionRequestMessageRoleEnum,
+  OpenAIApi
 } = require("openai");
 const FormData = require("form-data");
 const telegramErrorHandler = require("./telegramErrorHandler.js");
@@ -20,7 +18,6 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 const axios = require("axios");
-const { ConnectionPoolClearedEvent } = require("mongodb");
 
 async function getModels() {
   try {
@@ -47,12 +44,12 @@ async function UnSuccessResponseHandle(
 ) {
   try {
     //  var err = new Error(api_res.statusMessage); //создаем ошибку и наполняем содержанием
-    var message_to_send = "";
+
     if (error.message.includes("429")) {
       err = new Error(error.message);
       err.code = "OAI_ERR3";
       err.user_message = msqTemplates.error_api_too_many_req;
-      err.mongodblog = true;
+      err.mongodblog = false;
       err.place_in_code = err.place_in_code || arguments.callee.name;
       throw err;
     } else if (error.message.includes("503")) {
@@ -155,8 +152,6 @@ async function VoiceToText(botInstance, msg) {
     }
 
     //Скачиваем файл
-    var resp;
-
     const filelink = await botInstance.getFileLink(fileid);
 
     const response = await axios({
@@ -197,10 +192,17 @@ async function VoiceToText(botInstance, msg) {
       throw err;
     }
 
-    var transcript = "Пустое сообщение";
+    var transcript = msqTemplates.empty_message;
     if (openai_resp.data) {
       transcript = openai_resp.data.text;
     }
+
+    await mongo.insertUsageDialoguePromise(
+      msg,
+      otherFunctions.countTokens(transcript),
+      null,
+      "voicetotext"
+    ); //фиксируем потраченные токены
     return transcript;
   } catch (err) {
     if (err.mongodblog === undefined) {
@@ -266,10 +268,9 @@ async function chatCompletionStreamAxiosRequest(
     var chunkJsonList = [];
     var chunks;
     var completionJson = new Object();
-    let chunk_string_temp;
 
     const options = {
-      url: modelSettings.assistant.hostname + modelSettings.assistant.url_path,
+      url: modelSettings[regime].hostname + modelSettings[regime].url_path,
       method: "POST",
       encoding: "utf8",
       responseType: "stream",
@@ -298,40 +299,13 @@ async function chatCompletionStreamAxiosRequest(
           appsettings.telegram_options.send_throttle_ms
         );
 
+        const headersObject = response.headers //Записываем хэдеры
         response.data.on("data", async (chunk) => {
           const func_name = "axious responce.data.on: data";
           try {
             const chunkString = chunk.toString("utf8");
 
-            /*
-            //Убеждаемся, что чанк не разорвался при получении. И если разорвался, то собираем его.
-            if (chunk_string_temp && chunkSting.slice(-5, -2).endsWith("}]}")) {
-              //пришла вторая часть
-              chunkJsonList = getJsonFromChunk(chunk_string_temp + chunkSting);
-              chunk_string_temp = null;
-              console.log("Пришла вторая часть чанка");
-            } else if (
-              chunk_string_temp &&
-              !chunkSting.slice(-5, -2).endsWith("}]}")
-            ) {
-              //вторая часть еще не пришла
-              chunk_string_temp = chunk_string_temp + chunkSting;
-              console.log("Пришла вторая, но не последняя часть чанка");
-              return;
-            } else if (chunkSting.slice(-5, -2).endsWith("}]}")) {
-              //пришла первая и единственная часть
-              chunkJsonList = getJsonFromChunk(chunkSting);
-            } else if (chunkSting.slice(-5, -2).endsWith("NE]")) {
-              //Пришел последний чанк DONE
-              chunkJsonList = getJsonFromChunk(chunkSting);
-            } else {
-              //пришла тольк опервая часть
-              chunk_string_temp = chunkSting;
-              console.log(chunkSting.slice(-5, -2));
-              console.log("Пришла первая часть чанка");
-              return;
-            }*/
-
+          
             chunks = getJsonFromChunk(
               (chunks?.incomplete ?? "") + chunkString
             );
@@ -358,15 +332,13 @@ async function chatCompletionStreamAxiosRequest(
                 userid: msg.from.id,
                 userFirstName: msg.from.first_name,
                 userLastName: msg.from.last_name,
+                model: chunkJsonList[0].model,
                 telegamPaused: false,
-                newMessagePaused: false,
                 role: "assistant",
                 content: "",
                 content_parts: content_parts,
                 completion_ended: false,
                 content_ending: "",
-                last_part_number: 1,
-                completed: false,
                 tokens: 0,
                 regime: regime,
                 telegramMsgOptions: {
@@ -388,7 +360,7 @@ async function chatCompletionStreamAxiosRequest(
                     ],
                   }),
                 },
-                finish_reason: chunkJsonList[0].choices[0].finish_reason,
+                finish_reason: chunkJsonList[0]?.choices[0]?.finish_reason,
               };
             }
 
@@ -649,12 +621,12 @@ async function deliverMessage(botInstance, object) {
       const part_id = list_of_parts_messages[i];
       let msg_id = object.content_parts[part_id].id_message;
 
-      if (object.content_parts[part_id].to_send ===object.content_parts[part_id].sent) {
+      if (object.content_parts[part_id].to_send === object.content_parts[part_id].sent) {
+        console.log(new Date(),"bypass","completion_ended",object.completion_ended)
         continue;
       };
 
-
-            let text = otherFunctions.wireStingForMarkdown(object.content_parts[part_id].to_send + object.content_parts[part_id].content_ending);
+      let text = otherFunctions.wireStingForMarkdown(object.content_parts[part_id].to_send + object.content_parts[part_id].content_ending);
 
       let options = {
         chat_id: object.telegramMsgOptions.chat_id,
@@ -673,7 +645,9 @@ async function deliverMessage(botInstance, object) {
         resultArray.push({id: part_id,id_message: msg_id,text: object.content_parts[part_id].to_send});
       } else {
         const newMessage = await botInstance.sendMessage(object.telegramMsgOptions.chat_id,text);
+        
         if (object.completion_ended) {
+
           options.message_id = newMessage.message_id
           await botInstance.editMessageText(text, options);
         } 

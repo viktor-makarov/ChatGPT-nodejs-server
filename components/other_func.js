@@ -1,3 +1,5 @@
+const fs = require('fs').promises;
+
 const { encode, decode } = require("gpt-3-encoder");
 
 function countTokens(text) {
@@ -145,6 +147,22 @@ function throttlePromise(fn, delay) {
   };
 }
 
+async function get_ielts_part1_heders(){
+
+  const questionObject = JSON.parse(await fs.readFile("./config/ielts_questions_list_p_1.json", 'utf8'));
+
+  const subjects = Object.keys(questionObject)
+  return subjects
+}
+
+async function get_ielts_part1_questions_by_headers(header_str){
+
+  const questionObject = JSON.parse(await fs.readFile("./config/ielts_questions_list_p_1.json", 'utf8'));
+  const question_list = questionObject[header_str]
+
+  return question_list
+}
+
 module.exports = {
   countTokens,
   wireStingForMarkdown,
@@ -152,5 +170,7 @@ module.exports = {
   debounceConstructorPromise,
   throttle,
   throttlePromise,
-  optionsToButtons
+  optionsToButtons,
+  get_ielts_part1_heders,
+  get_ielts_part1_questions_by_headers
 };

@@ -8,29 +8,30 @@ const otherFunctions = require("./components/other_func");
 
 async function UpdateGlobalVariables(botInstance) {
   try {
+    const updateResult =
+      await mongo.UpdateProfilesRegistrationCodeUpToDatePromise(
+        process.env.REGISTRATION_KEY
+      );
+    console.log(new Date(), "register code stats", updateResult);
 
-    const updateResult = await mongo.UpdateProfilesRegistrationCodeUpToDatePromise(process.env.REGISTRATION_KEY)
-    console.log(new Date(),"register code stats",updateResult)
-    
     await mongo.setDefaultVauesForNonExiting(); //Должно быть перед get_all_registeredPromise
 
-
     global.registeredArray = await mongo.get_all_registeredPromise();
-    console.log(new Date(),"registeredArray", global.registeredArray);
+    console.log(new Date(), "registeredArray", global.registeredArray);
 
     global.readArray = await mongo.get_all_readPromise(); //И проверяем всех ознакомившихся
-    console.log(new Date(),"readArray", global.readArray);
+    console.log(new Date(), "readArray", global.readArray);
 
     global.allSettingsDict = await mongo.get_all_settingsPromise();
-    console.log(new Date(),"allSettingsDict", global.allSettingsDict);
+    console.log(new Date(), "allSettingsDict", global.allSettingsDict);
 
     global.adminArray = await mongo.get_all_adminPromise(); //Если секция permissions успешно добавилась, то обновляем adminArray.
-    console.log(new Date(),"adminArray", global.adminArray);
+    console.log(new Date(), "adminArray", global.adminArray);
   } catch (err) {
-    err.consolelog=true;
-    err.place_in_code = err.place_in_code || arguments.callee.name
-    console.log("UpdateGlobalVariables",err)
-   // telegramErrorHandler.main(null,null,err,err.place_in_code,null)
+    err.consolelog = true;
+    err.place_in_code = err.place_in_code || arguments.callee.name;
+    console.log("UpdateGlobalVariables", err);
+    // telegramErrorHandler.main(null,null,err,err.place_in_code,null)
   }
 }
 async function GetModelsFromAPI() {
@@ -39,21 +40,21 @@ async function GetModelsFromAPI() {
     const write_result = await mongo.update_models_listPromise(
       models_array.data.data
     );
-    console.log(new Date(),"Models updated", write_result);
+    console.log(new Date(), "Models updated", write_result);
   } catch (err) {
-    err.consolelog=true;
-    console.log("GetModelsFromAPI",err)
-   // telegramErrorHandler.main(null,null,err,arguments.callee.name,err.user_message)
+    err.consolelog = true;
+    console.log("GetModelsFromAPI", err);
+    // telegramErrorHandler.main(null,null,err,arguments.callee.name,err.user_message)
   }
 }
-async function  setBotParameters(botInstance) {
- try{
-  await botInstance.setMyCommands(appsettings.telegram_options.commands);
-} catch(err){
-  err.consolelog=true;
-  console.log("setBotParameters",err)
-  //telegramErrorHandler.main(null,null,err,arguments.callee.name,null)
-}
+async function setBotParameters(botInstance) {
+  try {
+    await botInstance.setMyCommands(appsettings.telegram_options.commands);
+  } catch (err) {
+    err.consolelog = true;
+    console.log("setBotParameters", err);
+    //telegramErrorHandler.main(null,null,err,arguments.callee.name,null)
+  }
 }
 function router(botInstance) {
   var useDebounceMs = false;
@@ -63,39 +64,67 @@ function router(botInstance) {
     //Слушаем сообщения пользователей
 
     try {
-      if(process.env.PROD_RUN){
-      console.log("Пользователь: ","chatId",msg.chat.id,"fromId",msg.from.id,"msg.id",msg.message_id,"timestemp",new Date(),"msg.lenght",(msg.text || "").length,"msg"
-      //,msg.text
-      );
+      if (process.env.PROD_RUN != "true") {
+        console.log(
+          "Пользователь: ",
+          "chatId",
+          msg.chat.id,
+          "fromId",
+          msg.from.id,
+          "msg.id",
+          msg.message_id,
+          "timestemp",
+          new Date(),
+          "msg.lenght",
+          (msg.text || "").length,
+          "msg"
+          //,msg.text
+        );
       }
 
       if (/\/start/i.test(msg.text)) {
         //обрабатываем команду /start
-        const response = await telegramCmdHandler.startHandler(botInstance,msg);
-        await botInstance.sendMessage(msg.chat.id, response.text, response.buttons)
+        const response = await telegramCmdHandler.startHandler(
+          botInstance,
+          msg
+        );
+        await botInstance.sendMessage(
+          msg.chat.id,
+          response.text,
+          response.buttons
+        );
         return;
       }
 
       //Должно стоять после /register и перед всеми другими
       if (!registeredArray.includes(msg.from.id)) {
+        await mongo.insert_reg_eventPromise(
+          msg.from.id,
+          msg.chat.id,
+          msg.from.is_bot,
+          msg.from.first_name,
+          msg.from.last_name,
+          msg.from.username,
+          msg.from.language_code,
+          "unauthorized request",
+          "request"
+        );
         //Провевяем, зарегистрирован ли пользователь уже
-        await botInstance.sendMessage(msg.chat.id, msqTemplates.register)
+        await botInstance.sendMessage(msg.chat.id, msqTemplates.register);
         return;
       }
 
       if (!readArray.includes(msg.from.id)) {
         //Провевяем, видел ти пользователь информационное сообщение
 
-        const response = telegramCmdHandler.infoHandler(botInstance, msg)
-        await botInstance.sendMessage(msg.chat.id,response.text,
-            {
-              reply_markup: JSON.stringify({
-                inline_keyboard: [
-                  [{ text: "Понятно", callback_data: "info_accepted" }],
-                ],
-              }),
-            }
-          )
+        const response = telegramCmdHandler.infoHandler(botInstance, msg);
+        await botInstance.sendMessage(msg.chat.id, response.text, {
+          reply_markup: JSON.stringify({
+            inline_keyboard: [
+              [{ text: "Понятно", callback_data: "info_accepted" }],
+            ],
+          }),
+        });
         return;
       }
 
@@ -104,8 +133,7 @@ function router(botInstance) {
           botInstance,
           msg
         );
-        await botInstance
-          .sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -114,7 +142,7 @@ function router(botInstance) {
           botInstance,
           msg
         );
-        botInstance.sendMessage(msg.chat.id, response.text)
+        botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -124,8 +152,7 @@ function router(botInstance) {
           botInstance,
           msg
         );
-        await botInstance
-          .sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -134,18 +161,15 @@ function router(botInstance) {
           botInstance,
           msg
         );
-        await botInstance.sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
-      
-
 
       if (/\/sendtome/i.test(msg.text)) {
         //обрабатываем команду /sendtome
 
         const response = telegramCmdHandler.sendtomeHandler(botInstance, msg);
-        await botInstance
-          .sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -155,26 +179,21 @@ function router(botInstance) {
           botInstance,
           msg
         );
-        await botInstance
-          .sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
-
-
 
       if (/\/help/i.test(msg.text)) {
         //обрабатываем команду /help
         const response = await telegramCmdHandler.helpHandler(botInstance, msg);
-        await botInstance
-          .sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
       if (/\/faq/i.test(msg.text)) {
         //обрабатываем команду /faq
         const response = await telegramCmdHandler.faqHandler(botInstance, msg);
-        await botInstance
-          .sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -186,8 +205,11 @@ function router(botInstance) {
           msg
         );
         // console.log("response",response)
-        await botInstance
-          .sendMessage(msg.chat.id, response.text, response.buttons)
+        await botInstance.sendMessage(
+          msg.chat.id,
+          response.text,
+          response.buttons
+        );
         return;
       }
 
@@ -198,8 +220,11 @@ function router(botInstance) {
           "reports",
           msg
         );
-        await botInstance
-          .sendMessage(msg.chat.id, response.text, response.buttons)
+        await botInstance.sendMessage(
+          msg.chat.id,
+          response.text,
+          response.buttons
+        );
         return;
       }
 
@@ -207,7 +232,7 @@ function router(botInstance) {
         //обрабатываем команду /info
 
         const response = await telegramCmdHandler.infoHandler(botInstance, msg);
-        await botInstance.sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -221,9 +246,11 @@ function router(botInstance) {
         //обрабатываем команды смены режима
 
         const regime = msg.text.split(" ")[0].substring(1);
-        const response = await telegramCmdHandler
-          .changeRegimeHandlerPromise(msg, regime)
-        await botInstance.sendMessage(msg.chat.id, response.text)
+        const response = await telegramCmdHandler.changeRegimeHandlerPromise(
+          msg,
+          regime
+        );
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -234,8 +261,7 @@ function router(botInstance) {
           botInstance,
           msg
         );
-        await botInstance
-          .sendMessage(msg.chat.id, response.text)
+        await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
@@ -243,9 +269,8 @@ function router(botInstance) {
         //Обрабатываем сообщение без текста/аудио/видео
         const response = telegramCmdHandler.noMessageText();
 
-        await botInstance
-          .sendMessage(msg.chat.id, response)
-          // botInstance.sendMessage("111", response)
+        await botInstance.sendMessage(msg.chat.id, response);
+        // botInstance.sendMessage("111", response)
         return;
       }
 
@@ -266,48 +291,69 @@ function router(botInstance) {
           innerMsg
         );
         innerMsg.text = transcript;
-        const transcriptArray = transcript.match(
-          new RegExp(".{1," + appsettings.telegram_options.big_outgoing_message_threshold +"}","g")
-        );//Делим длинное сообщение на несколько частей, чтобы уместилось в сообщение Телеграм
+        let transcriptArray = transcript.match(
+          new RegExp(
+            ".{1," +
+              appsettings.telegram_options.big_outgoing_message_threshold +
+              "}",
+            "g"
+          )
+        ); //Делим длинное сообщение на несколько частей, чтобы уместилось в сообщение Телеграм
 
         count = 1;
-        if(!transcriptArray){
-          transcriptArray = [""]
+        if (!transcriptArray) {
+          transcriptArray = [""];
         }
 
         let index = 0;
 
-        async function sendMessagePartsSequentially(){
-          if(index < transcriptArray.length) {
-            var ender ="..."
-            if(index===transcriptArray.length-1){
-              ender=""
+        async function sendMessagePartsSequentially() {
+          if (index < transcriptArray.length) {
+            var ender = "...";
+            if (index === transcriptArray.length - 1) {
+              ender = "";
             }
 
             if (index === 0) {
-              await botInstance.editMessageText("> " + transcriptArray[index]+ender, {
-                chat_id: msg.chat.id,
-                message_id: progressMsg.message_id,
-              });
-
+              await botInstance.editMessageText(
+                "> " + transcriptArray[index] + ender,
+                {
+                  chat_id: msg.chat.id,
+                  message_id: progressMsg.message_id,
+                }
+              );
             } else {
-              await botInstance.sendMessage(msg.chat.id, transcriptArray[index]+ender);
+              await botInstance.sendMessage(
+                msg.chat.id,
+                transcriptArray[index] + ender
+              );
             }
 
             index++;
-            setTimeout(sendMessagePartsSequentially,appsettings.telegram_options.debounceMs)
+            setTimeout(
+              sendMessagePartsSequentially,
+              appsettings.telegram_options.debounceMs
+            );
           }
         }
 
-        await sendMessagePartsSequentially()
-        
-        if(global.allSettingsDict[msg.from.id].current_regime==="voicetotext"){ //Если включен режим voicetotеxt, то сообщение не пересылается в сервис
-          return
-        }
-      } else if(msg.text&&global.allSettingsDict[msg.from.id].current_regime==="voicetotext"){
+        await sendMessagePartsSequentially();
 
-        await botInstance.sendMessage(msg.chat.id, msqTemplates.error_voicetotext_doesnot_process_text);
-        return
+        if (
+          global.allSettingsDict[msg.from.id].current_regime === "voicetotext"
+        ) {
+          //Если включен режим voicetotеxt, то сообщение не пересылается в сервис
+          return;
+        }
+      } else if (
+        msg.text &&
+        global.allSettingsDict[msg.from.id].current_regime === "voicetotext"
+      ) {
+        await botInstance.sendMessage(
+          msg.chat.id,
+          msqTemplates.error_voicetotext_doesnot_process_text
+        );
+        return;
       }
 
       if (
@@ -335,99 +381,121 @@ function router(botInstance) {
       const original = true;
 
       if (useDebounceMs) {
-        await deferredMsgHandler(botInstance, innerMsg.chat.id, innerMsg, original); //запускаем отложенный обработчик
+        await deferredMsgHandler(
+          botInstance,
+          innerMsg.chat.id,
+          innerMsg,
+          original
+        ); //запускаем отложенный обработчик
       } else {
         await MsgHandler(botInstance, innerMsg.chat.id, innerMsg, original); //запускаем обычный обработчик
       }
       jointMsg = ""; //обнуляем накопленные сообщения
       useDebounceMs = false; //обнуляем задержку
-
     } catch (err) {
-      if(err.mongodblog===undefined){
-        err.mongodblog= true;
-      }       
-      err.place_in_code = err.place_in_code || arguments.callee.name
-      telegramErrorHandler.main(botInstance,msg.chat.id,err,err.place_in_code,err.user_message)
+      if (err.mongodblog === undefined) {
+        err.mongodblog = true;
+      }
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      telegramErrorHandler.main(
+        botInstance,
+        msg.chat.id,
+        err,
+        err.place_in_code,
+        err.user_message
+      );
     }
   });
 
   botInstance.on("callback_query", async (callback_msg) => {
-    try{
-    if (callback_msg.data === "info_accepted") {
-      await botInstance.answerCallbackQuery(callback_msg.id);
-      response = await telegramCmdHandler.infoacceptHandler(
-        botInstance,
-        callback_msg
-      );
-      await botInstance
-        .sendMessage(callback_msg.message.chat.id, response.text)
-    } else if (callback_msg.data.startsWith("regenerate")) {
-      await botInstance.answerCallbackQuery(callback_msg.id);
-      //    console.log("callback_msg",callback_msg)
-      const original = false;
-      const callback_regime = callback_msg.data.split("_")[1]
+    try {
+      if (callback_msg.data === "info_accepted") {
+        await botInstance.answerCallbackQuery(callback_msg.id);
+        response = await telegramCmdHandler.infoacceptHandler(
+          botInstance,
+          callback_msg
+        );
+        await botInstance.sendMessage(
+          callback_msg.message.chat.id,
+          response.text
+        );
+      } else if (callback_msg.data.startsWith("regenerate")) {
+        await botInstance.answerCallbackQuery(callback_msg.id);
+        //    console.log("callback_msg",callback_msg)
+        const original = false;
+        const callback_regime = callback_msg.data.split("_")[1];
 
-      if(callback_regime!=global.allSettingsDict[callback_msg.from.id].current_regime){
+        if (
+          callback_regime !=
+          global.allSettingsDict[callback_msg.from.id].current_regime
+        ) {
+          await botInstance.sendMessage(
+            callback_msg.message.chat.id,
+            msqTemplates.wrong_regime.replace(
+              "[regime]",
+              modelSettings[callback_regime].name
+            )
+          );
+          return;
+        }
 
-        await botInstance
-        .sendMessage(callback_msg.message.chat.id, msqTemplates.wrong_regime.replace("[regime]",modelSettings[callback_regime].name))
-        return
+        await MsgHandler(
+          botInstance,
+          callback_msg.message.chat.id,
+          callback_msg,
+          original
+        );
+      } else if (callback_msg.data.startsWith("settings")) {
+        await botInstance.answerCallbackQuery(callback_msg.id);
+        response = await telegramCmdHandler.settingsOptionsHandler(
+          botInstance,
+          callback_msg.data,
+          callback_msg
+        );
+        if (!response.text) {
+          //Если текста нет - сообщение не отправляем
+          return;
+        }
+
+        await botInstance.editMessageText(response.text, {
+          chat_id: callback_msg.message.chat.id,
+          message_id: callback_msg.message.message_id,
+          reply_markup: response.buttons.reply_markup,
+        });
+      } else if (callback_msg.data.startsWith("reports")) {
+        await botInstance.answerCallbackQuery(callback_msg.id);
+
+        const response = await telegramCmdHandler.reportsOptionsHandler(
+          botInstance,
+          callback_msg.data,
+          callback_msg
+        );
+        if (!response.text) {
+          //Если текста нет - сообщение не отправляем
+          return;
+        }
+        await botInstance.editMessageText(response.text, {
+          chat_id: callback_msg.message.chat.id,
+          message_id: callback_msg.message.message_id,
+          reply_markup: response.buttons.reply_markup,
+        });
+      } else if (callback_msg.data.startsWith("resend_to_admin")) {
+        await botInstance.answerCallbackQuery(callback_msg.id);
+        console.log("resceived request");
       }
-
-      await MsgHandler(
+    } catch (err) {
+      if (err.mongodblog === undefined) {
+        err.mongodblog = true;
+      }
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      telegramErrorHandler.main(
         botInstance,
         callback_msg.message.chat.id,
-        callback_msg,
-        original
+        err,
+        err.place_in_code,
+        err.user_message
       );
-    } else if (callback_msg.data.startsWith("settings")) {
-      await botInstance.answerCallbackQuery(callback_msg.id);
-      response = await telegramCmdHandler.settingsOptionsHandler(
-        botInstance,
-        callback_msg.data,
-        callback_msg
-      );
-      if (!response.text) {
-        //Если текста нет - сообщение не отправляем
-        return;
-      }
-
-      await botInstance
-        .editMessageText(response.text, {
-          chat_id: callback_msg.message.chat.id,
-          message_id: callback_msg.message.message_id,
-          reply_markup: response.buttons.reply_markup,
-        })
-    } else if (callback_msg.data.startsWith("reports")) {
-      await botInstance.answerCallbackQuery(callback_msg.id);
-
-      const response = await telegramCmdHandler.reportsOptionsHandler(
-        botInstance,
-        callback_msg.data,
-        callback_msg
-      );
-      if (!response.text) {
-        //Если текста нет - сообщение не отправляем
-        return;
-      }
-      await botInstance
-        .editMessageText(response.text, {
-          chat_id: callback_msg.message.chat.id,
-          message_id: callback_msg.message.message_id,
-          reply_markup: response.buttons.reply_markup,
-        })
-    } else if(callback_msg.data.startsWith("resend_to_admin")){
-      await botInstance.answerCallbackQuery(callback_msg.id);
-      console.log("resceived request")
-
     }
-  } catch(err){
-    if(err.mongodblog===undefined){
-      err.mongodblog= true;
-    }     
-    err.place_in_code = err.place_in_code || arguments.callee.name
-    telegramErrorHandler.main(botInstance,callback_msg.message.chat.id,err,err.place_in_code,err.user_message)
-  }
   });
 }
 
@@ -437,13 +505,13 @@ const deferredMsgHandler = otherFunctions.debounceConstructorPromise(
 );
 
 async function MsgHandler(botInstance, chat_id, msg, original) {
-  if (msg.text&&process.env.PROD_RUN) {
+  if (msg.text && process.env.PROD_RUN) {
     console.log("message lenght", msg.text.length, new Date());
   }
   //  console.log("Полученный текст",msg.text)
-  
-   await botInstance.sendChatAction(chat_id, "typing") //Отправляем progress msg
-   const result =await botInstance.sendMessage(chat_id, "...") //Следом отправляем plaseholder
+
+  await botInstance.sendChatAction(chat_id, "typing"); //Отправляем progress msg
+  const result = await botInstance.sendMessage(chat_id, "..."); //Следом отправляем plaseholder
   await openAIApiHandler.chatCompletionStreamAxiosRequest(
     botInstance,
     result.message_id,

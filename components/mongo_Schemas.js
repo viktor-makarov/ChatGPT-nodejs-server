@@ -55,7 +55,9 @@ const ProfileSheema = new Schema(
       adminCode: { type: String },
     },
   },
+ 
   { collection: appsettings.mongodb_names.coll_profiles }
+  
 );
 
 const LogsSheema = new Schema(
@@ -128,8 +130,8 @@ const TelegramDialogSheema = new Schema(
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
-    newMessagePaused:{ type: Boolean },
     telegamPaused:{ type: Boolean },
+    model:{ type: String },
     role: { type: String },
     roleid: { type: Number },
     name: { type: String },
@@ -137,8 +139,6 @@ const TelegramDialogSheema = new Schema(
     content_parts:{ type: Object },
     completion_ended:{type: Boolean},
     content_ending: { type: String },
-    last_part_number: { type: Number },
-    completed: { type: Boolean },
     telegramMsgOptions: { type: Object },
     finish_reason: { type: String },
     tokens: { type: Number },
