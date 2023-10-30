@@ -32,6 +32,7 @@ async function adminHandler(botInstance, msg) {
   const adminCode = process.env.ADMIN_KEY;
   let prompt = msg.text.substring("/admin".length).trim();
 
+  console.log("prompt",prompt)
   if (prompt === "") {
     return { text: msqTemplates.blank_admin_code };
   }

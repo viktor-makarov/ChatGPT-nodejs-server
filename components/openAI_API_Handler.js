@@ -362,13 +362,15 @@ async function chatCompletionStreamAxiosRequest(
                 },
                 finish_reason: chunkJsonList[0]?.choices[0]?.finish_reason,
               };
+            } else if (chunkJsonList.length == 0){
+              return
             }
 
             var content = "";
             for (let i = 0; i < chunkJsonList.length; i++) {
               //собираем несколько сообщений в одно
 
-              const choice = chunkJsonList[i].choices[0];
+              const choice = chunkJsonList[i]?.choices[0];
               content = content + (choice?.delta?.content ?? "");
 
               completionJson.finish_reason = choice.finish_reason;

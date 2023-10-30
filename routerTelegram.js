@@ -82,7 +82,7 @@ function router(botInstance) {
         );
       }
 
-      if (/\/start/i.test(msg.text)) {
+      if (/^\/start/i.test(msg.text)) {
         //обрабатываем команду /start
         const response = await telegramCmdHandler.startHandler(
           botInstance,
@@ -128,16 +128,17 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/admin/i.test(msg.text)) {
+      if (/^\/admin/i.test(msg.text)) {
         const response = await telegramCmdHandler.adminHandler(
           botInstance,
           msg
         );
+          console.log(response)
         await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
-      if (/\/register/i.test(msg.text)) {
+      if (/^\/register/i.test(msg.text)) {
         const response = await telegramCmdHandler.registerHandler(
           botInstance,
           msg
@@ -146,7 +147,7 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/delete_not_uptodate_users/i.test(msg.text)) {
+      if (/^\/delete_not_uptodate_users/i.test(msg.text)) {
         //обрабатываем команду /sendtome
         const response = await telegramCmdHandler.unregisterAllNotUpToDate(
           botInstance,
@@ -156,7 +157,7 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/unregister/i.test(msg.text)) {
+      if (/^\/unregister/i.test(msg.text)) {
         const response = await telegramCmdHandler.unregisterHandler(
           botInstance,
           msg
@@ -165,7 +166,7 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/sendtome/i.test(msg.text)) {
+      if (/^\/sendtome/i.test(msg.text)) {
         //обрабатываем команду /sendtome
 
         const response = telegramCmdHandler.sendtomeHandler(botInstance, msg);
@@ -173,7 +174,7 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/sendtoall/i.test(msg.text)) {
+      if (/^\/sendtoall/i.test(msg.text)) {
         //обрабатываем команду /sendtome
         const response = await telegramCmdHandler.sendtoallHandler(
           botInstance,
@@ -183,21 +184,21 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/help/i.test(msg.text)) {
+      if (/^\/help/i.test(msg.text)) {
         //обрабатываем команду /help
         const response = await telegramCmdHandler.helpHandler(botInstance, msg);
         await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
-      if (/\/faq/i.test(msg.text)) {
+      if (/^\/faq/i.test(msg.text)) {
         //обрабатываем команду /faq
         const response = await telegramCmdHandler.faqHandler(botInstance, msg);
         await botInstance.sendMessage(msg.chat.id, response.text);
         return;
       }
 
-      if (/\/settings/i.test(msg.text)) {
+      if (/^\/settings/i.test(msg.text)) {
         //обрабатываем команду /faq
         const response = await telegramCmdHandler.settingsOptionsHandler(
           botInstance,
@@ -213,7 +214,7 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/reports/i.test(msg.text)) {
+      if (/^\/reports/i.test(msg.text)) {
         //обрабатываем команду /help
         const response = await telegramCmdHandler.reportsOptionsHandler(
           botInstance,
@@ -228,7 +229,7 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/info/i.test(msg.text)) {
+      if (/^\/info/i.test(msg.text)) {
         //обрабатываем команду /info
 
         const response = await telegramCmdHandler.infoHandler(botInstance, msg);
@@ -237,11 +238,11 @@ function router(botInstance) {
       }
 
       if (
-        /\/assistant/i.test(msg.text) ||
-        /\/texteditor/i.test(msg.text) ||
-        /\/codereviewer/i.test(msg.text) ||
-        /\/translator/i.test(msg.text) ||
-        /\/voicetotext/i.test(msg.text)
+        /^\/assistant/i.test(msg.text) ||
+        /^\/texteditor/i.test(msg.text) ||
+        /^\/codereviewer/i.test(msg.text) ||
+        /^\/translator/i.test(msg.text) ||
+        /^\/voicetotext/i.test(msg.text)
       ) {
         //обрабатываем команды смены режима
 
@@ -254,7 +255,7 @@ function router(botInstance) {
         return;
       }
 
-      if (/\/resetdialogue/i.test(msg.text)) {
+      if (/^\/resetdialogue/i.test(msg.text)) {
         //обрабатываем команду /resetdialog
 
         const response = await telegramCmdHandler.resetdialogHandler(
