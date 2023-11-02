@@ -5,6 +5,7 @@ const {
 } = require("openai");
 const FormData = require("form-data");
 const telegramErrorHandler = require("./telegramErrorHandler.js");
+const telegramFunctionHandler = require("./telegramFunctionHandler.js");
 const otherFunctions = require("./other_func");
 const msqTemplates = require("../config/telegramMsgTemplates");
 const modelSettings = require("../config/telegramModelsSettings");
@@ -218,7 +219,11 @@ async function chatCompletionStreamAxiosRequest(
   sent_msg_id,
   msg,
   regime,
-  original
+  original,
+  open_ai_api_key,
+  model,
+  temperature,
+  functions
 ) {
   try {
     if (original) {
@@ -276,20 +281,22 @@ async function chatCompletionStreamAxiosRequest(
       responseType: "stream",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        Authorization: `Bearer ${open_ai_api_key}`,
       },
       validateStatus: function (status) {
         return status == appsettings.http_options.SUCCESS_CODE;
       },
       data: {
-        model:
-          allSettingsDict[msg.from.id][regime].model ||
-          modelSettings[regime].default_model,
-        temperature: allSettingsDict[msg.from.id][regime].temperature || 1,
+        model:model,
+        temperature: temperature,
         messages: dialogueListEdited,
         stream: true,
       },
     };
+    if(functions){
+      //Add functions, if they exist
+      options.data.functions = functions
+    }
 
     axios(options)
       .then((response) => {
@@ -299,18 +306,22 @@ async function chatCompletionStreamAxiosRequest(
           appsettings.telegram_options.send_throttle_ms
         );
 
+
         const headersObject = response.headers //Записываем хэдеры
         response.data.on("data", async (chunk) => {
           const func_name = "axious responce.data.on: data";
+          
           try {
             const chunkString = chunk.toString("utf8");
-
+            
           
             chunks = getJsonFromChunk(
               (chunks?.incomplete ?? "") + chunkString
             );
             chunkJsonList = chunks.complete;
 
+        
+        
             if (
               completionJson.content == undefined &&
               chunkJsonList.length > 0
@@ -320,6 +331,8 @@ async function chatCompletionStreamAxiosRequest(
               const content_parts = {
                 0: { id_message: sent_msg_id, to_send: "" },
               };
+
+              const functionCallObject = chunkJsonList[0]?.choices[0]?.delta?.function_call
 
               completionJson = {
                 //Формируем сообщение completion
@@ -334,8 +347,9 @@ async function chatCompletionStreamAxiosRequest(
                 userLastName: msg.from.last_name,
                 model: chunkJsonList[0].model,
                 telegamPaused: false,
-                role: "assistant",
+                role: chunkJsonList[0]?.choices[0]?.delta?.role,
                 content: "",
+                function_call:functionCallObject,
                 content_parts: content_parts,
                 completion_ended: false,
                 content_ending: "",
@@ -344,8 +358,8 @@ async function chatCompletionStreamAxiosRequest(
                 telegramMsgOptions: {
                   chat_id: msg.chat.id,
                   message_id: sent_msg_id,
-                  parse_mode: "Markdown",
-                  reply_markup: JSON.stringify({
+                  parse_mode: functionCallObject ? null : "Markdown",
+                  reply_markup: functionCallObject ? null : JSON.stringify({
                     one_time_keyboard: true,
                     inline_keyboard: [
                       [
@@ -366,7 +380,8 @@ async function chatCompletionStreamAxiosRequest(
               return
             }
 
-            var content = "";
+            
+            let content = "";
             for (let i = 0; i < chunkJsonList.length; i++) {
               //собираем несколько сообщений в одно
 
@@ -416,7 +431,10 @@ async function chatCompletionStreamAxiosRequest(
               completionJson.content_parts[last_part].content_ending = " ...";
             }
 
-            throttlingSending(botInstance, completionJson); //Отправляем
+
+              
+            throttlingSending(botInstance, completionJson); //Отправляем пользователю ответ
+            
           } catch (err) {
             err.mongodblog = true;
             err.place_in_code = err.place_in_code || func_name;
@@ -433,13 +451,26 @@ async function chatCompletionStreamAxiosRequest(
         response.data.on("end", async () => {
           const func_name = "axious responce.data.on: end";
           try {
-            if (completionJson.content === "") {
+
+      
+     
+            if (completionJson.content === "" && completionJson.finish_reason != 'function_call') {
               //Если не получили токенов от API
               let err = new Error("Empty response from the service.");
               err.code = "OAI_ERR2";
               err.mongodblog = true;
               err.user_message = msqTemplates.empty_completion;
               throw err;
+            } 
+
+            if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
+
+              await botInstance.editMessageText(msqTemplates.function_request_msg.replace("[function]",JSON.stringify(completionJson.function_call)), 
+              {
+                chat_id: completionJson.telegramMsgOptions.chat_id,
+                message_id: sent_msg_id
+              });
+
             }
 
             await mongo.insertUsageDialoguePromise(
@@ -484,6 +515,9 @@ async function sentEditedMessage(botInstance, completionJson) {
     //обрабатываем разные сценарии завершения/продолжения стрима токенов
     await mongo.upsertCompletionPromise(completionJson); //Сначала зписываем полученное сообщение в базу
 
+    if (completionJson.function_call) {//Проверяем, что это не запрос функции
+      return
+    }
     if (completionJson.telegamPaused) {
       //Если телеграм не принимает сообщения, то не отправляем
       return;

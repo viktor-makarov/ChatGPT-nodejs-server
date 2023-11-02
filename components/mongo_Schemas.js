@@ -136,6 +136,7 @@ const TelegramDialogSheema = new Schema(
     roleid: { type: Number },
     name: { type: String },
     content: { type: String },
+    function_call:{ type: Object },
     content_parts:{ type: Object },
     completion_ended:{type: Boolean},
     content_ending: { type: String },
