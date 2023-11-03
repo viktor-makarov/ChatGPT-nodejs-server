@@ -149,6 +149,7 @@ const insertUsageDialoguePromise = async (
       regime: regime,
     });
 
+
     return await newTokenUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
@@ -194,6 +195,47 @@ const upsertPromptPromise = async (msg, regime) => {
   }
 };
 
+const upsertFuctionResultsPromise = async (msg, regime,functionResult) => {
+  try {
+
+    const connection = await Connect_to_mongo(
+      connectionString_self_mongo,
+      db_name
+    );
+
+
+    const dialog_collection = connection.model(
+      appsettings.mongodb_names.coll_dialogs,
+      scheemas.TelegramDialogSheema
+    );
+
+    const newPrompt = {
+      sourceid: Math.random().toString(36).substring(2,15) + Math.random().toString(36).substring(2,15),
+      createdAtSourceTS: new Date(),
+      createdAtSourceDT_UTF: new Date(),
+      userid: msg.from.id,
+      userFirstName: msg.from.first_name,
+      userLastName: msg.from.last_name,
+      regime: regime,
+      role: "system",
+      roleid: 0,
+      content: functionResult,
+      tokens: otherfunc.countTokens(functionResult)
+    };
+
+    const result = await dialog_collection.updateOne(
+      { sourceid: msg.message_id, role: newPrompt.role },
+      newPrompt,
+      { upsert: true }
+    );
+    return result
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
 const upsertSystemPromise = async (content, msg, regime) => {
   try {
     const connection = await Connect_to_mongo(
@@ -219,6 +261,8 @@ const upsertSystemPromise = async (content, msg, regime) => {
       tokens: otherfunc.countTokens(content),
     };
 
+    
+
     return await dialog_collection.updateOne(
       { sourceid: msg.message_id, role: newPrompt.role },
       newPrompt,
@@ -233,7 +277,13 @@ const upsertSystemPromise = async (content, msg, regime) => {
 
 const upsertCompletionPromise = async (CompletionObject) => {
   try {
+    
+    if(CompletionObject.function_call){
+      CompletionObject.roleid = 0
+    } else {
     CompletionObject.roleid = 2; //ДОбавляем roleid
+    }
+    
     const connection = await Connect_to_mongo(
       connectionString_self_mongo,
       db_name
@@ -1327,4 +1377,5 @@ module.exports = {
   profileMigrationScript,
   insert_permissions_migrationPromise,
   insert_read_section_migrationPromise,
+  upsertFuctionResultsPromise,
 };

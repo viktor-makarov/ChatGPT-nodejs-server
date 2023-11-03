@@ -19,6 +19,7 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 const axios = require("axios");
+const { log } = require("console");
 
 async function getModels() {
   try {
@@ -257,10 +258,12 @@ async function chatCompletionStreamAxiosRequest(
       regime
     ); //получаем из базы весь предыдущий диалог
     //Учитываем потраченные токены
+
     const previous_dialogue_tokens = dialogueList
       .map((obj) => obj.tokens)
       .reduce((acc, curr) => acc + curr, 0);
     //Подсчитаем токены из предыдущего диалога
+
     const token_limit =
       modelConfig[allSettingsDict[msg.from.id][regime].model]
         .request_length_limit_in_tokens;
@@ -470,9 +473,21 @@ async function chatCompletionStreamAxiosRequest(
                 chat_id: completionJson.telegramMsgOptions.chat_id,
                 message_id: sent_msg_id
               });
+     
+              const functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
+              
+              const waitMsgresult = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
+              await mongo.upsertFuctionResultsPromise(msg, regime,functionResult); //записываем вызова функции в диалог
+              
+              //Сообщая пользователю
+              await botInstance.editMessageText(msqTemplates.function_result_msg.replace("[result]",functionResult), 
+              {
+                chat_id: completionJson.telegramMsgOptions.chat_id,
+                message_id: waitMsgresult.message_id
+              });
 
             }
-
+   
             await mongo.insertUsageDialoguePromise(
               msg,
               previous_dialogue_tokens,
@@ -480,6 +495,7 @@ async function chatCompletionStreamAxiosRequest(
               regime
             ); //фиксируем потраченные токены
           } catch (err) {
+            
             err.place_in_code = err.place_in_code || func_name;
             telegramErrorHandler.main(
               botInstance,

@@ -1,20 +1,29 @@
 const { deleteDialogByUserPromise } = require("./mongo");
 
 
-async function registerNotifyUser(botInstance,completionJson){
 
 
-    console.log("request",JSON.stringify(completionJson))
 
+async function runFunctionRequest(msg,function_call){
+
+const function_name = function_call?.name
+
+let functionResult = ""
+
+if (!function_name){
+
+    functionResult = "No function name found"
+
+} else if(function_name==="get_current_datetime"){
+
+    functionResult = new Date().toString()
+
+} else {
+
+    functionResult = `Function ${function_name} does not exist`
 }
 
-
-async function runFunctionRequest(msg,request){
-
-
-console.log("request",request)
-
-
+return functionResult
 }
 
 async function functionsList(userid){
@@ -56,6 +65,5 @@ if (functionList.length===0){
 
 module.exports = {
     functionsList,
-    runFunctionRequest,
-    registerNotifyUser
+    runFunctionRequest
 }
