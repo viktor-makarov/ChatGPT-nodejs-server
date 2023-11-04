@@ -227,6 +227,8 @@ async function chatCompletionStreamAxiosRequest(
   functions
 ) {
   try {
+
+    /*
     if (original) {
       //Так делаем, если сообщение оригинальное (первый раз направлено пользователей)
       if (regime != "assistant") {
@@ -252,7 +254,7 @@ async function chatCompletionStreamAxiosRequest(
       await mongo.deleteMsgByIdPromise(msg.from.id, msg.message.message_id); //Удаляем предыдущий вариант комплишена из базы
       msg.chat = msg.message.chat;
     }
-
+    */
     const dialogueList = await mongo.getDialogueByUserIdPromise(
       msg.from.id,
       regime

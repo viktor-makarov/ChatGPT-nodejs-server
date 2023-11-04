@@ -387,6 +387,21 @@ function router(botInstance) {
       const temperature = allSettingsDict[innerMsg.from.id][regime].temperature || 1
       const functions = await telegramFunctionHandler.functionsList(innerMsg.from.id)
  
+
+      if (regime != "assistant") {
+        await mongo.deleteDialogByUserPromise(innerMsg.from.id, regime); //удаляем диалог, если это не ассистент, т.к. не требуется учитывать предыдущий диалог
+      }
+
+      if (modelSettings[regime].task) {
+        //Добавялем задачу, если она есть
+        await mongo.upsertSystemPromise(
+          modelSettings[regime].task,
+          innerMsg,
+          regime
+        );
+      }
+      await mongo.upsertPromptPromise(innerMsg, regime); //записываем prompt в диалог
+
       if (useDebounceMs) {
         await deferredMsgHandler(
           botInstance,
@@ -432,6 +447,11 @@ function router(botInstance) {
         );
       } else if (callback_msg.data.startsWith("regenerate")) {
         await botInstance.answerCallbackQuery(callback_msg.id);
+
+        //Убираем кнопку, которая была нажата, т.к. она уже использована
+        await botInstance.editMessageReplyMarkup(
+          { inline_keyboard: [] },
+          { chat_id: callback_msg.message.chat.id, message_id: callback_msg.message.message_id })
         //    console.log("callback_msg",callback_msg)
         const original = false;
         const callback_regime = callback_msg.data.split("_")[1];
@@ -454,6 +474,13 @@ function router(botInstance) {
         const model = allSettingsDict[callback_msg.from.id][regime].model || modelSettings[regime].default_model
         const temperature = allSettingsDict[callback_msg.from.id][regime].temperature || 1
         const functions = null
+
+       //>>>new block 
+              //Так делаем, если regenerate
+      await mongo.deleteMsgByIdPromise(callback_msg.from.id, callback_msg.message.message_id); //Удаляем предыдущий вариант комплишена из базы
+      callback_msg.chat = callback_msg.message.chat; //Немного меняем струкуту сообщения, чтобы она была более универсальной
+
+      //>>>new block 
 
         await MsgHandler(
           botInstance,
