@@ -211,7 +211,7 @@ const upsertFuctionResultsPromise = async (msg, regime,functionResult) => {
 
     const newPrompt = {
       sourceid: Math.random().toString(36).substring(2,15) + Math.random().toString(36).substring(2,15),
-      createdAtSourceTS: new Date(),
+      createdAtSourceTS: Math.ceil(Number(new Date())/1000),
       createdAtSourceDT_UTF: new Date(),
       userid: msg.from.id,
       userFirstName: msg.from.first_name,
@@ -222,6 +222,7 @@ const upsertFuctionResultsPromise = async (msg, regime,functionResult) => {
       content: functionResult,
       tokens: otherfunc.countTokens(functionResult)
     };
+
 
     const result = await dialog_collection.updateOne(
       { sourceid: msg.message_id, role: newPrompt.role },
@@ -392,10 +393,11 @@ const getDialogueByUserIdPromise = (userid, regime) => {
       dialogue_collection
         .find(
           { userid: userid, regime: regime },
-          { _id: 0, role: 1, name: 1, content: 1, tokens: 1 }
+          { _id: 0, role: 1, name: 1, content: 1, function_call: 1, tokens: 1 }
         )
         .lean()
-        .sort({ createdAtSourceTS: "asc", roleid: "asc" })
+      //  .sort({ createdAtSourceTS: "asc", roleid: "asc" })
+      .sort({ _id: "asc"})
         .exec((err, res) => {
           if (err) {
             err.code = "MONGO_ERR";

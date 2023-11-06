@@ -44,6 +44,18 @@ module.exports = {
                         "name":"<< Назад"
                     }
             }},
+            "sysmsg":{
+                "name":"Системные сообщения",
+                "options_desc":"Выберите, нужно ли показывать системные сообщения:",
+                "templateRespMsg":"Настройка изменена на значение [value].",
+                "options":{
+                    "false":{
+                        "name":"Не показывать",
+                    },
+                    "true":{
+                        "name":"Показывать",
+                    }
+            }},
             "back":{
                 "name":"<< Назад"
             }
@@ -113,6 +125,18 @@ module.exports = {
                         "name":"<< Назад"
                     }
             }},
+            "sysmsg":{
+                "name":"Системные сообщения",
+                "options_desc":"Выберите, нужно ли показывать системные сообщения:",
+                "templateRespMsg":"Настройка изменена на значение [value].",
+                "options":{
+                    "false":{
+                        "name":"Не показывать",
+                    },
+                    "true":{
+                        "name":"Показывать",
+                    }
+            }},
             "back":{
                 "name":"<< Назад"
             }
@@ -167,6 +191,18 @@ module.exports = {
                         "name":"<< Назад"
                     }
             }},
+            "sysmsg":{
+                "name":"Системные сообщения",
+                "options_desc":"Выберите, нужно ли показывать системные сообщения:",
+                "templateRespMsg":"Настройка изменена на значение [value].",
+                "options":{
+                    "false":{
+                        "name":"Не показывать",
+                    },
+                    "true":{
+                        "name":"Показывать",
+                    }
+            }},
             "back":{
                 "name":"<< Назад"
             }
@@ -175,7 +211,7 @@ module.exports = {
         "default_model":'gpt-3.5-turbo-16k-0613',
         "url_path":'/v1/chat/completions',
         "task":"You are a programmer. Improve the code provided and put it into code block. Also in a separate paragraph outline (1) found errors, (2) poor usage of syntax and (3) give advices for improving efficiency and reliability of the code. All comments should be given in russian language."
-    }, 
+    },
     "translator":{
         "welcome_msg":"Это Переводчик. Достаточно прислать текст. Русский текст будет переведен на английский. Текст на любом другом языке будет переведен на русский. t° = [temperature], модель = [model]",
         "name":"Переводчик",
@@ -218,6 +254,18 @@ module.exports = {
                     },
                     "back":{
                         "name":"<< Назад"
+                    }
+            }},
+            "sysmsg":{
+                "name":"Системные сообщения",
+                "options_desc":"Выберите, нужно ли показывать системные сообщения:",
+                "templateRespMsg":"Настройка изменена на значение [value].",
+                "options":{
+                    "false":{
+                        "name":"Не показывать",
+                    },
+                    "true":{
+                        "name":"Показывать",
                     }
             }},
             "back":{

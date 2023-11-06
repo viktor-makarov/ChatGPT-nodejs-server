@@ -82,7 +82,7 @@ function router(botInstance) {
           //,msg.text
         );
       }
-
+  
       if (/^\/start/i.test(msg.text)) {
         //обрабатываем команду /start
         const response = await telegramCmdHandler.startHandler(
@@ -206,7 +206,11 @@ function router(botInstance) {
           "settings",
           msg
         );
-        // console.log("response",response)
+        
+        await botInstance.sendMessage(
+          msg.chat.id,
+          msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(allSettingsDict[msg.from.id]))
+        );
         await botInstance.sendMessage(
           msg.chat.id,
           response.text,
@@ -380,7 +384,7 @@ function router(botInstance) {
 
       jointMsg = jointMsg + innerMsg.text; //накапливаем сообщения
       innerMsg.text = jointMsg;
-      const original = true;
+
 
       const regime = global.allSettingsDict[innerMsg.from.id].current_regime
       const model = allSettingsDict[innerMsg.from.id][regime].model || modelSettings[regime].default_model
@@ -407,14 +411,14 @@ function router(botInstance) {
           botInstance,
           innerMsg.chat.id,
           innerMsg,
-          original,
           process.env.OPENAI_API_KEY,
           model,
           temperature,
-          functions
+          functions,
+          regime
         ); //запускаем отложенный обработчик
       } else {
-        await MsgHandler(botInstance, innerMsg.chat.id, innerMsg, original,process.env.OPENAI_API_KEY,model,temperature,functions); //запускаем обычный обработчик
+        await MsgHandler(botInstance, innerMsg.chat.id, innerMsg, process.env.OPENAI_API_KEY,model,temperature,functions,regime); //запускаем обычный обработчик
       }
       jointMsg = ""; //обнуляем накопленные сообщения
       useDebounceMs = false; //обнуляем задержку
@@ -453,7 +457,6 @@ function router(botInstance) {
           { inline_keyboard: [] },
           { chat_id: callback_msg.message.chat.id, message_id: callback_msg.message.message_id })
         //    console.log("callback_msg",callback_msg)
-        const original = false;
         const callback_regime = callback_msg.data.split("_")[1];
 
         if (
@@ -486,11 +489,11 @@ function router(botInstance) {
           botInstance,
           callback_msg.message.chat.id,
           callback_msg,
-          original,
           process.env.OPENAI_API_KEY,
           model,
           temperature,
-          functions
+          functions,
+          regime
         );
       } else if (callback_msg.data.startsWith("settings")) {
         await botInstance.answerCallbackQuery(callback_msg.id);
@@ -551,7 +554,7 @@ const deferredMsgHandler = otherFunctions.debounceConstructorPromise(
   appsettings.telegram_options.debounceMs
 );
 
-async function MsgHandler(botInstance, chat_id, msg, original,open_ai_api_key,model,temperature,functions) {
+async function MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,temperature,functions,regime) {
   if (msg.text && process.env.PROD_RUN) {
     console.log("message lenght", msg.text.length, new Date());
   }
@@ -563,8 +566,8 @@ async function MsgHandler(botInstance, chat_id, msg, original,open_ai_api_key,mo
     botInstance,
     result.message_id,
     msg,
-    global.allSettingsDict[msg.from.id].current_regime,
-    original,
+    regime,
+  //  global.allSettingsDict[msg.from.id].current_regime,
     open_ai_api_key,
     model,
     temperature,
@@ -577,4 +580,5 @@ module.exports = {
   setBotParameters,
   GetModelsFromAPI,
   UpdateGlobalVariables,
+  MsgHandler
 };

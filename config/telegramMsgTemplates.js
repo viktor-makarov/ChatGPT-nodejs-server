@@ -51,6 +51,7 @@ module.exports = {
     "wrong_regime":"Для запроса еще одного варианта, пожалуйста, переключитесь на функцию [regime], т.к. именно в ней было сформировано первоначальное сообщение.",
     "resend_to_admin":"Переслать администратору",
     "empty_message":"Пустое сообщение",
-    "function_request_msg":"Запрошено выполнение функции:\n [function]",
-    "function_result_msg":"Результат выполнения функции:\n [result]"
+    "function_request_msg":"Запрошено выполнение функции: [function]",
+    "function_result_msg":"Результат выполнения функции:\n [result]",
+    "current_settings":"Текущие настройки: \n [settings]"
 };

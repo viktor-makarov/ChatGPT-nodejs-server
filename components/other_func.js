@@ -163,6 +163,20 @@ async function get_ielts_part1_questions_by_headers(header_str){
   return question_list
 }
 
+
+function jsonToText(obj, indent = '') {
+  let text = '';
+  for (let key in obj) {
+      if(typeof obj[key] === 'object' && obj[key] !== null) {
+          text += `${indent}${key}:\n${jsonToText(obj[key], indent + '    ')}`;
+      } else {
+          text += `${indent}${key}: ${obj[key]}\n`;
+      }
+  }
+  return text;
+}
+
+
 module.exports = {
   countTokens,
   wireStingForMarkdown,
@@ -172,5 +186,6 @@ module.exports = {
   throttlePromise,
   optionsToButtons,
   get_ielts_part1_heders,
-  get_ielts_part1_questions_by_headers
+  get_ielts_part1_questions_by_headers,
+  jsonToText
 };

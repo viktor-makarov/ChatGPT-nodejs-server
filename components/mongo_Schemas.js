@@ -20,6 +20,7 @@ const ProfileSheema = new Schema(
       assistant: {
         temperature: { type: Number, default: 1 },
         model: { type: String, default: modelSettings.assistant.default_model },
+        sysmsg:{ type: Boolean, default: false }
       },
       texteditor: {
         temperature: { type: Number, default: 1 },
@@ -27,6 +28,7 @@ const ProfileSheema = new Schema(
           type: String,
           default: modelSettings.texteditor.default_model,
         },
+        sysmsg:{ type: Boolean, default: false }
       },
       codereviewer: {
         temperature: { type: Number, default: 1 },
@@ -34,6 +36,7 @@ const ProfileSheema = new Schema(
           type: String,
           default: modelSettings.codereviewer.default_model,
         },
+        sysmsg:{ type: Boolean, default: false }
       },
       translator: {
         temperature: { type: Number, default: 1 },
@@ -41,6 +44,7 @@ const ProfileSheema = new Schema(
           type: String,
           default: modelSettings.translator.default_model,
         },
+        sysmsg:{ type: Boolean, default: false }
       },
     },
     permissions: {

@@ -36,7 +36,7 @@ if(global.allSettingsDict[userid].current_regime==="assistant"){
 //Общедоступные функции
 functionList.push({
     "name": "get_current_datetime",
-    "description": "Use this function to get current value of date and time.",
+    "description": "Use this function to answer user's questions which require current date and time. This function returns value of date and time at the moment of request.",
     "parameters": {
         "type": "object",
         "properties": {}

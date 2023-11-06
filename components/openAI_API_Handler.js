@@ -13,6 +13,8 @@ const modelConfig = require("../config/modelConfig");
 const fs = require("fs");
 const { Readable } = require("stream");
 const mongo = require("./mongo");
+const telegramRouter = require("../routerTelegram")
+
 
 const configuration = new Configuration({
   apiKey: process.env.OPENAI_API_KEY,
@@ -220,7 +222,6 @@ async function chatCompletionStreamAxiosRequest(
   sent_msg_id,
   msg,
   regime,
-  original,
   open_ai_api_key,
   model,
   temperature,
@@ -228,33 +229,6 @@ async function chatCompletionStreamAxiosRequest(
 ) {
   try {
 
-    /*
-    if (original) {
-      //Так делаем, если сообщение оригинальное (первый раз направлено пользователей)
-      if (regime != "assistant") {
-        await mongo.deleteDialogByUserPromise(msg.from.id, regime); //удаляем диалог, если это не ассистент, т.к. не требуется учитывать предыдущий диалог
-      }
-
-      if (modelSettings[regime].task) {
-        //Добавялем задачу, если она есть
-        await mongo.upsertSystemPromise(
-          modelSettings[regime].task,
-          msg,
-          regime
-        );
-      }
-      await mongo.upsertPromptPromise(msg, regime); //записываем prompt в диалог
-    } else {
-      //Так делаем, если regenerate
-      await botInstance.answerCallbackQuery(msg.id); //Отвечаем на команду
-      await botInstance.editMessageReplyMarkup(
-        { inline_keyboard: [] },
-        { chat_id: msg.message.chat.id, message_id: msg.message.message_id }
-      ); //убираем у предыдущего комплишена кнопку regenerate
-      await mongo.deleteMsgByIdPromise(msg.from.id, msg.message.message_id); //Удаляем предыдущий вариант комплишена из базы
-      msg.chat = msg.message.chat;
-    }
-    */
     const dialogueList = await mongo.getDialogueByUserIdPromise(
       msg.from.id,
       regime
@@ -270,10 +244,19 @@ async function chatCompletionStreamAxiosRequest(
       modelConfig[allSettingsDict[msg.from.id][regime].model]
         .request_length_limit_in_tokens;
 
-    const dialogueListEdited = dialogueList.map(({ role, content }) => ({
-      role,
-      content,
-    }));
+    const dialogueListEdited = dialogueList.map(({ role, content,function_call }) => {
+      
+    let result = {
+        role,
+        content
+    }
+    if(function_call !== undefined && function_call !== null){
+      result['function_call'] = function_call;
+  }
+  return result;
+    });
+
+    //console.log(dialogueListEdited)
 
     var chunkJsonList = [];
     var chunks;
@@ -311,7 +294,6 @@ async function chatCompletionStreamAxiosRequest(
           appsettings.telegram_options.send_throttle_ms
         );
 
-
         const headersObject = response.headers //Записываем хэдеры
         response.data.on("data", async (chunk) => {
           const func_name = "axious responce.data.on: data";
@@ -325,7 +307,6 @@ async function chatCompletionStreamAxiosRequest(
             );
             chunkJsonList = chunks.complete;
 
-        
         
             if (
               completionJson.content == undefined &&
@@ -437,8 +418,11 @@ async function chatCompletionStreamAxiosRequest(
             }
 
 
-              
-            throttlingSending(botInstance, completionJson); //Отправляем пользователю ответ
+            if (completionJson.function_call) {//Проверяем, что это не запрос функции
+              return
+            } else {
+              throttlingSending(botInstance, completionJson); //Отправляем пользователю ответ
+            }
             
           } catch (err) {
             err.mongodblog = true;
@@ -470,23 +454,54 @@ async function chatCompletionStreamAxiosRequest(
 
             if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
 
+              let sentMsgId = sent_msg_id
+      
+              await mongo.upsertCompletionPromise(completionJson);
+
+              if(allSettingsDict[msg.from.id][regime].sysmsg){//Если включена функция показа системных сообщений
               await botInstance.editMessageText(msqTemplates.function_request_msg.replace("[function]",JSON.stringify(completionJson.function_call)), 
               {
                 chat_id: completionJson.telegramMsgOptions.chat_id,
-                message_id: sent_msg_id
+                message_id: sentMsgId
               });
+            }
      
               const functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
               
-              const waitMsgresult = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
+              if(allSettingsDict[msg.from.id][regime].sysmsg){ //Если включена функция показа системных сообщений
+              const rst = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
+              sentMsgId = rst.message_id
+              }
+
+              
               await mongo.upsertFuctionResultsPromise(msg, regime,functionResult); //записываем вызова функции в диалог
               
               //Сообщая пользователю
+              if(allSettingsDict[msg.from.id][regime].sysmsg){ 
               await botInstance.editMessageText(msqTemplates.function_result_msg.replace("[result]",functionResult), 
               {
                 chat_id: completionJson.telegramMsgOptions.chat_id,
-                message_id: waitMsgresult.message_id
+                message_id: sentMsgId
               });
+            }
+
+              await botInstance.sendChatAction(completionJson.telegramMsgOptions.chat_id, "typing"); //Отправляем progress msg
+
+              if(allSettingsDict[msg.from.id][regime].sysmsg){ 
+              const rst2 = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
+              sentMsgId = rst2.message_id
+              }
+
+              await chatCompletionStreamAxiosRequest(
+                botInstance,
+                sentMsgId,
+                msg,
+                regime,
+                process.env.OPENAI_API_KEY,
+                model,
+                temperature,
+                functions
+                )
 
             }
    
@@ -530,12 +545,11 @@ async function chatCompletionStreamAxiosRequest(
 async function sentEditedMessage(botInstance, completionJson) {
   //console.log("inside throttle",new Date(),completionJson.content.length)
   try {
+    
     //обрабатываем разные сценарии завершения/продолжения стрима токенов
     await mongo.upsertCompletionPromise(completionJson); //Сначала зписываем полученное сообщение в базу
 
-    if (completionJson.function_call) {//Проверяем, что это не запрос функции
-      return
-    }
+   
     if (completionJson.telegamPaused) {
       //Если телеграм не принимает сообщения, то не отправляем
       return;
