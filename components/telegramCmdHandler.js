@@ -452,6 +452,14 @@ async function reportsOptionsHandler(botInstance, callback_data, msg) {
 async function settingsOptionsHandler(botInstance, callback_data, msg) {
     let callbackArray = callback_data.split("_");
     //console.log("callbackArray",callbackArray)
+
+    if(array.includes("currentsettings")){
+      await botInstance.sendMessage(
+        msg.chat.id,
+        msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(allSettingsDict[msg.from.id]))
+      );
+    }
+
     let settingsKeyboard = [];
     let objectToParce = {
       settings: {

@@ -39,6 +39,9 @@ module.exports = {
                     },
                     "gpt-4":{
                         "name":"GPT-4 8K",
+                    },	
+                    "gpt-4-1106-preview":{
+                        "name":"GPT-4 128K",
                     },
                     "back":{
                         "name":"<< Назад"
@@ -120,6 +123,9 @@ module.exports = {
                     },
                     "gpt-4":{
                         "name":"GPT-4 8K",
+                    },	
+                        "gpt-4-1106-preview":{
+                        "name":"GPT-4 128K",
                     },
                     "back":{
                         "name":"<< Назад"
@@ -186,6 +192,9 @@ module.exports = {
                     },
                     "gpt-4":{
                         "name":"GPT-4 8K",
+                    },	
+                    "gpt-4-1106-preview":{
+                        "name":"GPT-4 128K",
                     },
                     "back":{
                         "name":"<< Назад"
@@ -251,6 +260,9 @@ module.exports = {
                     },
                     "gpt-4":{
                         "name":"GPT-4 8K",
+                    },	
+                        "gpt-4-1106-preview":{
+                        "name":"GPT-4 128K",
                     },
                     "back":{
                         "name":"<< Назад"
@@ -277,5 +289,8 @@ module.exports = {
         "url_path":'/v1/chat/completions',
         "task":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian."
         
-    }
+    },
+    "currentsettings":{
+        "name":"Текущие настройки",
+    },
     };

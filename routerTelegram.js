@@ -207,10 +207,7 @@ function router(botInstance) {
           msg
         );
         
-        await botInstance.sendMessage(
-          msg.chat.id,
-          msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(allSettingsDict[msg.from.id]))
-        );
+        
         await botInstance.sendMessage(
           msg.chat.id,
           response.text,

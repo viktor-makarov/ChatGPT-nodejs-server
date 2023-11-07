@@ -6,5 +6,9 @@ module.exports = {
 "gpt-4":{
     "name":"GPT-4 8K",
     "request_length_limit_in_tokens": 8192
+},
+"gpt-4-1106-preview":{
+    "name":"GPT-4 128K",
+    "request_length_limit_in_tokens": 128000
 }
 }
