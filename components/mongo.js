@@ -123,11 +123,31 @@ const insertUsagePromise = async (msg, completion) => {
   }
 };
 
+const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
+  try {
+    const connection = await Connect_to_mongo(
+      connectionString_self_mongo,
+      db_name
+    );
+    const token_collection = connection.model(
+      appsettings.mongodb_names.coll_tokens_log,
+      scheemas.TokensLogSheema
+    );
+
+    return await token_collection.aggregate(agg_pipeline)
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
 const insertUsageDialoguePromise = async (
   msg,
   previous_dialogue_tokens,
   completion_tokens_count,
-  regime
+  regime,
+  model
 ) => {
   try {
     const connection = await Connect_to_mongo(
@@ -143,6 +163,7 @@ const insertUsageDialoguePromise = async (
       userFirstName: msg.from.first_name,
       userLastName: msg.from.last_name,
       username: msg.from.username,
+      model:model,
       prompt_tokens: previous_dialogue_tokens,
       completion_tokens: completion_tokens_count,
       total_tokens: completion_tokens_count + previous_dialogue_tokens,
@@ -1380,4 +1401,5 @@ module.exports = {
   insert_permissions_migrationPromise,
   insert_read_section_migrationPromise,
   upsertFuctionResultsPromise,
+  queryTockensLogsByAggPipeline
 };

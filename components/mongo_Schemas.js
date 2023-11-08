@@ -112,15 +112,16 @@ const ModelsSheema = new Schema(
 
 const TokensLogSheema = new Schema(
   {
-    datetimeUTF: { type: Date, default: Date.now },
+    datetimeUTF: { type: Date, default: Date.now,description:"Date and time of user's request" },
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
     username: { type: String },
-    prompt_tokens: { type: Number },
-    completion_tokens: { type: Number },
-    total_tokens: { type: Number },
-    regime: { type: String },
+    model: { type: String,description: "OpenAI model used for request." },
+    prompt_tokens: { type: Number,description: "Number of tokens in prompt of the request." },
+    completion_tokens: { type: Number,description: "Number of tokens in completion of the request." },
+    total_tokens: { type: Number,description: "Total number of tokens in the request: prompt plus completion." },
+    regime: { type: String,description: "Chat bot mode used by user" },
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );

@@ -1,6 +1,6 @@
 {
   "name": "chatbot_openai",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Proxy for OpenAI API",
   "dependencies": {
     "axios": "^0.26.1",

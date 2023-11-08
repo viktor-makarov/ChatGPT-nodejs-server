@@ -205,7 +205,9 @@ async function VoiceToText(botInstance, msg) {
       msg,
       otherFunctions.countTokens(transcript),
       null,
-      "voicetotext"
+      "voicetotext",
+      modelSettings.voicetotext.default_model
+
     ); //фиксируем потраченные токены
     return transcript;
   } catch (err) {
@@ -306,7 +308,7 @@ async function chatCompletionStreamAxiosRequest(
               (chunks?.incomplete ?? "") + chunkString
             );
             chunkJsonList = chunks.complete;
-
+              
         
             if (
               completionJson.content == undefined &&
@@ -336,6 +338,7 @@ async function chatCompletionStreamAxiosRequest(
                 role: chunkJsonList[0]?.choices[0]?.delta?.role,
                 content: "",
                 function_call:functionCallObject,
+                function_arguments:"",
                 content_parts: content_parts,
                 completion_ended: false,
                 content_ending: "",
@@ -368,17 +371,21 @@ async function chatCompletionStreamAxiosRequest(
 
             
             let content = "";
+            let function_arguments = ""
             for (let i = 0; i < chunkJsonList.length; i++) {
               //собираем несколько сообщений в одно
 
               const choice = chunkJsonList[i]?.choices[0];
               content = content + (choice?.delta?.content ?? "");
+              function_arguments = function_arguments + (choice?.delta?.function_call?.arguments ?? "");
 
               completionJson.finish_reason = choice.finish_reason;
 
               completionJson.tokens = completionJson.tokens + 1; //считаем токены в комплишене
             }
             completionJson.content = completionJson.content + content;
+            completionJson.function_arguments = completionJson.function_arguments + function_arguments;
+            
             if (!content === "") {
               return; //Если контент пустой, то дальше не идем.
             }
@@ -441,8 +448,6 @@ async function chatCompletionStreamAxiosRequest(
           const func_name = "axious responce.data.on: end";
           try {
 
-      
-     
             if (completionJson.content === "" && completionJson.finish_reason != 'function_call') {
               //Если не получили токенов от API
               let err = new Error("Empty response from the service.");
@@ -456,6 +461,8 @@ async function chatCompletionStreamAxiosRequest(
 
               let sentMsgId = sent_msg_id
       
+              completionJson.function_call.arguments = completionJson.function_arguments
+              
               await mongo.upsertCompletionPromise(completionJson);
 
               if(allSettingsDict[msg.from.id][regime].sysmsg){//Если включена функция показа системных сообщений
@@ -509,7 +516,8 @@ async function chatCompletionStreamAxiosRequest(
               msg,
               previous_dialogue_tokens,
               completionJson.tokens,
-              regime
+              regime,
+              model
             ); //фиксируем потраченные токены
           } catch (err) {
             
