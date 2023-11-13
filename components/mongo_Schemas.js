@@ -4,7 +4,7 @@ const modelSettings = require("../config/telegramModelsSettings");
 
 const ProfileSheema = new Schema(
   {
-    datetimeUTF: {
+    datetimeUTC: {
       type: Date,
       default: Date.now,
     },
@@ -51,11 +51,11 @@ const ProfileSheema = new Schema(
       registrationCode: { type: String },
       registrationCodeUpToDate:{ type: Boolean,default: true },
       registered: { type: Boolean },
-      registeredDTUTF: { type: Date },
+      registeredDTUTC: { type: Date },
       readInfo: { type: Boolean },
-      readInfoDTUTF: { type: Date },
+      readInfoDTUTC: { type: Date },
       admin: { type: Boolean },
-      adminDTUTF: { type: Date },
+      adminDTUTC: { type: Date },
       adminCode: { type: String },
     },
   },
@@ -66,7 +66,7 @@ const ProfileSheema = new Schema(
 
 const LogsSheema = new Schema(
   {
-    datetimeUTF: {
+    datetimeUTC: {
       type: Date,
       default: Date.now,
     },
@@ -78,7 +78,7 @@ const LogsSheema = new Schema(
 
 const RegistrationLogSheema = new Schema(
   {
-    datetimeUTF: {
+    datetimeUTC: {
       type: Date,
       default: Date.now,
     },
@@ -112,7 +112,7 @@ const ModelsSheema = new Schema(
 
 const TokensLogSheema = new Schema(
   {
-    datetimeUTF: { type: Date, default: Date.now,description:"Date and time of user's request" },
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request" },
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
@@ -130,7 +130,7 @@ const TelegramDialogSheema = new Schema(
   {
     sourceid: { type: String, index: true },
     createdAtSourceTS: { type: Number, index: true },
-    createdAtSourceDT_UTF: { type: Date },
+    createdAtSourceDT_UTC: { type: Date },
     TelegramMsgId: { type: Number },
     userid: { type: Number, index: true },
     userFirstName: { type: String },

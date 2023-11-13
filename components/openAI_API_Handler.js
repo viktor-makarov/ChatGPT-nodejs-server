@@ -327,7 +327,7 @@ async function chatCompletionStreamAxiosRequest(
                 sourceid: chunkJsonList[0].id,
                 TelegramMsgId: sent_msg_id,
                 createdAtSourceTS: chunkJsonList[0].created,
-                createdAtSourceDT_UTF: new Date(
+                createdAtSourceDT_UTC: new Date(
                   chunkJsonList[0].created * 1000
                 ),
                 userid: msg.from.id,
@@ -485,11 +485,14 @@ async function chatCompletionStreamAxiosRequest(
               
               //Сообщая пользователю
               if(allSettingsDict[msg.from.id][regime].sysmsg){ 
+              
+
               await botInstance.editMessageText(msqTemplates.function_result_msg.replace("[result]",functionResult), 
               {
                 chat_id: completionJson.telegramMsgOptions.chat_id,
                 message_id: sentMsgId
               });
+            
             }
 
               await botInstance.sendChatAction(completionJson.telegramMsgOptions.chat_id, "typing"); //Отправляем progress msg
@@ -520,7 +523,7 @@ async function chatCompletionStreamAxiosRequest(
               model
             ); //фиксируем потраченные токены
           } catch (err) {
-            
+            err.mongodblog = true;
             err.place_in_code = err.place_in_code || func_name;
             telegramErrorHandler.main(
               botInstance,

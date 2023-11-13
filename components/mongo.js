@@ -142,6 +142,7 @@ const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
   }
 };
 
+
 const insertUsageDialoguePromise = async (
   msg,
   previous_dialogue_tokens,
@@ -192,7 +193,7 @@ const upsertPromptPromise = async (msg, regime) => {
     const newPrompt = {
       sourceid: msg.message_id,
       createdAtSourceTS: msg.date,
-      createdAtSourceDT_UTF: new Date(msg.date * 1000),
+      createdAtSourceDT_UTC: new Date(msg.date * 1000),
       TelegramMsgId: msg.message_id,
       userid: msg.from.id,
       userFirstName: msg.from.first_name,
@@ -233,7 +234,7 @@ const upsertFuctionResultsPromise = async (msg, regime,functionResult) => {
     const newPrompt = {
       sourceid: Math.random().toString(36).substring(2,15) + Math.random().toString(36).substring(2,15),
       createdAtSourceTS: Math.ceil(Number(new Date())/1000),
-      createdAtSourceDT_UTF: new Date(),
+      createdAtSourceDT_UTC: new Date(),
       userid: msg.from.id,
       userFirstName: msg.from.first_name,
       userLastName: msg.from.last_name,
@@ -271,7 +272,7 @@ const upsertSystemPromise = async (content, msg, regime) => {
     const newPrompt = {
       sourceid: msg.message_id,
       createdAtSourceTS: msg.date,
-      createdAtSourceDT_UTF: new Date(msg.date * 1000),
+      createdAtSourceDT_UTC: new Date(msg.date * 1000),
       TelegramMsgId: msg.message_id,
       userid: msg.from.id,
       userFirstName: msg.from.first_name,
@@ -489,7 +490,7 @@ async function insert_permissionsPromise(msg) {
       { id: msg.from.id },
       {
         "permissions.registered": true,
-        "permissions.registeredDTUTF": Date.now(),
+        "permissions.registeredDTUTC": Date.now(),
         "permissions.registrationCode": process.env.REGISTRATION_KEY,
       }
     );
@@ -514,7 +515,7 @@ async function insert_permissions_migrationPromise(msg) {
       { id: msg.from.id },
       {
         "permissions.registered": true,
-        "permissions.registeredDTUTF": msg.permissions.registeredDTUTF,
+        "permissions.registeredDTUTC": msg.permissions.registeredDTUTC,
         "permissions.registrationCode": msg.permissions.registrationCode,
       }
     );
@@ -539,7 +540,7 @@ async function insert_adminRolePromise(msg) {
       { id: msg.from.id },
       {
         "permissions.admin": true,
-        "permissions.adminDTUTF": Date.now(),
+        "permissions.adminDTUTC": Date.now(),
         "permissions.adminCode": process.env.ADMIN_KEY,
       }
     );
@@ -565,7 +566,7 @@ async function insert_read_sectionPromise(msg) {
       { id: msg.from.id },
       {
         "permissions.readInfo": true,
-        "permissions.readInfoDTUTF": Date.now(),
+        "permissions.readInfoDTUTC": Date.now(),
       }
     );
   } catch (err) {
@@ -590,7 +591,7 @@ async function insert_read_section_migrationPromise(msg) {
       { id: msg.from.id },
       {
         "permissions.readInfo": true,
-        "permissions.readInfoDTUTF": msg.permissions.readInfoDTUTF["$date"],
+        "permissions.readInfoDTUTC": msg.permissions.readInfoDTUTC["$date"],
       }
     );
   } catch (err) {
@@ -712,9 +713,9 @@ async function profileMigrationScript(path) {
         },
         chat: { id: item.id_chat },
         permissions: {
-          registeredDTUTF: item.permissions.registeredDTUTF?.$date,
+          registeredDTUTC: item.permissions.registeredDTUTC?.$date,
           registrationCode: item.permissions.registrationCode,
-          readInfoDTUTF: item.permissions?.readInfoDTUTF?.$date,
+          readInfoDTUTC: item.permissions?.readInfoDTUTC?.$date,
         },
       };
 
@@ -744,13 +745,13 @@ const get_tokenUsageByDates = () => {
         scheemas.TokensLogSheema
       );
       const tenDaysAgo = moment().subtract(10, "days").startOf("day").toDate();
-
+        
       token_collection
         .aggregate(
           [
             {
               $match: {
-                datetimeUTF: { $gte: tenDaysAgo },
+                datetimeUTC: { $gte: tenDaysAgo },
               },
             },
             {
@@ -758,11 +759,11 @@ const get_tokenUsageByDates = () => {
                 _id: {
                   $dateToString: {
                     format: "%d-%m-%Y",
-                    date: "$datetimeUTF",
+                    date: "$datetimeUTC",
                     timezone: "Europe/Moscow",
                   },
                 },
-                date: { $max: "$datetimeUTF" },
+                date: { $max: "$datetimeUTC" },
                 requests: { $sum: 1 },
                 tokens: { $sum: "$total_tokens" },
                 uniqueUsers: { $addToSet: "$userid" },
@@ -860,7 +861,7 @@ const get_tokenUsageByUsers = () => {
                 username: { $max: "$username" },
                 requests: { $sum: 1 },
                 tokens: { $sum: "$total_tokens" },
-                last_request: { $max: "$datetimeUTF" },
+                last_request: { $max: "$datetimeUTC" },
               },
             },
           ],
@@ -1034,7 +1035,7 @@ const get_all_profilesPromise = () => {
             resolve(doc); //Возвращаем array idшников
           }
         })
-        .sort({ datetimeUTF: "asc" })
+        .sort({ datetimeUTC: "asc" })
         .lean();
     } catch (err) {
       reject(err);

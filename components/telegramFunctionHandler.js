@@ -29,7 +29,6 @@ if (!function_name){
         return functionResult
     } else {
 
-
         try {
             const argumentsjson = JSON.parse(arguments)
             pipeline = JSON.parse(argumentsjson.aggregate_pipeline)
@@ -43,9 +42,10 @@ if (!function_name){
         try {
             const result = await mongo.queryTockensLogsByAggPipeline(pipeline)
             functionResult = JSON.stringify(result)
+           
             return functionResult
         } catch (err){
-            
+
             functionResult = `Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`
             return functionResult
         }
@@ -93,8 +93,8 @@ functionList.push({
         },
         "required": ["aggregate_pipeline"]
     }
-},
-)
+})
+
 }
 
 //Завершаем. Если ни одной функции нет, то передаем null
