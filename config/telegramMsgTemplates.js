@@ -53,5 +53,6 @@ module.exports = {
     "empty_message":"Пустое сообщение",
     "function_request_msg":"Запрошено выполнение функции: [function]",
     "function_result_msg":"Результат выполнения функции:\n [result]",
-    "current_settings":"Текущие настройки: \n [settings]"
+    "current_settings":"Текущие настройки: \n [settings]",
+    "too_long_message":"... \nСообщение сокращено, т.к. превысило допустимый размер сообшения Телеграмм."
 };

@@ -460,7 +460,9 @@ async function chatCompletionStreamAxiosRequest(
             if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
 
               let sentMsgId = sent_msg_id
-      
+              let functionResult = "";
+             // console.log("In case of error",JSON.stringify(completionJson))
+              if(completionJson.function_call){
               completionJson.function_call.arguments = completionJson.function_arguments
               
               await mongo.upsertCompletionPromise(completionJson);
@@ -472,22 +474,30 @@ async function chatCompletionStreamAxiosRequest(
                 message_id: sentMsgId
               });
             }
+
      
-              const functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
+              functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
+          } else {
+              functionResult = "No function name found"
+          }
               
               if(allSettingsDict[msg.from.id][regime].sysmsg){ //Если включена функция показа системных сообщений
               const rst = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
               sentMsgId = rst.message_id
               }
-
-              
+  
               await mongo.upsertFuctionResultsPromise(msg, regime,functionResult); //записываем вызова функции в диалог
               
               //Сообщая пользователю
               if(allSettingsDict[msg.from.id][regime].sysmsg){ 
               
+                let msgTGM = msqTemplates.function_result_msg.replace("[result]",functionResult)
 
-              await botInstance.editMessageText(msqTemplates.function_result_msg.replace("[result]",functionResult), 
+                if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
+                  msgTGM = msgTGM.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
+                }
+
+              await botInstance.editMessageText(msgTGM, 
               {
                 chat_id: completionJson.telegramMsgOptions.chat_id,
                 message_id: sentMsgId
@@ -701,7 +711,10 @@ async function deliverMessage(botInstance, object) {
       let msg_id = object.content_parts[part_id].id_message;
 
       if (object.content_parts[part_id].to_send === object.content_parts[part_id].sent) {
-        console.log(new Date(),"bypass","completion_ended",object.completion_ended)
+        console.log(new Date(),"createdAtSourceDT_UTC","completion_ended",object.completion_ended)
+        console.log("part_id",part_id)
+        console.log("to_send",object.content_parts[part_id].to_send)
+        console.log("sent",object.content_parts[part_id].sent)
         continue;
       };
 

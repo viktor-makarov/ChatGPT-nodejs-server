@@ -24,6 +24,11 @@ async function Connect_to_mongo(connectionString, db) {
   return connection;
 }
 
+function mongooseVersion(){
+  return mongoose.version
+}
+
+
 async function insert_error_logPromise(error, comment) {
   try {
     const connection = await Connect_to_mongo(
@@ -141,7 +146,6 @@ const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
     throw err;
   }
 };
-
 
 const insertUsageDialoguePromise = async (
   msg,
@@ -1402,5 +1406,6 @@ module.exports = {
   insert_permissions_migrationPromise,
   insert_read_section_migrationPromise,
   upsertFuctionResultsPromise,
-  queryTockensLogsByAggPipeline
+  queryTockensLogsByAggPipeline,
+  mongooseVersion
 };

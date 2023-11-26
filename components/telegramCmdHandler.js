@@ -348,6 +348,7 @@ async function reportsSendHandler(botInstance, msg) {
       let count = 1;
 
         for (let i = 0; i < docs.length; i++) {
+      
         report =
           report +
           `\n${count}. ${docs[i].userFirstName || ""} ${
