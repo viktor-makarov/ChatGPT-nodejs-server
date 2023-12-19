@@ -1,11 +1,63 @@
 const fs = require('fs').promises;
+const { Script } = require('vm');
 
 const { encode, decode } = require("gpt-3-encoder");
+const { lte } = require('lodash');
 
 function countTokens(text) {
   //Converts string to tokens and counts their number
   const encoded = encode(text);
   return encoded.length;
+}
+
+function recursiveReplace(obj) {
+  for (var key in obj) {
+    if (typeof obj[key] === 'object') {
+      // If the value is an object, recursively call the function
+      recursiveReplace(obj[key]);
+    } else if (typeof obj[key] === 'string') {
+      // If the value is a string, check if it matches the date format
+      var datePattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+      if (datePattern.test(obj[key])) {
+        // If it matches, replace it with new Date()
+        obj[key] = new Date(obj[key]);
+      }
+    }
+  }
+  return obj
+}
+
+const replaceNewDate = (str) => {
+
+  const evalString = `(function(){return ${str}})()`;
+
+  const script = new Script(evalString, {displayErrors: true,
+});
+
+let obj = script.runInThisContext();
+
+obj = recursiveReplace(obj) //Заменяем даты на new Date(), чтобы mongoose понял.
+
+//console.log("obj",JSON.stringify(obj));
+  
+  return obj
+
+};
+
+const replaceISOStr = (str) => {
+
+const obj = JSON.parse(str, (key, value) => {
+  if (typeof value === 'string') {
+    console.log(value)
+    const match = value.match(/ISODate\(\"(.*)\"\)$/);
+    if (match) {
+      return `ISODate("${match[1]}")`;
+    }
+  }
+  return value;
+})
+
+return obj
 }
 
 function wireStingForMarkdown(inputString) {
@@ -188,5 +240,7 @@ module.exports = {
   optionsToButtons,
   get_ielts_part1_heders,
   get_ielts_part1_questions_by_headers,
-  jsonToText
+  jsonToText,
+  replaceNewDate,
+  replaceISOStr
 };

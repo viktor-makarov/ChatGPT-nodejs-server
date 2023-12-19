@@ -4,7 +4,7 @@ const modelSettings = require("../config/telegramModelsSettings");
 
 const ProfileSheema = new Schema(
   {
-    datetimeUTF: {
+    datetimeUTC: {
       type: Date,
       default: Date.now,
     },
@@ -51,11 +51,11 @@ const ProfileSheema = new Schema(
       registrationCode: { type: String },
       registrationCodeUpToDate:{ type: Boolean,default: true },
       registered: { type: Boolean },
-      registeredDTUTF: { type: Date },
+      registeredDTUTC: { type: Date },
       readInfo: { type: Boolean },
-      readInfoDTUTF: { type: Date },
+      readInfoDTUTC: { type: Date },
       admin: { type: Boolean },
-      adminDTUTF: { type: Date },
+      adminDTUTC: { type: Date },
       adminCode: { type: String },
     },
   },
@@ -66,7 +66,7 @@ const ProfileSheema = new Schema(
 
 const LogsSheema = new Schema(
   {
-    datetimeUTF: {
+    datetimeUTC: {
       type: Date,
       default: Date.now,
     },
@@ -78,7 +78,7 @@ const LogsSheema = new Schema(
 
 const RegistrationLogSheema = new Schema(
   {
-    datetimeUTF: {
+    datetimeUTC: {
       type: Date,
       default: Date.now,
     },
@@ -98,7 +98,7 @@ const RegistrationLogSheema = new Schema(
 
 const ModelsSheema = new Schema(
   {
-    updatedDTUTF: { type: Date },
+    updatedDTUTC: { type: Date },
     id: { type: String, index: { unique: true } },
     object: { type: String },
     created: { type: Number },
@@ -112,7 +112,7 @@ const ModelsSheema = new Schema(
 
 const TokensLogSheema = new Schema(
   {
-    datetimeUTF: { type: Date, default: Date.now,description:"Date and time of user's request. Should be queried as new Date()" },
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request. This field should be queried using format of new Date(). Should be queried as new Date()" },
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
@@ -130,7 +130,7 @@ const TelegramDialogSheema = new Schema(
   {
     sourceid: { type: String, index: true },
     createdAtSourceTS: { type: Number, index: true },
-    createdAtSourceDT_UTF: { type: Date },
+    createdAtSourceDT_UTC: { type: Date },
     TelegramMsgId: { type: Number },
     userid: { type: Number, index: true },
     userFirstName: { type: String },

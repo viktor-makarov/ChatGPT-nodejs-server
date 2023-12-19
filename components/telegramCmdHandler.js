@@ -322,7 +322,7 @@ async function reportsSendHandler(botInstance, msg) {
             day: "2-digit",
             month: "2-digit",
             year: "2-digit",
-          }).format(new Date(Date.parse(doc.datetimeUTF)))}`;
+          }).format(new Date(Date.parse(doc.datetimeUTC)))}`;
         count += 1;
       });
     } else if (callbackArray.join("_") === "reports_oldusers") {
@@ -339,7 +339,7 @@ async function reportsSendHandler(botInstance, msg) {
             day: "2-digit",
             month: "2-digit",
             year: "2-digit",
-          }).format(new Date(Date.parse(docs[i].datetimeUTF)))}`;
+          }).format(new Date(Date.parse(docs[i].datetimeUTC)))}`;
         count += 1;
       };
 
@@ -348,6 +348,7 @@ async function reportsSendHandler(botInstance, msg) {
       let count = 1;
 
         for (let i = 0; i < docs.length; i++) {
+      
         report =
           report +
           `\n${count}. ${docs[i].userFirstName || ""} ${

@@ -1,5 +1,6 @@
 const mongo = require("./mongo");
 const scheemas = require("./mongo_Schemas.js");
+const func = require("./other_func.js");
 
 
 
@@ -29,11 +30,19 @@ if (!function_name){
         return functionResult
     } else {
 
-
         try {
-            const argumentsjson = JSON.parse(arguments)
-            pipeline = JSON.parse(argumentsjson.aggregate_pipeline)
-            console.log(JSON.stringify(pipeline))
+            const argumentsjson = JSON.parse(arguments)      
+             
+            //console.log("Review",JSON.stringify(func.replaceISOStr(argumentsjson.aggregate_pipeline)))
+          /*  try {
+                func.replaceNewDate(argumentsjson.aggregate_pipeline)
+                } catch(err){
+                    console.log(err)
+                }*/
+           // pipeline = JSON.parse(argumentsjson.aggregate_pipeline)
+           pipeline =  func.replaceNewDate(argumentsjson.aggregate_pipeline)
+          // console.log("pipeline",JSON.stringify(pipeline))
+            
         } catch (err){
             functionResult = `Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the pipeline.`
             return functionResult
@@ -43,9 +52,10 @@ if (!function_name){
         try {
             const result = await mongo.queryTockensLogsByAggPipeline(pipeline)
             functionResult = JSON.stringify(result)
+          
             return functionResult
         } catch (err){
-            
+
             functionResult = `Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`
             return functionResult
         }
@@ -82,7 +92,7 @@ if (adminArray.includes(userid)) {
 
 functionList.push({
     "name": "get_users_activity",
-    "description": "Use this function to report on this chatbot users' activity of users. Input should be a fully formed mongodb  pipeline for aggregate function. One document represents one request of a user.",
+    "description": `Use this function to report on this chatbot users' activity of users. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongo.mongooseVersion()}. One document represents one request of a user.`,
     "parameters": {
         "type": "object",
         "properties": {
@@ -93,8 +103,8 @@ functionList.push({
         },
         "required": ["aggregate_pipeline"]
     }
-},
-)
+})
+
 }
 
 //Завершаем. Если ни одной функции нет, то передаем null
