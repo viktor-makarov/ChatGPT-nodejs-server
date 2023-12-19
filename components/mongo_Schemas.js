@@ -112,7 +112,7 @@ const ModelsSheema = new Schema(
 
 const TokensLogSheema = new Schema(
   {
-    datetimeUTF: { type: Date, default: Date.now,description:"Date and time of user's request" },
+    datetimeUTF: { type: Date, default: Date.now,description:"Date and time of user's request. Should be queried as new Date()" },
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },

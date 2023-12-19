@@ -460,38 +460,48 @@ async function chatCompletionStreamAxiosRequest(
             if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
 
               let sentMsgId = sent_msg_id
-      
+              
               completionJson.function_call.arguments = completionJson.function_arguments
               
               await mongo.upsertCompletionPromise(completionJson);
 
+              let statusText = msqTemplates.function_request_status_msg
               if(allSettingsDict[msg.from.id][regime].sysmsg){//Если включена функция показа системных сообщений
-              await botInstance.editMessageText(msqTemplates.function_request_msg.replace("[function]",JSON.stringify(completionJson.function_call)), 
+                statusText = msqTemplates.function_request_msg.replace("[function]",JSON.stringify(completionJson.function_call))
+                if(statusText.length>appsettings.telegram_options.big_outgoing_message_threshold){
+                  statusText = statusText.substring(0, telegram_options.big_outgoing_message_threshold) +"...\nСообщение было обрезано..."
+                }
+              
+              }
+              //Отправляем пользователю статус сообщение
+             await botInstance.editMessageText(statusText, 
               {
                 chat_id: completionJson.telegramMsgOptions.chat_id,
                 message_id: sentMsgId
               });
-            }
      
               const functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
-              
+              await mongo.upsertFuctionResultsPromise(msg, regime,functionResult); //записываем вызова функции в диалог
+                           
               if(allSettingsDict[msg.from.id][regime].sysmsg){ //Если включена функция показа системных сообщений
               const rst = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
               sentMsgId = rst.message_id
               }
 
-              
-              await mongo.upsertFuctionResultsPromise(msg, regime,functionResult); //записываем вызова функции в диалог
-              
-              //Сообщая пользователю
-              if(allSettingsDict[msg.from.id][regime].sysmsg){ 
-              await botInstance.editMessageText(msqTemplates.function_result_msg.replace("[result]",functionResult), 
-              {
-                chat_id: completionJson.telegramMsgOptions.chat_id,
-                message_id: sentMsgId
-              });
-            }
 
+              //Отправляем пользователю статус сообщение
+              statusText = msqTemplates.function_result_status_msg
+              if(allSettingsDict[msg.from.id][regime].sysmsg){ 
+                statusText = msqTemplates.function_result_msg.replace("[result]",functionResult)
+                if(statusText.length>appsettings.telegram_options.big_outgoing_message_threshold){
+                  statusText = statusText.substring(0, telegram_options.big_outgoing_message_threshold) +"...\nСообщение было обрезано..."
+                }
+            }
+            await botInstance.editMessageText(statusText, 
+            {
+              chat_id: completionJson.telegramMsgOptions.chat_id,
+              message_id: sentMsgId
+            });
               await botInstance.sendChatAction(completionJson.telegramMsgOptions.chat_id, "typing"); //Отправляем progress msg
 
               if(allSettingsDict[msg.from.id][regime].sysmsg){ 
@@ -520,7 +530,9 @@ async function chatCompletionStreamAxiosRequest(
               model
             ); //фиксируем потраченные токены
           } catch (err) {
-            
+            if (err.mongodblog === undefined) {
+            err.mongodblog = true;
+            }
             err.place_in_code = err.place_in_code || func_name;
             telegramErrorHandler.main(
               botInstance,

@@ -68,22 +68,7 @@ module.exports = {
         "url_path":'/v1/chat/completions',
         "default_dialogue_ttl_ms":3600000,
     },
-        "voicetotext":{
-            "welcome_msg":"Функция Голос в текст может преобразовать аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
-            "name":"Голос в текст",
-            "hostname":'https://api.openai.com',
-            "default_model":'whisper-1',
-            "url_path":'/v1/audio/transcriptions',
-            "response_format":"json",
-            "mime_types":['audio/ogg','audio/mpeg','audio/mpeg','audio/wav','video_note','audio/mp4'],
-            "filesize_limit_mb":25,
-            "options_desc":"Параметры работы функции Голос в текст:",
-            "options":{
-                "back":{
-                    "name":"<< Назад"
-                }
-            }
-        },
+
     "texteditor":{
         "welcome_msg":"Это Редактор. Просто пришлите Ваш текст в виде сообщения и я помогу его отредактировать. t° = [temperature], модель = [model]",
         "name":"Редактор",
@@ -289,6 +274,22 @@ module.exports = {
         "url_path":'/v1/chat/completions',
         "task":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian."
         
+    },
+    "voicetotext":{
+        "welcome_msg":"Функция Голос в текст может преобразовать аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
+        "name":"Голос в текст",
+        "hostname":'https://api.openai.com',
+        "default_model":'whisper-1',
+        "url_path":'/v1/audio/transcriptions',
+        "response_format":"json",
+        "mime_types":['audio/ogg','audio/mpeg','audio/mpeg','audio/wav','video_note','audio/mp4'],
+        "filesize_limit_mb":25,
+        "options_desc":"Параметры работы функции Голос в текст:",
+        "options":{
+            "back":{
+                "name":"<< Назад"
+            }
+        }
     },
     "currentsettings":{
         "name":"Текущие настройки",

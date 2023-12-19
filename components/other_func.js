@@ -74,13 +74,14 @@ function throttle(func, delay) {
 
 function optionsToButtons(object,callback_key){
 
+
   const limit_in_line = 25;
   let buttons_array =[];
   let main_rows =[]
   let main_rows_final =[]
   let back_row =[]
   let listItems = Object.keys(object)
-  listItems.sort()
+  //listItems.sort()
   listItems.forEach((item)=>{
     if(item==="back"){
       back_row.push({text:object[item].name,callback_data:callback_key+"_"+item})

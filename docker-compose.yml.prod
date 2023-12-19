@@ -1,0 +1,15 @@
+version: '3.7'
+
+services:
+  chatbot-prod:
+    image: truvoruwka/chatbot_open_ai:1.0.4
+    container_name: chatbot-prod
+    command: node ./bin/www_prod
+    restart: unless-stopped
+    environment:
+      PROD_RUN: 'true'
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN_PROD}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      REGISTRATION_KEY: ${REGISTRATION_KEY_PROD}
+      ADMIN_KEY: ${ADMIN_KEY_PROD}
+      MONGODB_CONNECTION: ${MONGODB_CONNECTION_PROD}

@@ -486,6 +486,7 @@ async function settingsOptionsHandler(botInstance, callback_data, msg) {
       //Если объект с опциями существует
       //Обновляем меню
 
+
       settingsKeyboard = otherFunctions.optionsToButtons(
         objectToParce,
         callbackArray.join("_")
