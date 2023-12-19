@@ -457,10 +457,11 @@ async function chatCompletionStreamAxiosRequest(
               throw err;
             } 
 
+            let functionResult = "";
             if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
 
               let sentMsgId = sent_msg_id
-              let functionResult = "";
+
              // console.log("In case of error",JSON.stringify(completionJson))
               if(completionJson.function_call){
                 completionJson.function_call.arguments = completionJson.function_arguments
@@ -469,12 +470,23 @@ async function chatCompletionStreamAxiosRequest(
                 let msgTGM = msqTemplates.function_request_status_msg
                 if(allSettingsDict[msg.from.id][regime].sysmsg){//Если включена функция показа системных сообщений
                   msgTGM = msqTemplates.function_request_msg.replace("[function]",JSON.stringify(completionJson.function_call))
-                  if(statusText.length>appsettings.telegram_options.big_outgoing_message_threshold){
+                  if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
                     msgTGM = msgTGM.substring(0, telegram_options.big_outgoing_message_threshold) +"...\nСообщение было обрезано..."
                   }
                 }
-                //Отправляем пользователю статус сообщение
-              await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});}
+                //Отправляем пользователю статус сообщение о том, что была запрошена функция
+              await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
+
+              msgTGM = msqTemplates.function_result_status_msg
+              if(allSettingsDict[msg.from.id][regime].sysmsg){ //Если включена функция показа системных сообщений
+                const rst = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, msqTemplates.function_result_status_msg);
+                sentMsgId = rst.message_id
+                } else {
+                  await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
+                }
+
+
+                
 
               functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
 
@@ -483,10 +495,6 @@ async function chatCompletionStreamAxiosRequest(
           }
               await mongo.upsertFuctionResultsPromise(msg, regime,functionResult); //записываем вызова функции в диалог
               
-              if(allSettingsDict[msg.from.id][regime].sysmsg){ //Если включена функция показа системных сообщений
-              const rst = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
-              sentMsgId = rst.message_id
-              }
   
               let msgTGM = msqTemplates.function_result_status_msg
               //Сообщая пользователю
@@ -495,16 +503,13 @@ async function chatCompletionStreamAxiosRequest(
                 if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
                   msgTGM = msgTGM.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
                 }
+                await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
               }
-
-              await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
-            
-            
 
               await botInstance.sendChatAction(completionJson.telegramMsgOptions.chat_id, "typing"); //Отправляем progress msg
 
               if(allSettingsDict[msg.from.id][regime].sysmsg){ 
-              const rst2 = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
+              const rst2 = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "Ждем ответа OpenAi ...");
               sentMsgId = rst2.message_id
               }
 
@@ -519,7 +524,7 @@ async function chatCompletionStreamAxiosRequest(
                 functions
                 )
 
-            
+              }
    
             await mongo.insertUsageDialoguePromise(
               msg,
