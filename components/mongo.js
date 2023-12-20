@@ -155,6 +155,7 @@ const insertUsageDialoguePromise = async (
   model
 ) => {
   try {
+
     const connection = await Connect_to_mongo(
       connectionString_self_mongo,
       db_name
@@ -184,7 +185,7 @@ const insertUsageDialoguePromise = async (
   }
 };
 
-const upsertPromptPromise = async (msg, regime) => {
+const upsertPromptPromise = async (msg, regime,functions) => {
   try {
     const connection = await Connect_to_mongo(
       connectionString_self_mongo,
@@ -206,7 +207,8 @@ const upsertPromptPromise = async (msg, regime) => {
       role: "user",
       roleid: 1,
       content: msg.text,
-      tokens: otherfunc.countTokens(msg.text),
+      functions:functions,
+      tokens: otherfunc.countTokens(msg.text)+otherfunc.countTokens(JSON.stringify(functions)),
     };
 
     return await dialog_collection.updateOne(
@@ -221,7 +223,7 @@ const upsertPromptPromise = async (msg, regime) => {
   }
 };
 
-const upsertFuctionResultsPromise = async (msg, regime,functionResult) => {
+const upsertFuctionResultsPromise = async (msg, regime,functionResult,functions) => {
   try {
 
     const connection = await Connect_to_mongo(
@@ -246,7 +248,8 @@ const upsertFuctionResultsPromise = async (msg, regime,functionResult) => {
       role: "system",
       roleid: 0,
       content: functionResult,
-      tokens: otherfunc.countTokens(functionResult)
+      functions:functions,
+      tokens: otherfunc.countTokens(functionResult)+otherfunc.countTokens(JSON.stringify(functions))
     };
 
 

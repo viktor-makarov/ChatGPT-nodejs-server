@@ -400,8 +400,16 @@ function router(botInstance) {
           innerMsg,
           regime
         );
+        
+        if(allSettingsDict[msg.from.id][regime].sysmsg){ 
+          await botInstance.sendMessage(
+            msg.chat.id,
+            msqTemplates.system_msg_show.replace("[task]",modelSettings[regime].task)
+          );
+        }
+
       }
-      await mongo.upsertPromptPromise(innerMsg, regime); //записываем prompt в диалог
+      await mongo.upsertPromptPromise(innerMsg, regime,functions); //записываем prompt в диалог
 
       if (useDebounceMs) {
         await deferredMsgHandler(

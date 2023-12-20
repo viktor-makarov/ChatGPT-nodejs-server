@@ -21,7 +21,6 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 const axios = require("axios");
-const { log } = require("console");
 
 async function getModels() {
   try {
@@ -235,11 +234,7 @@ async function chatCompletionStreamAxiosRequest(
       msg.from.id,
       regime
     ); //получаем из базы весь предыдущий диалог
-    //Учитываем потраченные токены
 
-    const previous_dialogue_tokens = dialogueList
-      .map((obj) => obj.tokens)
-      .reduce((acc, curr) => acc + curr, 0);
     //Подсчитаем токены из предыдущего диалога
 
     const token_limit =
@@ -247,7 +242,7 @@ async function chatCompletionStreamAxiosRequest(
         .request_length_limit_in_tokens;
 
     const dialogueListEdited = dialogueList.map(({ role, content,function_call }) => {
-      
+
     let result = {
         role,
         content
@@ -257,6 +252,10 @@ async function chatCompletionStreamAxiosRequest(
   }
   return result;
     });
+
+        //Учитываем потраченные токены
+    const previous_dialogue_tokens = otherFunctions.countTokens(JSON.stringify(dialogueListEdited))+otherFunctions.countTokens(JSON.stringify(functions))
+
 
     //console.log(dialogueListEdited)
 
@@ -485,21 +484,18 @@ async function chatCompletionStreamAxiosRequest(
                   await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
                 }
 
-
-                
-
               functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
 
           } else {
               functionResult = "No function name found"
           }
-              await mongo.upsertFuctionResultsPromise(msg, regime,functionResult); //записываем вызова функции в диалог
+              await mongo.upsertFuctionResultsPromise(msg, regime,functionResult,functions); //записываем вызова функции в диалог
               
   
               let msgTGM = msqTemplates.function_result_status_msg
               //Сообщая пользователю
               if(allSettingsDict[msg.from.id][regime].sysmsg){ 
-                let msgTGM = msqTemplates.function_result_msg.replace("[result]",functionResult)
+                msgTGM = msqTemplates.function_result_msg.replace("[result]",functionResult)
                 if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
                   msgTGM = msgTGM.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
                 }
@@ -523,7 +519,6 @@ async function chatCompletionStreamAxiosRequest(
                 temperature,
                 functions
                 )
-
               }
    
             await mongo.insertUsageDialoguePromise(
@@ -535,7 +530,7 @@ async function chatCompletionStreamAxiosRequest(
             ); //фиксируем потраченные токены
           } catch (err) {
             if (err.mongodblog === undefined) {
-            err.mongodblog = true;
+                err.mongodblog = true;
             }
             err.place_in_code = err.place_in_code || func_name;
             telegramErrorHandler.main(
@@ -701,6 +696,7 @@ function getJsonFromChunk(chunkString) {
     return result;
   } catch (err) {
     err.place_in_code = err.place_in_code || arguments.callee.name;
+    err.details = chunkLines
     throw err;
   }
 }

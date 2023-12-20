@@ -56,5 +56,6 @@ module.exports = {
     "function_result_status_msg":"Отправили результат. Ждем ответ...",
     "function_result_msg":"Результат выполнения функции:\n [result]",
     "current_settings":"Текущие настройки: \n [settings]",
+    "system_msg_show":"Задание: [task]",
     "too_long_message":"... \nСообщение сокращено, т.к. превысило допустимый размер сообшения Телеграмм."
 };

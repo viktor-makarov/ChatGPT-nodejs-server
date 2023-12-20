@@ -84,7 +84,7 @@ functionList.push({
         "properties": {}
     }
 }
-)
+);
 
 if (adminArray.includes(userid)) {
 
