@@ -191,7 +191,9 @@ function throttlePromise(fn, delay) {
   //  console.log(Date.now() - lastExecutedTime)
     if (lastExecutedTime===0){ //first start
       lastExecutedTime = Date.now();
-    } else if (Date.now() - lastExecutedTime > delay) {
+    }
+    
+    if (Date.now() - lastExecutedTime > delay) {
       execute();
     } else {
       timerId = setTimeout(execute, delay);
