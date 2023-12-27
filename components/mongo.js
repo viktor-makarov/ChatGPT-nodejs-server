@@ -147,6 +147,26 @@ const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
   }
 };
 
+
+const queryLogsErrorByAggPipeline = async (agg_pipeline) => {
+  try {
+    const connection = await Connect_to_mongo(
+      connectionString_self_mongo,
+      db_name
+    );
+    const token_collection = connection.model(
+      appsettings.mongodb_names.coll_errors_log,
+      scheemas.LogsSheema
+    );
+
+    return await token_collection.aggregate(agg_pipeline)
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
 const insertUsageDialoguePromise = async (
   msg,
   previous_dialogue_tokens,
@@ -1410,5 +1430,6 @@ module.exports = {
   insert_read_section_migrationPromise,
   upsertFuctionResultsPromise,
   queryTockensLogsByAggPipeline,
-  mongooseVersion
+  mongooseVersion,
+  queryLogsErrorByAggPipeline
 };

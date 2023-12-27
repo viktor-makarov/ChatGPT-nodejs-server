@@ -31,17 +31,8 @@ if (!function_name){
     } else {
 
         try {
-            const argumentsjson = JSON.parse(arguments)      
-             
-            //console.log("Review",JSON.stringify(func.replaceISOStr(argumentsjson.aggregate_pipeline)))
-          /*  try {
-                func.replaceNewDate(argumentsjson.aggregate_pipeline)
-                } catch(err){
-                    console.log(err)
-                }*/
-           // pipeline = JSON.parse(argumentsjson.aggregate_pipeline)
+            const argumentsjson = JSON.parse(arguments)              
            pipeline =  func.replaceNewDate(argumentsjson.aggregate_pipeline)
-          // console.log("pipeline",JSON.stringify(pipeline))
             
         } catch (err){
             functionResult = `Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the pipeline.`
@@ -59,6 +50,39 @@ if (!function_name){
             functionResult = `Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`
             return functionResult
         }
+
+} else if(function_name==="get_chatbot_errors") {
+
+    const arguments = function_call?.arguments
+    let pipeline = [];
+    if(arguments === "" || arguments === null || arguments === undefined){
+
+        functionResult = "No arguments provided. You should provide at least required arguments"
+
+        return functionResult
+    } else {
+
+        try {
+            const argumentsjson = JSON.parse(arguments)      
+           pipeline =  func.replaceNewDate(argumentsjson.aggregate_pipeline)
+            
+        } catch (err){
+            functionResult = `Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the pipeline.`
+            return functionResult
+        }
+    };
+
+        try {
+            const result = await mongo.queryLogsErrorByAggPipeline(pipeline)
+            functionResult = JSON.stringify(result)
+          
+            return functionResult
+        } catch (err){
+
+            functionResult = `Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`
+            return functionResult
+        }
+
 
 } else {
 
@@ -99,6 +123,21 @@ functionList.push({
             "aggregate_pipeline": {
                 "type": "string",
                 "description": `Mongodb aggregate pipeline extracting info about users' activity from a mongodb collection.\n The collection has the following schema: ${JSON.stringify(scheemas.TokensLogSheema.obj)}. You should limit result of function with maximum of 100 rows. You can use get_current_datetime function to get current date and time if needs be.`
+            }
+        },
+        "required": ["aggregate_pipeline"]
+    }
+})
+
+functionList.push({
+    "name": "get_chatbot_errors",
+    "description": `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongo.mongooseVersion()}. One document represents one error.`,
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "aggregate_pipeline": {
+                "type": "string",
+                "description": `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${JSON.stringify(scheemas.LogsSheema.obj)}. You should limit result of function with maximum of 100 rows. You can use get_current_datetime function to get current date and time if needs be.`
             }
         },
         "required": ["aggregate_pipeline"]

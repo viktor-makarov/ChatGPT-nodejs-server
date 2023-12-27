@@ -69,9 +69,10 @@ const LogsSheema = new Schema(
     datetimeUTC: {
       type: Date,
       default: Date.now,
+      description:"Date and time of error occurance. This field should be queried using format of new Date(). Should be queried as new Date()"
     },
-    error: {type: Object },
-    comment: { type: String },
+    error: {type: Object,description:"Error details" },
+    comment: { type: String,description: "Additional comment" },
   },
   { collection: appsettings.mongodb_names.coll_errors_log }
 );

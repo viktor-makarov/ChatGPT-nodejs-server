@@ -218,6 +218,74 @@ async function VoiceToText(botInstance, msg) {
   }
 }
 
+async function TextToVoice(botInstance, msg) {
+  try {
+  
+
+    //Скачиваем файл
+    const filelink = await botInstance.getFileLink(fileid);
+
+    const response = await axios({
+      url: filelink,
+      method: "GET",
+      responseType: "arraybuffer",
+    });
+    const fileData = Buffer.from(response.data, "binary");
+    var audioReadStream = Readable.from(fileData);
+    audioReadStream.path = filelink.split("/").pop();
+
+    const formData = new FormData();
+    formData.append("file", audioReadStream);
+    formData.append("model", modelSettings.voicetotext.default_model);
+
+    const headers = {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "multipart/form-data",
+      ...formData.getHeaders(),
+    };
+    var openai_resp;
+    try {
+      openai_resp = await axios.post(
+        modelSettings.voicetotext.hostname + modelSettings.voicetotext.url_path,
+        formData,
+        {
+          headers,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        }
+      );
+    } catch (err) {
+      err = new Error(err.message);
+      err.code = "OAI_ERR99";
+      err.user_message = msqTemplates.error_api_other_problems;
+      err.mongodblog = true;
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      throw err;
+    }
+
+    var transcript = msqTemplates.empty_message;
+    if (openai_resp.data) {
+      transcript = openai_resp.data.text;
+    }
+
+    await mongo.insertUsageDialoguePromise(
+      msg,
+      otherFunctions.countTokens(transcript),
+      null,
+      "voicetotext",
+      modelSettings.voicetotext.default_model
+
+    ); //фиксируем потраченные токены
+    return transcript;
+  } catch (err) {
+    if (err.mongodblog === undefined) {
+      err.mongodblog = true;
+    }
+    err.place_in_code = err.place_in_code || arguments.callee.name;
+    throw err;
+  }
+}
+
 async function chatCompletionStreamAxiosRequest(
   botInstance,
   sent_msg_id,
@@ -811,4 +879,5 @@ module.exports = {
   chatCompletionStreamAxiosRequest,
   VoiceToText,
   deliverMessageLater,
+  TextToVoice,
 };
