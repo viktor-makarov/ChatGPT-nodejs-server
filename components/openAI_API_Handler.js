@@ -182,6 +182,7 @@ async function VoiceToText(botInstance, msg) {
         formData,
         {
           headers,
+          responseType: 'stream',
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
         }
@@ -218,42 +219,31 @@ async function VoiceToText(botInstance, msg) {
   }
 }
 
-async function TextToVoice(botInstance, msg) {
+async function TextToVoice(botInstance, msg,regime,model,voice,open_ai_api_key) {
   try {
-  
 
-    //Скачиваем файл
-    const filelink = await botInstance.getFileLink(fileid);
-
-    const response = await axios({
-      url: filelink,
-      method: "GET",
-      responseType: "arraybuffer",
-    });
-    const fileData = Buffer.from(response.data, "binary");
-    var audioReadStream = Readable.from(fileData);
-    audioReadStream.path = filelink.split("/").pop();
-
-    const formData = new FormData();
-    formData.append("file", audioReadStream);
-    formData.append("model", modelSettings.voicetotext.default_model);
-
-    const headers = {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "multipart/form-data",
-      ...formData.getHeaders(),
-    };
     var openai_resp;
     try {
-      openai_resp = await axios.post(
-        modelSettings.voicetotext.hostname + modelSettings.voicetotext.url_path,
-        formData,
-        {
-          headers,
-          maxContentLength: Infinity,
-          maxBodyLength: Infinity,
-        }
-      );
+
+const options = {
+      url: modelSettings[regime].hostname + modelSettings[regime].url_path,
+      method: "POST",
+      responseType: "arraybuffer",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${open_ai_api_key}`,
+      },
+      validateStatus: function (status) {
+        return status == appsettings.http_options.SUCCESS_CODE;
+      },
+      data: {
+        model:model,
+        input: msg.text,
+        voice: voice
+    }};
+    
+      openai_resp = await axios(options);
+
     } catch (err) {
       err = new Error(err.message);
       err.code = "OAI_ERR99";
@@ -262,13 +252,29 @@ async function TextToVoice(botInstance, msg) {
       err.place_in_code = err.place_in_code || arguments.callee.name;
       throw err;
     }
+    const fileData = Buffer.from(openai_resp.data, 'binary');
+    let audioReadStream = Readable.from(fileData);
+    audioReadStream.path = voice+".mp3";
 
-    var transcript = msqTemplates.empty_message;
-    if (openai_resp.data) {
-      transcript = openai_resp.data.text;
-    }
+    const formData = new FormData();
+    formData.append('chat_id', msg.chat.id);
+    formData.append('audio', audioReadStream);
+    formData.append('title', "title");
+    
 
-    await mongo.insertUsageDialoguePromise(
+    const response = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendAudio`, 
+    formData, {
+      headers: formData.getHeaders(),
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    });
+
+    /* 
+    await botInstance.sendAudio(
+      msg.chat.id,
+      msqTemplates.system_msg_show.replace("[task]",modelSettings[regime].task)
+    );
+   await mongo.insertUsageDialoguePromise(
       msg,
       otherFunctions.countTokens(transcript),
       null,
@@ -276,7 +282,7 @@ async function TextToVoice(botInstance, msg) {
       modelSettings.voicetotext.default_model
 
     ); //фиксируем потраченные токены
-    return transcript;
+    return transcript;*/
   } catch (err) {
     if (err.mongodblog === undefined) {
       err.mongodblog = true;

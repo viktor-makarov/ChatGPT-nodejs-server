@@ -298,22 +298,64 @@ module.exports = {
         "filesize_limit_mb":25,
         "options_desc":"Параметры работы функции Голос в текст:",
         "options":{
+            
             "back":{
                 "name":"<< Назад"
             }
         }
     },
     "texttospeech":{
-        "welcome_msg":"Функция Голос в текст может преобразовать аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
-        "name":"Голос в текст",
+        "welcome_msg":"Функция Текст в голос может преобразовать текст в аудио запись. Пришлите текст, который нужно преобразовать.",
+        "name":"Текст в голос",
         "hostname":'https://api.openai.com',
-        "default_model":'whisper-1',
-        "url_path":'/v1/audio/transcriptions',
+        "default_model":'tts-1-hd',
+        "url_path":'/v1/audio/speech',
         "response_format":"json",
-        "mime_types":['audio/ogg','audio/mpeg','audio/mpeg','audio/wav','video_note','audio/mp4'],
-        "filesize_limit_mb":25,
-        "options_desc":"Параметры работы функции Голос в текст:",
+        "voice": "shimmer",
+        "options_desc":"Параметры работы функции Текст в голос:",
         "options":{
+            "model":{
+                "name":"Версия модели",
+                "options_desc":"Выберите версию модели:",
+                "templateRespMsg":"Модель для функии Переводчик изменена на [value].",
+                "options":{
+                    "tts-1":{
+                        "name":"Быстрее",
+                    },
+                    "tts-1-hd":{
+                        "name":"Лучше качество",
+                    },	
+                    "back":{
+                        "name":"<< Назад"
+                    }
+            }},
+            "voice":{
+                "name":"Версия голоса",
+                "options_desc":"Выберите версию голоса:",
+                "templateRespMsg":"Голос изменен на [value].",
+                "options":{
+                    "shimmer":{
+                        "name":"Шимер",
+                    },
+                    "alloy":{
+                        "name":"Аллой",
+                    },	
+                    "echo":{
+                        "name":"Эко",
+                    },
+                    "fable":{
+                        "name":"Фабле",
+                    },
+                    "onyx":{
+                        "name":"Оникс",
+                    },
+                    "nova":{
+                        "name":"Нова",
+                    },
+                    "back":{
+                        "name":"<< Назад"
+                    }
+            }},
             "back":{
                 "name":"<< Назад"
             }

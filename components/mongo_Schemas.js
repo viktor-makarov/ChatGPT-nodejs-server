@@ -46,6 +46,14 @@ const ProfileSheema = new Schema(
         },
         sysmsg:{ type: Boolean, default: false }
       },
+      texttospeech: {
+        voice: { type: String, default: modelSettings.texttospeech.voice},
+        model: {
+          type: String,
+          default: modelSettings.texttospeech.default_model,
+        },
+        sysmsg:{ type: Boolean, default: false }
+      },
     },
     permissions: {
       registrationCode: { type: String },

@@ -227,6 +227,10 @@ async function changeRegimeHandlerPromise(msg, regime) {
             modelSettings.voicetotext.filesize_limit_mb.toString()
           ),
         };
+      } else if (regime == "texttospeech"){
+        return {
+          text: modelSettings[regime].welcome_msg,
+        };
       } else {
         return {
           text: modelSettings[regime].welcome_msg

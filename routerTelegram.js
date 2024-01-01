@@ -244,7 +244,8 @@ function router(botInstance) {
         /^\/texteditor/i.test(msg.text) ||
         /^\/codereviewer/i.test(msg.text) ||
         /^\/translator/i.test(msg.text) ||
-        /^\/voicetotext/i.test(msg.text)
+        /^\/voicetotext/i.test(msg.text) ||
+        /^\/texttospeech/i.test(msg.text) 
       ) {
         //обрабатываем команды смены режима
 
@@ -343,7 +344,7 @@ function router(botInstance) {
         await sendMessagePartsSequentially();
 
         if (
-          global.allSettingsDict[msg.from.id].current_regime === "voicetotext"
+          global.allSettingsDict[msg.from.id].current_regime === "voicetotext" 
         ) {
           //Если включен режим voicetotеxt, то сообщение не пересылается в сервис
           return;
@@ -385,9 +386,21 @@ function router(botInstance) {
 
       const regime = global.allSettingsDict[innerMsg.from.id].current_regime
       const model = allSettingsDict[innerMsg.from.id][regime].model || modelSettings[regime].default_model
+      const voice = allSettingsDict[innerMsg.from.id][regime].voice || modelSettings[regime].voice
       const temperature = allSettingsDict[innerMsg.from.id][regime].temperature || 1
       const functions = await telegramFunctionHandler.functionsList(innerMsg.from.id)
- 
+      
+      if(regime === "texttospeech"){
+        const transcript = await openAIApiHandler.TextToVoice(
+          botInstance,
+          innerMsg,
+          regime,
+          model,
+          voice,
+          process.env.OPENAI_API_KEY
+        );
+        return
+      }
 
       if (regime != "assistant") {
         await mongo.deleteDialogByUserPromise(innerMsg.from.id, regime); //удаляем диалог, если это не ассистент, т.к. не требуется учитывать предыдущий диалог
@@ -407,8 +420,8 @@ function router(botInstance) {
             msqTemplates.system_msg_show.replace("[task]",modelSettings[regime].task)
           );
         }
-
       }
+
       await mongo.upsertPromptPromise(innerMsg, regime,functions); //записываем prompt в диалог
 
       if (useDebounceMs) {
