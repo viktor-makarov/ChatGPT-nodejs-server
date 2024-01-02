@@ -201,14 +201,13 @@ async function VoiceToText(botInstance, msg) {
       transcript = openai_resp.data.text;
     }
 
-    await mongo.insertUsageDialoguePromise(
+    mongo.insertUsageDialoguePromise(
       msg,
-      otherFunctions.countTokens(transcript),
       null,
+      otherFunctions.countTokens(transcript),
       "voicetotext",
       modelSettings.voicetotext.default_model
-
-    ); //фиксируем потраченные токены
+    ); //ассинхронно фиксируем потраченные токены
     return transcript;
   } catch (err) {
     if (err.mongodblog === undefined) {
@@ -241,7 +240,7 @@ const options = {
         input: msg.text,
         voice: voice
     }};
-    
+  
       openai_resp = await axios(options);
 
     } catch (err) {
@@ -256,10 +255,18 @@ const options = {
     let audioReadStream = Readable.from(fileData);
     audioReadStream.path = voice+".mp3";
 
+    mongo.insertUsageDialoguePromise(
+      msg,
+      otherFunctions.countTokens(msg.text),
+      null,
+      "texttovoice",
+      model
+    ); //ассинхронно фиксируем потраченные токены
+
     const formData = new FormData();
     formData.append('chat_id', msg.chat.id);
     formData.append('audio', audioReadStream);
-    formData.append('title', "title");
+  //  formData.append('title', "title");
     
 
     const response = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendAudio`, 
@@ -269,21 +276,10 @@ const options = {
       maxBodyLength: Infinity,
     });
 
-    /* 
-    await botInstance.sendAudio(
-      msg.chat.id,
-      msqTemplates.system_msg_show.replace("[task]",modelSettings[regime].task)
-    );
-   await mongo.insertUsageDialoguePromise(
-      msg,
-      otherFunctions.countTokens(transcript),
-      null,
-      "voicetotext",
-      modelSettings.voicetotext.default_model
 
-    ); //фиксируем потраченные токены
-    return transcript;*/
+    return response
   } catch (err) {
+    
     if (err.mongodblog === undefined) {
       err.mongodblog = true;
     }
@@ -431,8 +427,12 @@ async function chatCompletionStreamAxiosRequest(
                             allSettingsDict[msg.from.id][regime].temperature
                           ),
                           callback_data: "regenerate_" + regime,
+                        }],
+                        [{
+                          text: msqTemplates.readaloud,
+                          callback_data: "readaloud",
                         },
-                      ],
+                      ]
                     ],
                   }),
                 },

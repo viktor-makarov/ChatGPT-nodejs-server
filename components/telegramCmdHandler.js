@@ -229,7 +229,10 @@ async function changeRegimeHandlerPromise(msg, regime) {
         };
       } else if (regime == "texttospeech"){
         return {
-          text: modelSettings[regime].welcome_msg,
+          text: modelSettings[regime].welcome_msg.replace(
+            "[limit]",
+            appsettings.telegram_options.big_message_threshold
+          ),
         };
       } else {
         return {

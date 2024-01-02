@@ -279,7 +279,7 @@ function router(botInstance) {
       }
 
       //обрабатываем остальные сообщения, то есть сообщения с текстом.
-
+      
       var innerMsg = new Object(); //создаем новый инстанс сообщения
       innerMsg = msg;
 
@@ -391,14 +391,35 @@ function router(botInstance) {
       const functions = await telegramFunctionHandler.functionsList(innerMsg.from.id)
       
       if(regime === "texttospeech"){
-        const transcript = await openAIApiHandler.TextToVoice(
-          botInstance,
-          innerMsg,
-          regime,
-          model,
-          voice,
-          process.env.OPENAI_API_KEY
+        if(innerMsg.text.length>appsettings.telegram_options.big_message_threshold){
+          const progressMsg = await botInstance.sendMessage(
+            innerMsg.chat.id,
+            msqTemplates.texttospeech_length_error.replace("[limit]",appsettings.telegram_options.big_message_threshold)
+          );
+        } else {
+
+          const progressMsg = await botInstance.sendMessage(
+            innerMsg.chat.id,
+            msqTemplates.texttospeech_progress
+          );      
+
+          const transcript = await openAIApiHandler.TextToVoice(
+            botInstance,
+            innerMsg,
+            regime,
+            model,
+            voice,
+            process.env.OPENAI_API_KEY
+          );
+        
+     //   console.log("progressMsg",progressMsg)
+        await botInstance.deleteMessage(
+          innerMsg.chat.id,
+          progressMsg.message_id
         );
+      }
+
+        jointMsg = ""; //обнуляем накопленные сообщения
         return
       }
 
@@ -513,6 +534,33 @@ function router(botInstance) {
           functions,
           regime
         );
+      } else if (callback_msg.data.startsWith("readaloud")) {
+        await botInstance.answerCallbackQuery(callback_msg.id);
+        
+        const regime = "texttospeech"
+        const model = allSettingsDict[callback_msg.from.id][regime].model || modelSettings[regime].default_model
+        const voice = allSettingsDict[callback_msg.from.id][regime].voice || modelSettings[regime].voice
+
+        const progressMsg = await botInstance.sendMessage(
+          callback_msg.message.chat.id,
+          msqTemplates.texttospeech_progress
+        );      
+
+        const transcript = await openAIApiHandler.TextToVoice(
+          botInstance,
+          callback_msg.message,
+          regime,
+          model,
+          voice,
+          process.env.OPENAI_API_KEY
+        );
+      
+   //   console.log("progressMsg",progressMsg)
+      await botInstance.deleteMessage(
+        callback_msg.message.chat.id,
+        progressMsg.message_id
+      );
+
       } else if (callback_msg.data.startsWith("settings")) {
         await botInstance.answerCallbackQuery(callback_msg.id);
         response = await telegramCmdHandler.settingsOptionsHandler(
