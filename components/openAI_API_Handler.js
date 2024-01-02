@@ -372,13 +372,13 @@ async function chatCompletionStreamAxiosRequest(
           try {
             const chunkString = chunk.toString("utf8");
             
-          
             chunks = getJsonFromChunk(
               (chunks?.incomplete ?? "") + chunkString
             );
             chunkJsonList = chunks.complete;
-              
-        
+             
+
+
             if (
               completionJson.content == undefined &&
               chunkJsonList.length > 0
@@ -507,6 +507,7 @@ async function chatCompletionStreamAxiosRequest(
           } catch (err) {
             err.mongodblog = true;
             err.place_in_code = err.place_in_code || func_name;
+            err.completionJson = completionJson
             telegramErrorHandler.main(
               botInstance,
               msg.chat.id,
@@ -606,6 +607,7 @@ async function chatCompletionStreamAxiosRequest(
             if (err.mongodblog === undefined) {
                 err.mongodblog = true;
             }
+            err.completionJson = completionJson
             err.place_in_code = err.place_in_code || func_name;
             telegramErrorHandler.main(
               botInstance,
@@ -709,6 +711,7 @@ async function sentEditedMessage(botInstance, completionJson) {
     //Tested
     err.mongodblog = true;
     err.place_in_code = err.place_in_code || arguments.callee.name;
+    err.completionJson  = completionJson
     telegramErrorHandler.main(
       botInstance,
       completionJson.telegramMsgOptions.chat_id,
