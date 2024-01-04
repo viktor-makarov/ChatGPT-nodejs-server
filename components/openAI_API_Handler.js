@@ -58,10 +58,17 @@ async function UnSuccessResponseHandle(
     } else if (error.message.includes("503")) {
       err = new Error(error.message);
       err.code = "OAI_ERR1";
-      err.user_message = msqTemplates.error_api_too_many_req;
+      err.user_message = msqTemplates.OAI_ERR1;
       err.mongodblog = true;
       err.place_in_code = err.place_in_code || arguments.callee.name;
       throw err;
+    } else if (error.code === "ECONNABORTED") {
+        err = new Error(error.message);
+        err.code = "OAI_ERR1";
+        err.user_message = msqTemplates.OAI_ERR1;
+        err.mongodblog = true;
+        err.place_in_code = err.place_in_code || arguments.callee.name;
+        throw err;
     } else if (previous_dialogue_tokens > token_limit) {
       //Проверяем, что кол-во токенов не превышает лимит
 
@@ -338,6 +345,7 @@ async function chatCompletionStreamAxiosRequest(
       method: "POST",
       encoding: "utf8",
       responseType: "stream",
+      timeout: appsettings.http_options.OAI_request_timeout,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${open_ai_api_key}`,
@@ -497,7 +505,6 @@ async function chatCompletionStreamAxiosRequest(
               completionJson.content_parts[last_part].content_ending = " ...";
             }
 
-
             if (completionJson.function_call) {//Проверяем, что это не запрос функции
               return
             } else {
@@ -507,7 +514,7 @@ async function chatCompletionStreamAxiosRequest(
           } catch (err) {
             err.mongodblog = true;
             err.place_in_code = err.place_in_code || func_name;
-            err.completionJson = completionJson
+            err.details = completionJson
             telegramErrorHandler.main(
               botInstance,
               msg.chat.id,
@@ -595,7 +602,7 @@ async function chatCompletionStreamAxiosRequest(
                 functions
                 )
               }
-   
+
             await mongo.insertUsageDialoguePromise(
               msg,
               previous_dialogue_tokens,
@@ -607,7 +614,7 @@ async function chatCompletionStreamAxiosRequest(
             if (err.mongodblog === undefined) {
                 err.mongodblog = true;
             }
-            err.completionJson = completionJson
+            err.details = completionJson
             err.place_in_code = err.place_in_code || func_name;
             telegramErrorHandler.main(
               botInstance,
@@ -711,7 +718,7 @@ async function sentEditedMessage(botInstance, completionJson) {
     //Tested
     err.mongodblog = true;
     err.place_in_code = err.place_in_code || arguments.callee.name;
-    err.completionJson  = completionJson
+    err.details  = completionJson
     telegramErrorHandler.main(
       botInstance,
       completionJson.telegramMsgOptions.chat_id,
@@ -786,11 +793,12 @@ async function deliverMessage(botInstance, object) {
       const part_id = list_of_parts_messages[i];
       let msg_id = object.content_parts[part_id].id_message;
 
-      if (object.content_parts[part_id].to_send === object.content_parts[part_id].sent) {
-        console.log(new Date(),"createdAtSourceDT_UTC","completion_ended",object.completion_ended)
-        console.log("part_id",part_id)
-        console.log("to_send",object.content_parts[part_id].to_send)
-        console.log("sent",object.content_parts[part_id].sent)
+      if (object.content_parts[part_id].to_send === object.content_parts[part_id].sent
+        &&
+        ! object.completion_ended
+        ) {
+
+        mongo.insert_details_logPromise(object,"components/openAI_API_Handler.js/deliverMessage/if()")
         continue;
       };
 
@@ -831,6 +839,7 @@ async function deliverMessage(botInstance, object) {
         resultArray.push({id: part_id,id_message: msg_id,text: object.content_parts[part_id].to_send});
       } else {
         err.mongodblog = true;
+        err.details = object
         err.place_in_code = err.place_in_code || arguments.callee.name;
         throw err
       }
@@ -839,6 +848,7 @@ async function deliverMessage(botInstance, object) {
     return resultArray;
   } catch (err) {
     err.mongodblog = true;
+    err.details = object
     err.place_in_code = err.place_in_code || arguments.callee.name;
     throw err
   }
@@ -870,11 +880,13 @@ async function deliverMessageLater(botInstance, object,seconds_to_wait){
     result = await deliverMessage(botInstance, doc[0])
     resolve(result)
     } catch(err){
+      err.details = object
       err.place_in_code = err.place_in_code || func_name;     
       reject(err) 
     }
   }, seconds_to_wait * 1000)
 } catch(err){
+  err.details = object
   err.place_in_code = err.place_in_code || func_name;     
   reject(err) 
 }

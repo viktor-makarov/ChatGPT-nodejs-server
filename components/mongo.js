@@ -29,6 +29,28 @@ function mongooseVersion(){
 }
 
 
+async function insert_details_logPromise(object,place_in_code) {
+  try {
+    const connection = await Connect_to_mongo(
+      connectionString_self_mongo,
+      db_name
+    );
+    const details_log_collection = connection.model(
+      appsettings.mongodb_names.coll_details,
+      scheemas.DetailsSheema
+    );
+    const newLog = new details_log_collection({
+      object: object,
+      place_in_code:place_in_code
+    });
+    return await newLog.save();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+}
+
 async function insert_error_logPromise(error, comment) {
   try {
     const connection = await Connect_to_mongo(
@@ -45,6 +67,7 @@ async function insert_error_logPromise(error, comment) {
         original_code: error.original_code,
         message: error.message,
         stack: error.stack,
+        details:error.details,
         place_in_code: error.place_in_code,
         user_message: error.user_message,
       },
@@ -1431,5 +1454,6 @@ module.exports = {
   upsertFuctionResultsPromise,
   queryTockensLogsByAggPipeline,
   mongooseVersion,
-  queryLogsErrorByAggPipeline
+  queryLogsErrorByAggPipeline,
+  insert_details_logPromise
 };

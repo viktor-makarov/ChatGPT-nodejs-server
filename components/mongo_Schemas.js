@@ -85,6 +85,18 @@ const LogsSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_errors_log }
 );
 
+const DetailsSheema = new Schema(
+  {
+    datetimeUTC: {
+      type: Date,
+      default: Date.now
+    },
+    object: {type: Object},
+    place_in_code: {type: String},
+  },
+  { collection: appsettings.mongodb_names.coll_details }
+);
+
 const RegistrationLogSheema = new Schema(
   {
     datetimeUTC: {
@@ -168,6 +180,7 @@ module.exports = {
   LogsSheema,
   RegistrationLogSheema,
   ModelsSheema,
+  DetailsSheema,
   TokensLogSheema,
   TelegramDialogSheema,
 };
