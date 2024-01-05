@@ -444,7 +444,7 @@ function router(botInstance) {
       }
 
       await mongo.upsertPromptPromise(innerMsg, regime,functions); //записываем prompt в диалог
-
+   //  console.log("1", new Date())
       if (useDebounceMs) {
         await deferredMsgHandler(
           botInstance,
@@ -545,7 +545,6 @@ function router(botInstance) {
           callback_msg.message.chat.id,
           msqTemplates.texttospeech_progress
         );      
-
         const transcript = await openAIApiHandler.TextToVoice(
           botInstance,
           callback_msg.message,
@@ -625,7 +624,7 @@ async function MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,tempe
     console.log("message lenght", msg.text.length, new Date());
   }
   //  console.log("Полученный текст",msg.text)
-
+ // console.log("2",new Date())
   await botInstance.sendChatAction(chat_id, "typing"); //Отправляем progress msg
   const result = await botInstance.sendMessage(chat_id, "..."); //Следом отправляем plaseholder
   await openAIApiHandler.chatCompletionStreamAxiosRequest(

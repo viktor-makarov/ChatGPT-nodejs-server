@@ -137,7 +137,7 @@ const TokensLogSheema = new Schema(
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
-    username: { type: String },
+    username: { type: String, description: "Use this field as default and primary identificator of a user." },
     model: { type: String,description: "OpenAI model used for request." },
     prompt_tokens: { type: Number,description: "Number of tokens in prompt of the request." },
     completion_tokens: { type: Number,description: "Number of tokens in completion of the request." },

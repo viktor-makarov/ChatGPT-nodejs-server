@@ -189,7 +189,6 @@ async function VoiceToText(botInstance, msg) {
         formData,
         {
           headers,
-          responseType: 'stream',
           maxContentLength: Infinity,
           maxBodyLength: Infinity,
         }
@@ -207,7 +206,6 @@ async function VoiceToText(botInstance, msg) {
     if (openai_resp.data) {
       transcript = openai_resp.data.text;
     }
-
     mongo.insertUsageDialoguePromise(
       msg,
       null,
@@ -227,6 +225,7 @@ async function VoiceToText(botInstance, msg) {
 
 async function TextToVoice(botInstance, msg,regime,model,voice,open_ai_api_key) {
   try {
+    console.log(msg)
 
     var openai_resp;
     try {
@@ -283,7 +282,6 @@ const options = {
       maxBodyLength: Infinity,
     });
 
-
     return response
   } catch (err) {
     
@@ -311,7 +309,7 @@ async function chatCompletionStreamAxiosRequest(
       msg.from.id,
       regime
     ); //получаем из базы весь предыдущий диалог
-
+     // console.log("3","start function",new Date())
     //Подсчитаем токены из предыдущего диалога
 
     const token_limit =
@@ -364,7 +362,7 @@ async function chatCompletionStreamAxiosRequest(
       //Add functions, if they exist
       options.data.functions = functions
     }
-
+   // console.log("4","before axios",new Date())
     axios(options)
       .then((response) => {
         //Объявляем функцию для тротлинга
@@ -540,7 +538,7 @@ async function chatCompletionStreamAxiosRequest(
 
             let functionResult = "";
             if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
-
+          //    console.log("5","it is function call",new Date())
               let sentMsgId = sent_msg_id
 
              // console.log("In case of error",JSON.stringify(completionJson))
@@ -557,7 +555,7 @@ async function chatCompletionStreamAxiosRequest(
                 }
                 //Отправляем пользователю статус сообщение о том, что была запрошена функция
               await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
-
+           //   console.log("6","function requested msg",new Date())
               msgTGM = msqTemplates.function_result_status_msg
               if(allSettingsDict[msg.from.id][regime].sysmsg){ //Если включена функция показа системных сообщений
                 const rst = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, msqTemplates.function_result_status_msg);
@@ -591,6 +589,7 @@ async function chatCompletionStreamAxiosRequest(
               sentMsgId = rst2.message_id
               }
 
+           //   console.log("7","another request",new Date())
               await chatCompletionStreamAxiosRequest(
                 botInstance,
                 sentMsgId,

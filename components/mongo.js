@@ -208,10 +208,10 @@ const insertUsageDialoguePromise = async (
       scheemas.TokensLogSheema
     );
     const newTokenUsage = new token_collection({
-      userid: msg.from.id,
-      userFirstName: msg.from.first_name,
-      userLastName: msg.from.last_name,
-      username: msg.from.username,
+      userid: msg.chat.id,
+      userFirstName: msg.chat.first_name,
+      userLastName: msg.chat.last_name,
+      username: msg.chat.username,
       model:model,
       prompt_tokens: previous_dialogue_tokens,
       completion_tokens: completion_tokens_count,
