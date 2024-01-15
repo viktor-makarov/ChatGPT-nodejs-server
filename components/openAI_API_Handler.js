@@ -225,7 +225,6 @@ async function VoiceToText(botInstance, msg) {
 
 async function TextToVoice(botInstance, msg,regime,model,voice,open_ai_api_key) {
   try {
-    console.log(msg)
 
     var openai_resp;
     try {

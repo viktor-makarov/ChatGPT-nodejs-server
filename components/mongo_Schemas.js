@@ -77,7 +77,7 @@ const LogsSheema = new Schema(
     datetimeUTC: {
       type: Date,
       default: Date.now,
-      description:"Date and time of error occurance. This field should be queried using format of new Date(). Should be queried as new Date()"
+      description:"Date and time of error occurance. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')."
     },
     error: {type: Object,description:"Error details" },
     comment: { type: String,description: "Additional comment" },
@@ -133,7 +133,7 @@ const ModelsSheema = new Schema(
 
 const TokensLogSheema = new Schema(
   {
-    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request. This field should be queried using format of new Date(). Should be queried as new Date()" },
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')." },
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },

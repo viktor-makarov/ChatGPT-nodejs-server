@@ -383,7 +383,6 @@ function router(botInstance) {
       jointMsg = jointMsg + innerMsg.text; //накапливаем сообщения
       innerMsg.text = jointMsg;
 
-
       const regime = global.allSettingsDict[innerMsg.from.id].current_regime
       const model = allSettingsDict[innerMsg.from.id][regime].model || modelSettings[regime].default_model
       const voice = allSettingsDict[innerMsg.from.id][regime].voice || modelSettings[regime].voice
@@ -442,8 +441,6 @@ function router(botInstance) {
           );
         }
       }
-
-      await mongo.upsertPromptPromise(innerMsg, regime,functions); //записываем prompt в диалог
    //  console.log("1", new Date())
       if (useDebounceMs) {
         await deferredMsgHandler(
@@ -457,6 +454,7 @@ function router(botInstance) {
           regime
         ); //запускаем отложенный обработчик
       } else {
+        await mongo.upsertPromptPromise(innerMsg, regime,functions); //записываем prompt в диалог  
         await MsgHandler(botInstance, innerMsg.chat.id, innerMsg, process.env.OPENAI_API_KEY,model,temperature,functions,regime); //запускаем обычный обработчик
       }
       jointMsg = ""; //обнуляем накопленные сообщения
@@ -615,18 +613,27 @@ function router(botInstance) {
 }
 
 const deferredMsgHandler = otherFunctions.debounceConstructorPromise(
-  MsgHandler,
+  MsgHandlerContainer,
   appsettings.telegram_options.debounceMs
 );
+
+async function MsgHandlerContainer(botInstance, chat_id, msg, open_ai_api_key,model,temperature,functions,regime) {
+
+  await mongo.upsertPromptPromise(msg, regime,functions); //записываем prompt в диалог  
+   await MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,temperature,functions,regime)
+}
 
 async function MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,temperature,functions,regime) {
   if (msg.text && process.env.PROD_RUN) {
     console.log("message lenght", msg.text.length, new Date());
   }
+
+  
   //  console.log("Полученный текст",msg.text)
  // console.log("2",new Date())
   await botInstance.sendChatAction(chat_id, "typing"); //Отправляем progress msg
   const result = await botInstance.sendMessage(chat_id, "..."); //Следом отправляем plaseholder
+
   await openAIApiHandler.chatCompletionStreamAxiosRequest(
     botInstance,
     result.message_id,
@@ -645,5 +652,6 @@ module.exports = {
   setBotParameters,
   GetModelsFromAPI,
   UpdateGlobalVariables,
-  MsgHandler
+  MsgHandler,
+  MsgHandlerContainer
 };

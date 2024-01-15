@@ -42,7 +42,18 @@ if (!function_name){
 
         try {
             const result = await mongo.queryTockensLogsByAggPipeline(pipeline)
-            functionResult = JSON.stringify(result)
+            const strResult = JSON.stringify(result)
+    
+            if(strResult.length>appsettings.functions_options.max_characters_in_result){
+
+                functionResult = `Result of the function exceeds ${appsettings.functions_options.max_characters_in_result} characters. Please adjust the query to reduce length of the result.`
+                return functionResult
+
+            } else{
+                functionResult = strResult
+          
+                return functionResult
+            }
           
             return functionResult
         } catch (err){
