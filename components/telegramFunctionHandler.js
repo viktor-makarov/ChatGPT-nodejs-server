@@ -1,8 +1,45 @@
 const mongo = require("./mongo");
 const scheemas = require("./mongo_Schemas.js");
 const func = require("./other_func.js");
+const axios = require("axios");
 
+async function CreateImage(prompt,model,size,style){
+    try {
+    
+      const options = {
+        url: "https://api.openai.com/v1/images/generations",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
+        validateStatus: function (status) {
+          return status == appsettings.http_options.SUCCESS_CODE;
+        },
+        data: {
+          model:model,
+          prompt:prompt,
+          n: 1 
+      }};
+      if (size){
+        options.data.size = size
+      }
 
+      if (style){
+        options.data.style = style
+      }
+
+       const openai_resp = await axios(options);
+    
+        return openai_resp
+    } catch (err){
+      if (err.mongodblog === undefined) {
+        err.mongodblog = true;
+      }
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      throw err;
+    }
+    }
 
 
 async function runFunctionRequest(msg,function_call){
@@ -18,6 +55,51 @@ if (!function_name){
 } else if(function_name==="get_current_datetime"){
 
     functionResult = new Date().toString()
+
+} else if(function_name==="create_image"){
+
+    const arguments = function_call?.arguments
+
+    if(arguments === "" || arguments === null || arguments === undefined){
+
+        functionResult = "No arguments provided. You should provide at least required arguments"
+
+        return functionResult
+    } 
+    
+    const argumentsjson = JSON.parse(arguments)   
+    
+    if (argumentsjson.prompt === "" || argumentsjson.prompt === null || argumentsjson.prompt === undefined){
+
+        functionResult = "Prompt param contains no text. You should provide the text."
+
+        return functionResult
+    } else if (argumentsjson.prompt.length > 4000){
+
+        functionResult = `Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`
+
+        return functionResult
+    } else {
+        const prompt = argumentsjson.prompt
+        const style = argumentsjson?.style
+        const size = argumentsjson?.size
+
+        const sizeArray = ["1024x1024","1792x1024","1024x1792"]
+        const styleArray = ["vivid","natural"]
+        
+        if(!sizeArray.includes(size)&&size){
+            functionResult = `Size param can not have other value than 1024x1024, 1792x1024 or 1024x1792. Please choose one of the three.`
+            return functionResult
+        }
+
+        if(!styleArray.includes(style)&&style){
+            functionResult = `Style param can not have other value than vivid or natural. Please choose one of the two.`
+            return functionResult
+        }
+
+        const resp = await CreateImage(prompt,"dall-e-3",size,style)
+        console.log(resp.data)
+    };
 
 } else if(function_name==="get_users_activity"){
 
@@ -55,7 +137,6 @@ if (!function_name){
                 return functionResult
             }
           
-            return functionResult
         } catch (err){
 
             functionResult = `Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`
@@ -121,6 +202,31 @@ functionList.push({
 }
 );
 
+functionList.push({
+    "name": "create_image",
+    "description": "Use this function to answer user's questions to create an image given a prompt.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "size": {
+                "type": "string",
+                "description": `Size of the image. It can be 1024x1024, 1792x1024, or 1024x1792.`
+            },
+            "style": {
+                "type": "string",
+                "description": `The style of the generated images. Must be one of vivid or natural. Vivid causes the model to lean towards generating hyper-real and dramatic images. Natural causes the model to produce more natural, less hyper-real looking images.`
+            },
+            "prompt": {
+                "type": "string",
+                "description": `A text description of the desired image(s). The maximum length is 4000 characters.`
+            },
+        },
+        "required": ["prompt"]
+    }
+}
+);
+
+
 if (adminArray.includes(userid)) {
 
 //Функции для админа
@@ -172,5 +278,6 @@ if (functionList.length===0){
 
 module.exports = {
     functionsList,
-    runFunctionRequest
+    runFunctionRequest,
+    CreateImage
 }

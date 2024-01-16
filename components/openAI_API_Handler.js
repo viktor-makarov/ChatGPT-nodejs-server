@@ -126,6 +126,9 @@ async function OverlengthErrorHandle(
   }
 }
 
+
+
+
 async function VoiceToText(botInstance, msg) {
   try {
     //Проверяем ограничения
@@ -898,5 +901,5 @@ module.exports = {
   chatCompletionStreamAxiosRequest,
   VoiceToText,
   deliverMessageLater,
-  TextToVoice,
+  TextToVoice
 };

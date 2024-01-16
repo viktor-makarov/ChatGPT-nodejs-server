@@ -275,6 +275,8 @@ function router(botInstance) {
 
         await botInstance.sendMessage(msg.chat.id, response);
         // botInstance.sendMessage("111", response)
+        console.log(await botInstance.getFileLink(msg?.photo[3].file_id))
+        console.log(msg?.photo)
         return;
       }
 
