@@ -29,14 +29,14 @@ async function CreateImage(prompt,model,size,style){
       if (style){
         options.data.style = style
       }
-      
+ 
 
        const openai_resp = await axios(options);
        console.log(openai_resp.data)
        const fileData = Buffer.from(openai_resp.data[0].b64_json, 'binary');
        let imageReadStream = Readable.from(fileData);
        imageReadStream.path = "photo.jpg";  
-
+        
        const formData = new FormData();
        formData.append('chat_id', msg.chat.id);
        formData.append('photo', audioReadStream);   
@@ -117,7 +117,7 @@ if (!function_name){
         }
 
         const resp = await CreateImage(prompt,"dall-e-3",size,style)
-        console.log(resp.data)
+        console.log(resp)
     };
 
 } else if(function_name==="get_users_activity"){

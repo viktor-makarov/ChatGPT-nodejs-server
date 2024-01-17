@@ -8,6 +8,7 @@ mongodb_names:  #db and collections names for mongodb
   coll_dialogs: telegram_dialogs #stores active dialogs
   coll_reg_log: telegram_reg_log #stores registration/unregistration events
   coll_models: models_openai #stores list of actual open ai models
+  coll_details: details_log #stores details for further research
 
 mongodb_connections: #stores connection strings to mongo db
   options:
@@ -22,11 +23,15 @@ mongodb_connections: #stores connection strings to mongo db
 
 http_options:
   SUCCESS_CODE: 200
+  OAI_request_timeout: 30000
+
+functions_options:
+  max_characters_in_result: 6000
 
 telegram_options:
   send_throttle_ms: 1000 #Send only one message per second
   debounceMs: 1000 #Wait for other parts of the message
-  big_message_threshold: 2000 #3000 symbols msgs are considered big 
+  big_message_threshold: 3000 #3000 symbols msgs are considered big 
   big_outgoing_message_threshold: 3900 #After this threshold bot makes second message
   commands:
     - command: "/assistant"
@@ -37,6 +42,8 @@ telegram_options:
       description: "Редактор кода"
     - command: "/voicetotext"
       description: "Голос в текст"
+    - command: "/texttospeech"
+      description: "Текст в голос"
     - command: "/translator"
       description: "Переводчик"
     - command: '/settings'
