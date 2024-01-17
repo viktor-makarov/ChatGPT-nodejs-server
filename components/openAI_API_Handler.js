@@ -126,9 +126,6 @@ async function OverlengthErrorHandle(
   }
 }
 
-
-
-
 async function VoiceToText(botInstance, msg) {
   try {
     //Проверяем ограничения

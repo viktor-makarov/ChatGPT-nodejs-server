@@ -19,7 +19,8 @@ async function CreateImage(prompt,model,size,style){
         data: {
           model:model,
           prompt:prompt,
-          n: 1 
+          n: 1,
+          response_format:"b64_json" 
       }};
       if (size){
         options.data.size = size
@@ -28,8 +29,26 @@ async function CreateImage(prompt,model,size,style){
       if (style){
         options.data.style = style
       }
+      
 
        const openai_resp = await axios(options);
+       console.log(openai_resp.data)
+       const fileData = Buffer.from(openai_resp.data[0].b64_json, 'binary');
+       let imageReadStream = Readable.from(fileData);
+       imageReadStream.path = "photo.jpg";  
+
+       const formData = new FormData();
+       formData.append('chat_id', msg.chat.id);
+       formData.append('photo', audioReadStream);   
+
+       const response = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendPhoto`, 
+        formData, {
+        headers: formData.getHeaders(),
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        });
+
+        console.log(response)
     
         return openai_resp
     } catch (err){
@@ -86,7 +105,7 @@ if (!function_name){
 
         const sizeArray = ["1024x1024","1792x1024","1024x1792"]
         const styleArray = ["vivid","natural"]
-        
+
         if(!sizeArray.includes(size)&&size){
             functionResult = `Size param can not have other value than 1024x1024, 1792x1024 or 1024x1792. Please choose one of the three.`
             return functionResult
@@ -204,7 +223,7 @@ functionList.push({
 
 functionList.push({
     "name": "create_image",
-    "description": "Use this function to answer user's questions to create an image given a prompt.",
+    "description": "Use this function to answer user's questions to create or draw an image given a prompt.",
     "parameters": {
         "type": "object",
         "properties": {
