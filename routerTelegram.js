@@ -275,7 +275,7 @@ function router(botInstance) {
 
         await botInstance.sendMessage(msg.chat.id, response);
         // botInstance.sendMessage("111", response)
-
+        console.log(msg)
         return;
       }
 

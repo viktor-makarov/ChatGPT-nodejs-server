@@ -10,6 +10,12 @@ function countTokens(text) {
   return encoded.length;
 }
 
+
+function countTokensProportion(text) {
+  //Converts string to tokens and counts their number
+  return text.length/3.2;
+};
+
 function recursiveReplace(obj) {
   for (var key in obj) {
     if (typeof obj[key] === 'object') {
@@ -244,5 +250,6 @@ module.exports = {
   get_ielts_part1_questions_by_headers,
   jsonToText,
   replaceNewDate,
-  replaceISOStr
+  replaceISOStr,
+  countTokensProportion
 };

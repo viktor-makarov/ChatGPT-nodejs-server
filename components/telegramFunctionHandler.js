@@ -2,8 +2,15 @@ const mongo = require("./mongo");
 const scheemas = require("./mongo_Schemas.js");
 const func = require("./other_func.js");
 const axios = require("axios");
+const { Readable } = require("stream");
+const FormData = require("form-data");
+const fs = require('fs');
+const Jimp = require('jimp');
+const cheerio = require('cheerio');
+const iconv = require('iconv-lite');
+const modelConfig = require("../config/modelConfig");
 
-async function CreateImage(prompt,model,size,style){
+async function CreateImage(botInstance,prompt,model,size,style,msg){
     try {
     
       const options = {
@@ -20,7 +27,7 @@ async function CreateImage(prompt,model,size,style){
           model:model,
           prompt:prompt,
           n: 1,
-          response_format:"b64_json" 
+     //     response_format:"b64_json" 
       }};
       if (size){
         options.data.size = size
@@ -29,28 +36,52 @@ async function CreateImage(prompt,model,size,style){
       if (style){
         options.data.style = style
       }
- 
 
        const openai_resp = await axios(options);
-       console.log(openai_resp.data)
-       const fileData = Buffer.from(openai_resp.data[0].b64_json, 'binary');
-       let imageReadStream = Readable.from(fileData);
-       imageReadStream.path = "photo.jpg";  
-        
-       const formData = new FormData();
-       formData.append('chat_id', msg.chat.id);
-       formData.append('photo', audioReadStream);   
+       let resultList = []; 
+       const photoList = openai_resp.data.data
 
-       const response = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendPhoto`, 
-        formData, {
-        headers: formData.getHeaders(),
-        maxContentLength: Infinity,
-        maxBodyLength: Infinity,
-        });
+       if (!(photoList&&photoList.length>0)){
+        return ["No image was provided by the service. Please retry."]
+       }
 
-        console.log(response)
-    
-        return openai_resp
+       for (let i = 0; i < photoList.length; i++) {
+        const photo = photoList[i]
+       // console.log(photo)
+     //   const filePath = './img/img-resided_600_600.png';
+     //   const readableStream = fs.createReadStream(filePath);
+        resultList.push(photo.revised_prompt)
+
+        const response = await axios({
+            method: 'get',
+            url: photo.url,
+            responseType: "arraybuffer"
+          });
+        const fileData = Buffer.from(response.data, "binary");
+
+
+        const image = await Jimp.read(fileData)
+        const inputWidth = image.bitmap.width
+        const inputHeight = image.bitmap.height
+
+        const outputWidth = 240
+        const outputHeight = outputWidth*(inputHeight/inputWidth)
+        const resizedImage = image.resize(outputWidth, outputHeight);
+        const outputBuffer = await resizedImage.getBufferAsync(Jimp.MIME_JPEG);
+
+        await botInstance.sendPhoto(msg.chat.id, outputBuffer,
+            {caption:"Revised_prompt: "+photo.revised_prompt,
+            reply_markup: JSON.stringify({ 
+                inline_keyboard: [
+                  [{ text: 'Открыть в оригинальном размере', url: photo.url}]
+                ]
+              })
+            }
+            )
+
+      }
+      
+        return resultList
     } catch (err){
       if (err.mongodblog === undefined) {
         err.mongodblog = true;
@@ -60,12 +91,51 @@ async function CreateImage(prompt,model,size,style){
     }
     }
 
+    async function fetchUrlContent(url,tokenlimit){
 
-async function runFunctionRequest(msg,function_call){
+        let response;
+        try {
+        response = await axios.get(url,{
+            responseType: 'arraybuffer',
+            responseEncoding: 'binary'})
+        } catch(err){
+            return  {"url":url,"error":err}
+        };
+
+        const contentType = response.headers['content-type'] || 'windows-1251';
+        let match = contentType.match(/charset=([a-zA-Z0-9-]+)/);
+        let encoding = match && match[1] ? match[1] : 'utf-8';
+
+        let decodedHtml;
+        try {
+        decodedHtml = iconv.decode(response.data, encoding);
+        } catch(err){
+            return  {"url":url,"error":err}
+        };
+
+        const $ = cheerio.load(decodedHtml);
+        
+        let text = $('body').html();
+        console.log("html",text)
+
+        const tokenCount = func.countTokensProportion(text)
+
+        if(tokenCount>tokenlimit){
+            const error = `Content of the resource has ${tokenCount} which exceeds limit of ${tokenlimit} tokens. User should adjust the url or use a model with bigger dialogue limit.`        
+            return  {"url":url,"error":error}
+        } else {
+            return {"url":url,"content":text}
+        }
+    };
+
+async function runFunctionRequest(botInstance,msg,function_call,model){
 
 const function_name = function_call?.name
 
 let functionResult = ""
+
+const dialogueSize = modelConfig[model].request_length_limit_in_tokens
+const tokensLimitForFetchedContent = dialogueSize*appsettings.functions_options.fetch_text_limit_pcs/100
 
 if (!function_name){
 
@@ -74,6 +144,45 @@ if (!function_name){
 } else if(function_name==="get_current_datetime"){
 
     functionResult = new Date().toString()
+
+} else if(function_name==="fetch_url_content"){
+
+    const arguments = function_call?.arguments
+
+    if(arguments === "" || arguments === null || arguments === undefined){
+        functionResult = "No arguments provided. You should provide at least required arguments"
+        return functionResult
+    } 
+
+    let argumentsjson;
+
+    try{
+    argumentsjson = JSON.parse(arguments)
+    } catch (err){
+        functionResult = `Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`
+        return functionResult
+    }   
+
+    if (argumentsjson.urls === "" || argumentsjson.urls === null || argumentsjson.urls === undefined){
+        functionResult = "Urls param contains no data. You should provide list of urls."
+        return functionResult
+    }
+
+    const UrlsArray = argumentsjson.urls
+
+    if(! Array.isArray(UrlsArray)){
+        functionResult = "Urls should be provided as an array."
+        return functionResult
+    };
+
+    const tokenLimitPerURL = tokensLimitForFetchedContent/UrlsArray.length
+
+    const promises = UrlsArray.map(url => fetchUrlContent(url, tokenLimitPerURL));
+    const promiseResult = await Promise.all(promises)
+
+    const resultText = JSON.stringify(promiseResult)
+
+    return resultText
 
 } else if(function_name==="create_image"){
 
@@ -116,8 +225,8 @@ if (!function_name){
             return functionResult
         }
 
-        const resp = await CreateImage(prompt,"dall-e-3",size,style)
-        console.log(resp)
+        const resp = await CreateImage(botInstance,prompt,"dall-e-3",size,style,msg)
+        return "The image has been generated and successfully sent to the user. Translate the following description of the image.\n"+JSON.stringify(resp)
     };
 
 } else if(function_name==="get_users_activity"){
@@ -233,7 +342,7 @@ functionList.push({
             },
             "style": {
                 "type": "string",
-                "description": `The style of the generated images. Must be one of vivid or natural. Vivid causes the model to lean towards generating hyper-real and dramatic images. Natural causes the model to produce more natural, less hyper-real looking images.`
+                "description": `The style of the generated images. Must be one of vivid or natural. Vivid causes the model to lean towards generating hyper-real and dramatic images. Natural causes the model to produce more natural, less hyper-real looking images. Default must be vivid.`
             },
             "prompt": {
                 "type": "string",
@@ -241,6 +350,22 @@ functionList.push({
             },
         },
         "required": ["prompt"]
+    }
+}
+);
+
+functionList.push({
+    "name": "fetch_url_content",
+    "description": "Use this function to fetch content from urls.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "urls": {
+                "type": "string",
+                "description": `List of urls to fetch content from in the following pattern [url1,url2]`
+            }
+        },
+        "required": ["urls"]
     }
 }
 );

@@ -563,7 +563,7 @@ async function chatCompletionStreamAxiosRequest(
                   await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
                 }
 
-              functionResult = await telegramFunctionHandler.runFunctionRequest(msg,completionJson.function_call)
+              functionResult = await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.function_call,model)
 
           } else {
               functionResult = "No function name found"
@@ -578,7 +578,9 @@ async function chatCompletionStreamAxiosRequest(
                 if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
                   msgTGM = msgTGM.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
                 }
-                await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
+                await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId,link_preview_options: {
+                  is_disabled: true,
+              }});
               }
 
               await botInstance.sendChatAction(completionJson.telegramMsgOptions.chat_id, "typing"); //Отправляем progress msg
