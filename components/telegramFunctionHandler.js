@@ -9,6 +9,7 @@ const Jimp = require('jimp');
 const cheerio = require('cheerio');
 const iconv = require('iconv-lite');
 const modelConfig = require("../config/modelConfig");
+const msqTemplates = require("../config/telegramMsgTemplates");
 
 async function CreateImage(botInstance,prompt,model,size,style,msg){
     try {
@@ -70,7 +71,9 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
         const outputBuffer = await resizedImage.getBufferAsync(Jimp.MIME_JPEG);
 
         await botInstance.sendPhoto(msg.chat.id, outputBuffer,
-            {caption:"Revised_prompt: "+photo.revised_prompt,
+            {filename: model+'.jpg',
+            contentType: 'image/jpeg',
+            caption:"Revised_prompt: "+photo.revised_prompt,
             reply_markup: JSON.stringify({ 
                 inline_keyboard: [
                   [{ text: 'Открыть в оригинальном размере', url: photo.url}]
@@ -92,7 +95,7 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
     }
 
     async function fetchUrlContent(url,tokenlimit){
-
+        try{
         let response;
         try {
         response = await axios.get(url,{
@@ -116,19 +119,43 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
         const $ = cheerio.load(decodedHtml);
         
         let text = $('body').html();
-        console.log("html",text)
+  
 
-        const tokenCount = func.countTokensProportion(text)
+        const tokenCount = Math.round(func.countTokensProportion(text))
 
         if(tokenCount>tokenlimit){
-            const error = `Content of the resource has ${tokenCount} which exceeds limit of ${tokenlimit} tokens. User should adjust the url or use a model with bigger dialogue limit.`        
-            return  {"url":url,"error":error}
+            const error = `Content of the resource has ${tokenCount} tokens which exceeds limit of ${tokenlimit} tokens.`        
+            return  {url:url,error:error,instructions:"User should adjust the url or use a model with bigger dialogue limit."}
         } else {
-            return {"url":url,"content":text}
+            return {url:url,content:text}
         }
+    } catch(err){
+        err.place_in_code = err.place_in_code || arguments.callee.name;
+        err.details = {"url":url}
+        throw err;
+
+    }
     };
 
-async function runFunctionRequest(botInstance,msg,function_call,model){
+async function runFunctionRequest(botInstance,msg,function_call,model,sentMsgIdObj,sysmsgOn){
+try{
+
+    //>>>Уведомляем пользователя о начале работы функции
+  if(sysmsgOn){ //Если включена функция показа системных сообщений
+    let msgTGM = msqTemplates.function_request_msg.replace("[function]",JSON.stringify(function_call))
+    if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
+        msgTGM = msgTGM.substring(0, telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
+    }
+    await botInstance.editMessageText(msgTGM,{chat_id:msg.chat.id,message_id: sentMsgIdObj.sentMsgId,
+        disable_web_page_preview: true});
+    const rst = await botInstance.sendMessage(msg.chat.id, msqTemplates.function_request_status_msg2);
+    sentMsgIdObj.sentMsgId = rst.message_id
+    } else {
+        //Добавялем сообщение, что выполняется
+      await botInstance.editMessageText(msqTemplates.function_request_status_msg,{chat_id: msg.chat.id,message_id: sentMsgIdObj.sentMsgId,
+        disable_web_page_preview: true});
+    }
+   //<<<Уведомляем пользователя о начале работы функции
 
 const function_name = function_call?.name
 
@@ -190,23 +217,30 @@ if (!function_name){
 
     if(arguments === "" || arguments === null || arguments === undefined){
 
-        functionResult = "No arguments provided. You should provide at least required arguments"
+        functionResult = {result:"unsuccessful", error:"No arguments provided. You should provide at least required arguments"};
 
-        return functionResult
+        const resultText = JSON.stringify(functionResult)
+
+        return resultText
     } 
     
     const argumentsjson = JSON.parse(arguments)   
     
     if (argumentsjson.prompt === "" || argumentsjson.prompt === null || argumentsjson.prompt === undefined){
 
-        functionResult = "Prompt param contains no text. You should provide the text."
+        functionResult = {result:"unsuccessful", error:"Prompt param contains no text. You should provide the text."};
 
-        return functionResult
+        const resultText = JSON.stringify(functionResult)
+
+        return resultText
+
     } else if (argumentsjson.prompt.length > 4000){
 
-        functionResult = `Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`
+        functionResult = {result:"unsuccessful", error:`Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`};
 
-        return functionResult
+        const resultText = JSON.stringify(functionResult)
+
+        return resultText
     } else {
         const prompt = argumentsjson.prompt
         const style = argumentsjson?.style
@@ -226,7 +260,14 @@ if (!function_name){
         }
 
         const resp = await CreateImage(botInstance,prompt,"dall-e-3",size,style,msg)
-        return "The image has been generated and successfully sent to the user. Translate the following description of the image.\n"+JSON.stringify(resp)
+
+        functionResult = {
+            result:"The image has been generated and successfully sent to the user.", 
+            instructions:`Translate the following description of the image:`+JSON.stringify(resp)
+        };
+
+        const resultText = JSON.stringify(functionResult)
+        return resultText
     };
 
 } else if(function_name==="get_users_activity"){
@@ -310,7 +351,12 @@ if (!function_name){
 }
 
 return functionResult
+
+} catch(err){
+    err.place_in_code = err.place_in_code || arguments.callee.name;
+    throw err;
 }
+};
 
 async function functionsList(userid){
 

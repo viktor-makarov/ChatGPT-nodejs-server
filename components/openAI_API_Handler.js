@@ -538,62 +538,46 @@ async function chatCompletionStreamAxiosRequest(
             let functionResult = "";
             if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
           //    console.log("5","it is function call",new Date())
-              let sentMsgId = sent_msg_id
+              let sentMsgIdObj = {sentMsgId:sent_msg_id}
+              const sysmsgOn = allSettingsDict[msg.from.id][regime].sysmsg
 
              // console.log("In case of error",JSON.stringify(completionJson))
               if(completionJson.function_call){
                 completionJson.function_call.arguments = completionJson.function_arguments
                 await mongo.upsertCompletionPromise(completionJson);
 
-                let msgTGM = msqTemplates.function_request_status_msg
-                if(allSettingsDict[msg.from.id][regime].sysmsg){//Если включена функция показа системных сообщений
-                  msgTGM = msqTemplates.function_request_msg.replace("[function]",JSON.stringify(completionJson.function_call))
-                  if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
-                    msgTGM = msgTGM.substring(0, telegram_options.big_outgoing_message_threshold) +"...\nСообщение было обрезано..."
-                  }
-                }
-                //Отправляем пользователю статус сообщение о том, что была запрошена функция
-              await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
-           //   console.log("6","function requested msg",new Date())
-              msgTGM = msqTemplates.function_result_status_msg
-              if(allSettingsDict[msg.from.id][regime].sysmsg){ //Если включена функция показа системных сообщений
-                const rst = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, msqTemplates.function_result_status_msg);
-                sentMsgId = rst.message_id
-                } else {
-                  await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId});
-                }
-
-              functionResult = await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.function_call,model)
-
+                //Передаем запрос на обработку.
+              functionResult = await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.function_call,model,sentMsgIdObj,sysmsgOn)
+              
           } else {
               functionResult = "No function name found"
           }
               await mongo.upsertFuctionResultsPromise(msg, regime,functionResult,functions); //записываем вызова функции в диалог
               
-  
               let msgTGM = msqTemplates.function_result_status_msg
               //Сообщая пользователю
-              if(allSettingsDict[msg.from.id][regime].sysmsg){ 
+              if(sysmsgOn){ 
                 msgTGM = msqTemplates.function_result_msg.replace("[result]",functionResult)
                 if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
                   msgTGM = msgTGM.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
                 }
-                await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgId,link_preview_options: {
-                  is_disabled: true,
-              }});
+                await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgIdObj.sentMsgId,
+                  disable_web_page_preview: true
+                  //  link_preview_options: {is_disabled: true}
+                });
               }
 
               await botInstance.sendChatAction(completionJson.telegramMsgOptions.chat_id, "typing"); //Отправляем progress msg
 
               if(allSettingsDict[msg.from.id][regime].sysmsg){ 
               const rst2 = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "Ждем ответа OpenAi ...");
-              sentMsgId = rst2.message_id
+              sentMsgIdObj.sentMsgId = rst2.message_id
               }
 
            //   console.log("7","another request",new Date())
               await chatCompletionStreamAxiosRequest(
                 botInstance,
-                sentMsgId,
+                sentMsgIdObj.sentMsgId,
                 msg,
                 regime,
                 process.env.OPENAI_API_KEY,
@@ -808,6 +792,7 @@ async function deliverMessage(botInstance, object) {
         chat_id: object.telegramMsgOptions.chat_id,
         message_id: msg_id,
         parse_mode: object.telegramMsgOptions.parse_mode,
+        disable_web_page_preview: true
       };
       if (object.completion_ended) {
         //Если отправялем последнюю часть сообщения
