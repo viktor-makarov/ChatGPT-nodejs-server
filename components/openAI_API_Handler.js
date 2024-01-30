@@ -290,6 +290,25 @@ const options = {
     err.place_in_code = err.place_in_code || arguments.callee.name;
     throw err;
   }
+} 
+
+async function sendStatusMEssage(botInstance,msg,sent_msg_id,user_message,mainPromiseFinished){
+
+  if(!mainPromiseFinished.status){
+  await botInstance.editMessageText(
+    user_message,
+    {
+      chat_id: msg.chat.id,
+      message_id: sent_msg_id,
+    }
+  );
+  }
+
+};
+
+
+async function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 async function chatCompletionStreamAxiosRequest(
@@ -303,6 +322,13 @@ async function chatCompletionStreamAxiosRequest(
   functions
 ) {
   try {
+
+    //Запускаем отложенные сообщения по статусу
+    let mainPromiseFinished = {status:false};
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[0],mainPromiseFinished)}, appsettings.http_options.first_timeout_notice);
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[1],mainPromiseFinished)}, appsettings.http_options.second_timeout_notice);
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[2],mainPromiseFinished)}, appsettings.http_options.third_timeout_notice);
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[3],mainPromiseFinished)}, appsettings.http_options.fourth_timeout_notice);
 
     const dialogueList = await mongo.getDialogueByUserIdPromise(
       msg.from.id,
@@ -362,6 +388,8 @@ async function chatCompletionStreamAxiosRequest(
       options.data.functions = functions
     }
    // console.log("4","before axios",new Date())
+
+   await delay(90000);
     axios(options)
       .then((response) => {
         //Объявляем функцию для тротлинга
@@ -369,6 +397,8 @@ async function chatCompletionStreamAxiosRequest(
           sentEditedMessage,
           appsettings.telegram_options.send_throttle_ms
         );
+
+        mainPromiseFinished.status = true;
 
         const headersObject = response.headers //Записываем хэдеры
         response.data.on("data", async (chunk) => {
