@@ -389,7 +389,6 @@ async function chatCompletionStreamAxiosRequest(
     }
    // console.log("4","before axios",new Date())
 
-   await delay(90000);
     axios(options)
       .then((response) => {
         //Объявляем функцию для тротлинга
@@ -744,10 +743,11 @@ async function sentEditedMessage(botInstance, completionJson) {
 }
 
 function getJsonFromChunk(chunkString) {
+  let chunkLines;
   try {
     // Если пришло сразу несолько фрагментов, они разделяются двойным
     // символом новой строки; пропускам пустые строки
-    const chunkLines = chunkString
+    chunkLines = chunkString
       .split("\n")
       .filter((line) => line.trim() !== "");
 
@@ -757,6 +757,9 @@ function getJsonFromChunk(chunkString) {
       incomplete: undefined,
     };
 
+    if(chunkLines.length===0){
+      return result
+    };
     // Проверяем, чем заканчивается строка последнего фрагмента
     const lastLineEnding = chunkLines[chunkLines.length - 1].slice(-3);
 
