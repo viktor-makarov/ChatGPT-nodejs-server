@@ -388,7 +388,8 @@ function router(botInstance) {
       const model = allSettingsDict[innerMsg.from.id][regime].model || modelSettings[regime].default_model
       const voice = allSettingsDict[innerMsg.from.id][regime].voice || modelSettings[regime].voice
       const temperature = allSettingsDict[innerMsg.from.id][regime].temperature || 1
-      const functions = await telegramFunctionHandler.functionsList(innerMsg.from.id)
+      const tools = await telegramFunctionHandler.toolsList(innerMsg.from.id)
+      const tool_choice = "auto"
       
       if(regime === "texttospeech"){
         if(innerMsg.text.length>appsettings.telegram_options.big_message_threshold){
@@ -451,12 +452,13 @@ function router(botInstance) {
           process.env.OPENAI_API_KEY,
           model,
           temperature,
-          functions,
+          tools,
+          tool_choice,
           regime
         ); //запускаем отложенный обработчик
       } else {
-        await mongo.upsertPromptPromise(innerMsg, regime,functions); //записываем prompt в диалог  
-        await MsgHandler(botInstance, innerMsg.chat.id, innerMsg, process.env.OPENAI_API_KEY,model,temperature,functions,regime); //запускаем обычный обработчик
+        await mongo.upsertPromptPromise(innerMsg, regime,tools,tool_choice); //записываем prompt в диалог  
+        await MsgHandler(botInstance, innerMsg.chat.id, innerMsg, process.env.OPENAI_API_KEY,model,temperature,tools,tool_choice,regime); //запускаем обычный обработчик
       }
       jointMsg = ""; //обнуляем накопленные сообщения
       useDebounceMs = false; //обнуляем задержку
@@ -514,7 +516,8 @@ function router(botInstance) {
         const regime = global.allSettingsDict[callback_msg.from.id].current_regime
         const model = allSettingsDict[callback_msg.from.id][regime].model || modelSettings[regime].default_model
         const temperature = allSettingsDict[callback_msg.from.id][regime].temperature || 1
-        const functions = null
+        const tools = null
+        const tool_choice = null
 
        //>>>new block 
               //Так делаем, если regenerate
@@ -530,7 +533,8 @@ function router(botInstance) {
           process.env.OPENAI_API_KEY,
           model,
           temperature,
-          functions,
+          tools,
+          tool_choice,
           regime
         );
       } else if (callback_msg.data.startsWith("readaloud")) {
@@ -618,13 +622,13 @@ const deferredMsgHandler = otherFunctions.debounceConstructorPromise(
   appsettings.telegram_options.debounceMs
 );
 
-async function MsgHandlerContainer(botInstance, chat_id, msg, open_ai_api_key,model,temperature,functions,regime) {
+async function MsgHandlerContainer(botInstance, chat_id, msg, open_ai_api_key,model,temperature,tools,tool_choice,regime) {
 
-  await mongo.upsertPromptPromise(msg, regime,functions); //записываем prompt в диалог  
-   await MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,temperature,functions,regime)
+  await mongo.upsertPromptPromise(msg, regime,tools,tool_choice); //записываем prompt в диалог  
+   await MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,temperature,tools,tool_choice,regime)
 }
 
-async function MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,temperature,functions,regime) {
+async function MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,temperature,tools,tool_choice,regime) {
   if (msg.text && process.env.PROD_RUN) {
     console.log("message lenght", msg.text.length, new Date());
   }
@@ -644,7 +648,8 @@ async function MsgHandler(botInstance, chat_id, msg, open_ai_api_key,model,tempe
     open_ai_api_key,
     model,
     temperature,
-    functions
+    tools,
+    tool_choice
   );
 }
 

@@ -228,7 +228,7 @@ const insertUsageDialoguePromise = async (
   }
 };
 
-const upsertPromptPromise = async (msg, regime,functions) => {
+const upsertPromptPromise = async (msg, regime,tools,tool_choice) => {
   try {
     const connection = await Connect_to_mongo(
       connectionString_self_mongo,
@@ -250,7 +250,8 @@ const upsertPromptPromise = async (msg, regime,functions) => {
       role: "user",
       roleid: 1,
       content: msg.text,
-      functions:functions,
+      tools:tools,
+      tool_choice:tool_choice,
       tokens: otherfunc.countTokens(msg.text)+otherfunc.countTokens(JSON.stringify(functions)),
     };
 
@@ -465,7 +466,7 @@ const getDialogueByUserIdPromise = (userid, regime) => {
       dialogue_collection
         .find(
           { userid: userid, regime: regime },
-          { _id: 0, role: 1, name: 1, content: 1, function_call: 1, tokens: 1 }
+          { _id: 0, role: 1, name: 1, content: 1, tool_calls: 1,tool_reply: 1, tokens: 1 }
         )
         .lean()
       //  .sort({ createdAtSourceTS: "asc", roleid: "asc" })

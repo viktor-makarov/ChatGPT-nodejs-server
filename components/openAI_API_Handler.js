@@ -319,7 +319,8 @@ async function chatCompletionStreamAxiosRequest(
   open_ai_api_key,
   model,
   temperature,
-  functions
+  tools,
+  tool_choice
 ) {
   try {
 
@@ -341,18 +342,37 @@ async function chatCompletionStreamAxiosRequest(
       modelConfig[allSettingsDict[msg.from.id][regime].model]
         .request_length_limit_in_tokens;
 
-    const dialogueListEdited = dialogueList.map(({ role, content,function_call }) => {
+    let dialogueListEdited;//Составляем перечень сообщений для отправки в модель
+    for (let i = 0; i < dialogueList.length; i++) {
+      let result ={};
+      result['role'] = dialogueList[i].role
+      result['content'] = dialogueList[i].content
 
-    let result = {
-        role,
-        content
-    }
-    if(function_call !== undefined && function_call !== null){
-      result['function_call'] = function_call;
+      const tool_calls = dialogueList[i].tool_calls
+
+      if(tool_calls !== undefined && tool_calls !== null&& tool_calls.length > 0){
+          result['tool_calls'] = tool_calls;
+          dialogueListEdited.push(result);
+          continue;
+    };
+
+    const tool_reply= dialogueList[i].tool_reply
+
+    if(tool_reply !== undefined && tool_reply !== null){
+        result['content'] = tool_reply.content  //Перезаписываем
+        result['name'] = tool_reply.name;
+        result['tool_call_id'] = tool_reply.tool_call_id;
+        dialogueListEdited.push(result);
+        continue;
+      };
+
+      dialogueListEdited.push(result);//Для всех остальных элементов кроме запросов функций и ответов на нее.
   }
-  return result;
-    });
+  };
 
+
+
+    console.log(JSON.stringify(dialogueListEdited))
         //Учитываем потраченные токены
     const previous_dialogue_tokens = otherFunctions.countTokens(JSON.stringify(dialogueListEdited))+otherFunctions.countTokens(JSON.stringify(functions))
 
@@ -383,9 +403,10 @@ async function chatCompletionStreamAxiosRequest(
         stream: true,
       },
     };
-    if(functions){
+    if(tools){
       //Add functions, if they exist
-      options.data.functions = functions
+      options.data.tools = tools
+      options.data.tool_choice = tool_choice
     }
    // console.log("4","before axios",new Date())
 
@@ -423,7 +444,7 @@ async function chatCompletionStreamAxiosRequest(
                 0: { id_message: sent_msg_id, to_send: "" },
               };
 
-              const functionCallObject = chunkJsonList[0]?.choices[0]?.delta?.function_call
+
 
               completionJson = {
                 //Формируем сообщение completion
@@ -440,8 +461,8 @@ async function chatCompletionStreamAxiosRequest(
                 telegamPaused: false,
                 role: chunkJsonList[0]?.choices[0]?.delta?.role,
                 content: "",
-                function_call:functionCallObject,
-                function_arguments:"",
+                tool_calls:[],
+                tool_choice:tool_choice,
                 content_parts: content_parts,
                 completion_ended: false,
                 content_ending: "",
@@ -476,22 +497,38 @@ async function chatCompletionStreamAxiosRequest(
               return
             }
 
-            
             let content = "";
-            let function_arguments = ""
             for (let i = 0; i < chunkJsonList.length; i++) {
               //собираем несколько сообщений в одно
 
-              const choice = chunkJsonList[i]?.choices[0];
-              content = content + (choice?.delta?.content ?? "");
-              function_arguments = function_arguments + (choice?.delta?.function_call?.arguments ?? "");
+              const choiceArray = chunkJsonList[i]?.choices;
+
+              if(choiceArray && choiceArray.length>0){
+
+                choiceArray.forEach((choice) => {
+                 content += (choice?.delta?.content ?? "");
+                 const call = choice?.delta?.tool_calls
+
+                 if (call && call.id && call.type && call.function) {
+                  completionJson.tool_calls.push({
+                        id: call.id,
+                        type: call.type,
+                        function: call.function
+                    });
+                    if(!completionJson.tool_calls[completionJson.tool_calls.length-1].function?.arguments){ //Добавляем, если отсутствует
+                      completionJson.tool_calls[completionJson.tool_calls.length-1].function["arguments"] ="" 
+                    }
+                  }
+                  if (call && call.function && call.function.arguments && completionJson.tool_calls.length>0) {
+                    completionJson.tool_calls[completionJson.tool_calls.length-1].function.arguments += call.function.arguments;
+                  }
+                })
+              }
 
               completionJson.finish_reason = choice.finish_reason;
-
-              completionJson.tokens = completionJson.tokens + 1; //считаем токены в комплишене
+              completionJson.tokens += 1; //считаем токены в комплишене
             }
-            completionJson.content = completionJson.content + content;
-            completionJson.function_arguments = completionJson.function_arguments + function_arguments;
+            completionJson.content += content;
             
             if (!content === "") {
               return; //Если контент пустой, то дальше не идем.
@@ -555,7 +592,7 @@ async function chatCompletionStreamAxiosRequest(
           const func_name = "axious responce.data.on: end";
           try {
 
-            if (completionJson.content === "" && completionJson.finish_reason != 'function_call') {
+            if (completionJson.content === "" && completionJson.finish_reason != 'tool_calls') {
               //Если не получили токенов от API
               let err = new Error("Empty response from the service.");
               err.code = "OAI_ERR2";
@@ -565,21 +602,20 @@ async function chatCompletionStreamAxiosRequest(
             } 
 
             let functionResult = "";
-            if(completionJson.finish_reason == 'function_call'){ //Уведомляем пользователя, что запрошена функция
+            if(completionJson.finish_reason == 'tool_calls'){ //Уведомляем пользователя, что запрошена функция
           //    console.log("5","it is function call",new Date())
               let sentMsgIdObj = {sentMsgId:sent_msg_id}
               const sysmsgOn = allSettingsDict[msg.from.id][regime].sysmsg
 
              // console.log("In case of error",JSON.stringify(completionJson))
-              if(completionJson.function_call){
-                completionJson.function_call.arguments = completionJson.function_arguments
+              if(completionJson.tool_calls>0){
                 await mongo.upsertCompletionPromise(completionJson);
 
                 //Передаем запрос на обработку.
-              functionResult = await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.function_call,model,sentMsgIdObj,sysmsgOn)
+              functionResult = await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn)
               
           } else {
-              functionResult = "No function name found"
+              functionResult = "No tool calls found."
           }
               await mongo.upsertFuctionResultsPromise(msg, regime,functionResult,functions); //записываем вызова функции в диалог
               

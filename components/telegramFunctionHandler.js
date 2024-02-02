@@ -358,7 +358,7 @@ return functionResult
 }
 };
 
-async function functionsList(userid){
+async function toolsList(userid){
 
 var functionList = []
 
@@ -366,17 +366,21 @@ var functionList = []
 if(global.allSettingsDict[userid].current_regime==="assistant"){
 
 //Общедоступные функции
-functionList.push({
+functionList.push(
+{"type":"function",
+"function":{
     "name": "get_current_datetime",
     "description": "Use this function to answer user's questions which require current date and time. This function returns value of date and time at the moment of request.",
     "parameters": {
         "type": "object",
         "properties": {}
     }
-}
+}}
 );
 
-functionList.push({
+functionList.push(
+{"type":"function",
+"function":{
     "name": "create_image",
     "description": "Use this function to answer user's questions to create or draw an image given a prompt.",
     "parameters": {
@@ -397,10 +401,12 @@ functionList.push({
         },
         "required": ["prompt"]
     }
-}
+}}
 );
 
-functionList.push({
+functionList.push(
+    {"type":"function",
+    "function":{
     "name": "fetch_url_content",
     "description": "Use this function to fetch content from urls.",
     "parameters": {
@@ -413,7 +419,7 @@ functionList.push({
         },
         "required": ["urls"]
     }
-}
+}}
 );
 
 
@@ -421,7 +427,9 @@ if (adminArray.includes(userid)) {
 
 //Функции для админа
 
-functionList.push({
+functionList.push(
+    {"type":"function",
+    "function":{
     "name": "get_users_activity",
     "description": `Use this function to report on this chatbot users' activity of users. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongo.mongooseVersion()}. One document represents one request of a user.`,
     "parameters": {
@@ -433,10 +441,12 @@ functionList.push({
             }
         },
         "required": ["aggregate_pipeline"]
-    }
+    }}
 })
 
-functionList.push({
+functionList.push(
+    {"type":"function",
+    "function":{
     "name": "get_chatbot_errors",
     "description": `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongo.mongooseVersion()}. One document represents one error.`,
     "parameters": {
@@ -448,7 +458,7 @@ functionList.push({
             }
         },
         "required": ["aggregate_pipeline"]
-    }
+    }}
 })
 
 }
@@ -467,7 +477,7 @@ if (functionList.length===0){
 
 
 module.exports = {
-    functionsList,
+    toolsList,
     runFunctionRequest,
     CreateImage
 }

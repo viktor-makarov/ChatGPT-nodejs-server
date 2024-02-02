@@ -11,6 +11,43 @@ function countTokens(text) {
 }
 
 
+function reorderArrayForTools(array) {
+  // Create a map of assistant index by their id
+  const assistantIndexById = {};
+  array.forEach((item, index) => {
+    if (item.role === 'assistant') {
+      assistantIndexById[item.id] = index;
+    }
+  });
+
+  // Create a copy of the array to prevent modification of the original array
+  const arrayCopy = [...array];
+
+  // Find tools and move them after their respective assistants
+  array.forEach((item, index) => {
+    if (item.role === 'tool') {
+      // Find the index where this tool should go (after its matching assistant)
+      const correctIndex = assistantIndexById[item.id] + 1;
+
+      // Remove the tool from its current position
+      arrayCopy.splice(index, 1);
+
+      // Insert the tool after its matching assistant
+      arrayCopy.splice(correctIndex, 0, item);
+
+      // Update the index for assistants that come after the moved tool
+      for (const id in assistantIndexById) {
+        if (assistantIndexById[id] >= correctIndex) {
+          assistantIndexById[id]++;
+        }
+      }
+    }
+  });
+
+  return arrayCopy;
+}
+
+
 function countTokensProportion(text) {
   //Converts string to tokens and counts their number
   return text.length/3.2;
@@ -237,7 +274,6 @@ function jsonToText(obj, indent = '') {
   return text;
 }
 
-
 module.exports = {
   countTokens,
   wireStingForMarkdown,
@@ -251,5 +287,6 @@ module.exports = {
   jsonToText,
   replaceNewDate,
   replaceISOStr,
-  countTokensProportion
+  countTokensProportion,
+  reorderArrayForTools
 };
