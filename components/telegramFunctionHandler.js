@@ -10,6 +10,123 @@ const cheerio = require('cheerio');
 const iconv = require('iconv-lite');
 const modelConfig = require("../config/modelConfig");
 const msqTemplates = require("../config/telegramMsgTemplates");
+const telegramErrorHandler = require("./telegramErrorHandler.js");
+
+async function notifyUser(botInstance,sysmsgOn,full_message,short_message,incoming_msg_id,chat_id,create_follow_up_msg){
+//Sends a notification to the user and returns the last message_id
+
+let full_message_to_send =full_message;
+let short_message_to_send =short_message;
+let outcoming_msg_id = incoming_msg_id;
+try{
+
+if(full_message_to_send.length>appsettings.telegram_options.big_outgoing_message_threshold){
+    full_message_to_send = full_message_to_send.substring(0, telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
+}
+
+if(short_message_to_send.length>appsettings.telegram_options.big_outgoing_message_threshold){
+    short_message_to_send = short_message.substring(0, telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
+}
+
+if(incoming_msg_id){   //Если есть входящий номер id
+
+    if(sysmsgOn){ //Если включена функция показа системных сообщений
+
+      //Сокдащаем сообщение, если оно превышает димит расмера сообщения телеграм.
+        await botInstance.editMessageText(full_message_to_send,{chat_id:chat_id,message_id: incoming_msg_id,
+          disable_web_page_preview: true});
+        if(create_follow_up_msg){
+            const rst = await botInstance.sendMessage(msg.chat_id, msqTemplates.function_request_status_msg2);
+            outcoming_msg_id = rst.message_id
+        }
+
+    } else {
+      await botInstance.editMessageText(short_message_to_send,{chat_id: chat_id,message_id: incoming_msg_id,
+        disable_web_page_preview: true});
+    }
+} else {
+
+if(sysmsgOn){ 
+    const rst = await botInstance.sendMessage(msg.chat_id, full_message_to_send);
+    outcoming_msg_id = rst.message_id
+    if(create_follow_up_msg){
+        const rst = await botInstance.sendMessage(msg.chat_id, msqTemplates.function_request_status_msg2);
+        outcoming_msg_id = rst.message_id
+    }
+} else {
+    const rst = await botInstance.sendMessage(msg.chat_id, short_message_to_send);
+    outcoming_msg_id = rst.message_id
+};
+}
+
+return outcoming_msg_id
+} catch (err){
+    err.consolelog = true;
+    err.place_in_code = err.place_in_code || arguments.callee.name;
+    telegramErrorHandler.main(
+      botInstance,
+      chat_id,
+      err,
+      err.place_in_code,
+      err.user_message
+    );
+    throw err;
+}
+
+};
+
+
+async function CreateImageRouter(function_call){
+
+    try{
+
+    const arguments = function_call?.function?.arguments
+
+    if(arguments === "" || arguments === null || arguments === undefined){
+        return {result:"unsuccessful", error:"No arguments provided. You should provide at least required arguments"};
+    } 
+    
+    try{
+    const argumentsjson = JSON.parse(arguments)   
+    } catch(err){
+        return {result:"unsuccessful", error:err};
+    };
+    
+    if (argumentsjson.prompt === "" || argumentsjson.prompt === null || argumentsjson.prompt === undefined){
+        return {result:"unsuccessful", error:"Prompt param contains no text. You should provide the text."};
+    } 
+    
+    if (argumentsjson.prompt.length > 4000){
+        return {result:"unsuccessful", error:`Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`};
+    } 
+    
+        const prompt = argumentsjson.prompt
+        const style = argumentsjson?.style
+        const size = argumentsjson?.size
+        const sizeArray = ["1024x1024","1792x1024","1024x1792"]
+        const styleArray = ["vivid","natural"]
+
+        if(!sizeArray.includes(size)&&size){
+            return {result:"unsuccessful", error:`Size param can not have other value than 1024x1024, 1792x1024 or 1024x1792. Please choose one of the three.`};
+        }
+
+        if(!styleArray.includes(style)&&style){
+            return {result:"unsuccessful", error:`Style param can not have other value than vivid or natural. Please choose one of the two.`};
+        }
+
+        const resp = await CreateImage(botInstance,prompt,"dall-e-3",size,style,msg)
+
+        functionResult = {
+            result:"The image has been generated and successfully sent to the user.", 
+            instructions:`Translate the following description of the image:`+JSON.stringify(resp)
+        };
+        return functionResult
+        
+        } catch(err){
+            err.place_in_code = err.place_in_code || arguments.callee.name;
+            throw err;
+        }
+    };
 
 async function CreateImage(botInstance,prompt,model,size,style,msg){
     try {
@@ -43,7 +160,7 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
        const photoList = openai_resp.data.data
 
        if (!(photoList&&photoList.length>0)){
-        return ["No image was provided by the service. Please retry."]
+        throw new Error("No image was provided by OpenAI service. Please retry.");
        }
 
        for (let i = 0; i < photoList.length; i++) {
@@ -120,7 +237,6 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
         
         let text = $('body').html();
   
-
         const tokenCount = Math.round(func.countTokensProportion(text))
 
         if(tokenCount>tokenlimit){
@@ -137,48 +253,16 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
     }
     };
 
-async function runFunctionRequest(botInstance,msg,function_call,model,sentMsgIdObj,sysmsgOn){
-try{
+    async function fetchUrlContentRouter(function_call){
 
-    //>>>Уведомляем пользователя о начале работы функции
-  if(sysmsgOn){ //Если включена функция показа системных сообщений
-    let msgTGM = msqTemplates.function_request_msg.replace("[function]",JSON.stringify(function_call))
-    if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
-        msgTGM = msgTGM.substring(0, telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
-    }
-    await botInstance.editMessageText(msgTGM,{chat_id:msg.chat.id,message_id: sentMsgIdObj.sentMsgId,
-        disable_web_page_preview: true});
-    const rst = await botInstance.sendMessage(msg.chat.id, msqTemplates.function_request_status_msg2);
-    sentMsgIdObj.sentMsgId = rst.message_id
-    } else {
-        //Добавялем сообщение, что выполняется
-      await botInstance.editMessageText(msqTemplates.function_request_status_msg,{chat_id: msg.chat.id,message_id: sentMsgIdObj.sentMsgId,
-        disable_web_page_preview: true});
-    }
-   //<<<Уведомляем пользователя о начале работы функции
+    try{
 
-const function_name = function_call?.name
-
-let functionResult = ""
-
-const dialogueSize = modelConfig[model].request_length_limit_in_tokens
-const tokensLimitForFetchedContent = dialogueSize*appsettings.functions_options.fetch_text_limit_pcs/100
-
-if (!function_name){
-
-    functionResult = "No function name found"
-
-} else if(function_name==="get_current_datetime"){
-
-    functionResult = new Date().toString()
-
-} else if(function_name==="fetch_url_content"){
-
-    const arguments = function_call?.arguments
+    const dialogueSize = modelConfig[model].request_length_limit_in_tokens
+    const tokensLimitForFetchedContent = dialogueSize*appsettings.functions_options.fetch_text_limit_pcs/100
+    const arguments = function_call?.function?.arguments
 
     if(arguments === "" || arguments === null || arguments === undefined){
-        functionResult = "No arguments provided. You should provide at least required arguments"
-        return functionResult
+        return {result:"unsuccessful",error: "No arguments provided. You should provide at least required arguments"}
     } 
 
     let argumentsjson;
@@ -186,20 +270,17 @@ if (!function_name){
     try{
     argumentsjson = JSON.parse(arguments)
     } catch (err){
-        functionResult = `Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`
-        return functionResult
+        return {result:"unsuccessful",error: `Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`}
     }   
 
     if (argumentsjson.urls === "" || argumentsjson.urls === null || argumentsjson.urls === undefined){
-        functionResult = "Urls param contains no data. You should provide list of urls."
-        return functionResult
+        return {result:"unsuccessful",error:"Urls param contains no data. You should provide list of urls."}
     }
 
     const UrlsArray = argumentsjson.urls
 
     if(! Array.isArray(UrlsArray)){
-        functionResult = "Urls should be provided as an array."
-        return functionResult
+        return {result:"unsuccessful",error:"Urls should be provided as an array."}
     };
 
     const tokenLimitPerURL = tokensLimitForFetchedContent/UrlsArray.length
@@ -207,154 +288,175 @@ if (!function_name){
     const promises = UrlsArray.map(url => fetchUrlContent(url, tokenLimitPerURL));
     const promiseResult = await Promise.all(promises)
 
-    const resultText = JSON.stringify(promiseResult)
+    return {result:promiseResult}
+        
+        } catch(err){
+            err.place_in_code = err.place_in_code || arguments.callee.name;
+            throw err;
+        }
+    };
 
-    return resultText
+async function get_data_from_mongoDB_by_pipepine(function_call){
 
-} else if(function_name==="create_image"){
+    const arguments = function_call?.function?.arguments
 
-    const arguments = function_call?.arguments
-
+    let pipeline = [];
     if(arguments === "" || arguments === null || arguments === undefined){
-
-        functionResult = {result:"unsuccessful", error:"No arguments provided. You should provide at least required arguments"};
-
-        const resultText = JSON.stringify(functionResult)
-
-        return resultText
+        return {result:"unsuccessful",error:"No arguments provided.",instructions: "You should provide at least required arguments"}
     } 
     
-    const argumentsjson = JSON.parse(arguments)   
+    try {
+        const argumentsjson = JSON.parse(arguments)              
+        pipeline =  func.replaceNewDate(argumentsjson.aggregate_pipeline) 
+    } catch (err){
+        return {result:"unsuccessful",error:`Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}.`,instructions: "Correct the pipeline."}
+    }
+
+    try {
+        const result = await mongo.queryTockensLogsByAggPipeline(pipeline)
+        const strResult = JSON.stringify(result)
+
+        if(strResult.length>appsettings.functions_options.max_characters_in_result){
+            return {result:"unsuccessful",error:`Result of the function exceeds ${appsettings.functions_options.max_characters_in_result} characters.`,instructions: "Please adjust the query to reduce length of the result."}
+        }
     
-    if (argumentsjson.prompt === "" || argumentsjson.prompt === null || argumentsjson.prompt === undefined){
+        return {result:result}
+         
+    } catch (err){
 
-        functionResult = {result:"unsuccessful", error:"Prompt param contains no text. You should provide the text."};
+        return {result:"unsuccessful",error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`,instructions:"Adjust the pipeline provided and retry."}
+    }
 
-        const resultText = JSON.stringify(functionResult)
+    };
 
-        return resultText
 
-    } else if (argumentsjson.prompt.length > 4000){
+async function toolsRouter(botInstance,msg,tool_calls,model,sentMsgIdObj,sysmsgOn,regime){
 
-        functionResult = {result:"unsuccessful", error:`Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`};
+    let resultList =[];
 
-        const resultText = JSON.stringify(functionResult)
+try{
 
-        return resultText
-    } else {
-        const prompt = argumentsjson.prompt
-        const style = argumentsjson?.style
-        const size = argumentsjson?.size
+    let full_message = msqTemplates.function_request_msg.replace("[function]",JSON.stringify(tool_calls))
+    let short_message = msqTemplates.function_request_status_msg
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
 
-        const sizeArray = ["1024x1024","1792x1024","1024x1792"]
-        const styleArray = ["vivid","natural"]
+    if(tool_calls.length>0){
 
-        if(!sizeArray.includes(size)&&size){
-            functionResult = `Size param can not have other value than 1024x1024, 1792x1024 or 1024x1792. Please choose one of the three.`
-            return functionResult
-        }
+        let promisesList =[];
+        for (let i = 0; i < tool_calls.length; i++) {
 
-        if(!styleArray.includes(style)&&style){
-            functionResult = `Style param can not have other value than vivid or natural. Please choose one of the two.`
-            return functionResult
-        }
+            const tool_call = tool_calls[i]
+            if(tool_call.id && tool_call.type && tool_call.function){ //Проверяем call на наличие всех необъодимых атрибутов.
+                if(tool_call.type==="function"){ 
 
-        const resp = await CreateImage(botInstance,prompt,"dall-e-3",size,style,msg)
+                    promisesList.push(runFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime))
 
-        functionResult = {
-            result:"The image has been generated and successfully sent to the user.", 
-            instructions:`Translate the following description of the image:`+JSON.stringify(resp)
+                } else { //Не функции обрабатывать пока не умеем.
+                    resultList.push({id:tool_call.id,type:tool_call.type,error:"Non function types cannot be processed for now.",instructions:"Rework into a function"})
+                }
+
+            } else {
+                resultList.push({id:tool_call?.id,function_name:tool_call?.function?.name,error:"Call is malformed. Required fields are missing",instructions:"Fix the call and retry."})
+            }
         };
 
-        const resultText = JSON.stringify(functionResult)
-        return resultText
-    };
+    const promiseResult = await Promise.all(promisesList) //Запускаем все функции параллеьно и ждем результата всех
+        console.log(promiseResult)
+        resultList = resultList
 
-} else if(function_name==="get_users_activity"){
-
-    const arguments = function_call?.arguments
-    let pipeline = [];
-    if(arguments === "" || arguments === null || arguments === undefined){
-
-        functionResult = "No arguments provided. You should provide at least required arguments"
-
-        return functionResult
     } else {
+        resultList = [{error:"No no tool calls have been provided",instructions: "Provide valid a tool call"}]
+    }
 
-        try {
-            const argumentsjson = JSON.parse(arguments)              
-           pipeline =  func.replaceNewDate(argumentsjson.aggregate_pipeline)
-            
-        } catch (err){
-            functionResult = `Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the pipeline.`
-            return functionResult
-        }
-    };
 
-        try {
-            const result = await mongo.queryTockensLogsByAggPipeline(pipeline)
-            const strResult = JSON.stringify(result)
+    const tool_reply = {
+        tool_call_id: function_call.id,
+        name: function_name,
+        content:JSON.stringify(resultList)}
+
+    await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
     
-            if(strResult.length>appsettings.functions_options.max_characters_in_result){
+    full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
+    short_message = msqTemplates.function_end.replace("[function]",function_name)
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
+    //Добавить логирование в диалог и вывод пользователю
 
-                functionResult = `Result of the function exceeds ${appsettings.functions_options.max_characters_in_result} characters. Please adjust the query to reduce length of the result.`
-                return functionResult
+} catch(err) {
 
-            } else{
-                functionResult = strResult
-          
-                return functionResult
-            }
-          
-        } catch (err){
+    const tool_reply = {
+        tool_call_id: function_call.id,
+        name: function_name,
+        content:JSON.stringify([{error:err,instructions: "Provide the user with a brief description of the error and appologise that functions are not currently available."}] )}
 
-            functionResult = `Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`
-            return functionResult
-        }
+        await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
+        full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
+        short_message = msqTemplates.function_end.replace("[function]",function_name)
+        sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
+    //Добавить логирование в диалог и вывод пользователю
+};
 
-} else if(function_name==="get_chatbot_errors") {
+};
 
-    const arguments = function_call?.arguments
-    let pipeline = [];
-    if(arguments === "" || arguments === null || arguments === undefined){
+async function get_current_datetime(){
 
-        functionResult = "No arguments provided. You should provide at least required arguments"
-
-        return functionResult
-    } else {
-
-        try {
-            const argumentsjson = JSON.parse(arguments)      
-           pipeline =  func.replaceNewDate(argumentsjson.aggregate_pipeline)
-            
-        } catch (err){
-            functionResult = `Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the pipeline.`
-            return functionResult
-        }
-    };
-
-        try {
-            const result = await mongo.queryLogsErrorByAggPipeline(pipeline)
-            functionResult = JSON.stringify(result)
-          
-            return functionResult
-        } catch (err){
-
-            functionResult = `Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`
-            return functionResult
-        }
-
-
-} else {
-
-    functionResult = `Function ${function_name} does not exist`
+    try{
+        return {result: new Date().toString()}
+    } catch(err){
+        err.place_in_code = err.place_in_code || arguments.callee.name;
+        throw err;
+    }
 }
 
-return functionResult
+async function runFunctionRequest(botInstance,msg,function_call,model,sentMsgIdObj,sysmsgOn,regime){
+
+try{
+
+const function_name = function_call?.function?.name
+
+let functionResult = ""
+
+if(function_name==="get_current_datetime"){functionResult = await get_current_datetime()} 
+else if(function_name==="fetch_url_content"){functionResult = await fetchUrlContentRouter(function_call)}
+else if(function_name==="create_image"){functionResult = await CreateImageRouter(function_call)} 
+else if(function_name==="get_users_activity"){functionResult = await get_data_from_mongoDB_by_pipepine(function_call)} 
+else if(function_name==="get_chatbot_errors") {functionResult = await get_data_from_mongoDB_by_pipepine(function_call)
+} else {functionResult = {error:`Function ${function_name} does not exist`,instructions:"Provide a valid function."}}
+
+const tool_reply = {
+    tool_call_id: function_call.id,
+    name: function_name,
+    content:JSON.stringify(functionResult)}
+
+await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
+
+full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
+short_message = msqTemplates.function_end.replace("[function]",function_name)
+sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
+
+return {tool_call_id: function_call.id, name: function_name,result:"success"}
 
 } catch(err){
+    err.consolelog = true;
     err.place_in_code = err.place_in_code || arguments.callee.name;
-    throw err;
+    await telegramErrorHandler.main(
+      botInstance,
+      msg.chat.id,
+      err,
+      err.place_in_code,
+      err.user_message
+    );
+    const tool_reply = {
+        tool_call_id: function_call.id,
+        name: function_name,
+        content:JSON.stringify({error:err,instructions:"Provide the user with a brief description of the error on this function."})}
+    
+    await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
+    
+    full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
+    short_message = msqTemplates.function_end.replace("[function]",function_name)
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
+
+    return {tool_call_id: function_call.id, name: function_name,result:"error"}
 }
 };
 
@@ -378,31 +480,6 @@ functionList.push(
 }}
 );
 
-functionList.push(
-{"type":"function",
-"function":{
-    "name": "create_image",
-    "description": "Use this function to answer user's questions to create or draw an image given a prompt.",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "size": {
-                "type": "string",
-                "description": `Size of the image. It can be 1024x1024, 1792x1024, or 1024x1792.`
-            },
-            "style": {
-                "type": "string",
-                "description": `The style of the generated images. Must be one of vivid or natural. Vivid causes the model to lean towards generating hyper-real and dramatic images. Natural causes the model to produce more natural, less hyper-real looking images. Default must be vivid.`
-            },
-            "prompt": {
-                "type": "string",
-                "description": `A text description of the desired image(s). The maximum length is 4000 characters.`
-            },
-        },
-        "required": ["prompt"]
-    }
-}}
-);
 
 functionList.push(
     {"type":"function",
@@ -459,7 +536,33 @@ functionList.push(
         },
         "required": ["aggregate_pipeline"]
     }}
-})
+});
+
+functionList.push(
+    {"type":"function",
+    "function":{
+        "name": "create_image",
+        "description": "Use this function to answer user's questions to create or draw an image given a prompt.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "size": {
+                    "type": "string",
+                    "description": `Size of the image. It can be 1024x1024, 1792x1024, or 1024x1792.`
+                },
+                "style": {
+                    "type": "string",
+                    "description": `The style of the generated images. Must be one of vivid or natural. Vivid causes the model to lean towards generating hyper-real and dramatic images. Natural causes the model to produce more natural, less hyper-real looking images. Default must be vivid.`
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": `A text description of the desired image(s). The maximum length is 4000 characters.`
+                },
+            },
+            "required": ["prompt"]
+        }
+    }}
+    );
 
 }
 
@@ -479,5 +582,6 @@ if (functionList.length===0){
 module.exports = {
     toolsList,
     runFunctionRequest,
-    CreateImage
+    CreateImage,
+    toolsRouter
 }

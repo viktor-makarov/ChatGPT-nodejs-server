@@ -267,7 +267,7 @@ const upsertPromptPromise = async (msg, regime,tools,tool_choice) => {
   }
 };
 
-const upsertFuctionResultsPromise = async (msg, regime,functionResult,functions) => {
+const upsertFuctionResultsPromise = async (msg, regime,tool_reply) => {
   try {
 
     const connection = await Connect_to_mongo(
@@ -289,10 +289,10 @@ const upsertFuctionResultsPromise = async (msg, regime,functionResult,functions)
       userFirstName: msg.from.first_name,
       userLastName: msg.from.last_name,
       regime: regime,
-      role: "system",
+      role: "tool",
+      tool_reply:tool_reply,
       roleid: 0,
-      content: functionResult,
-      functions:functions,
+      content: null,
       tokens: otherfunc.countTokens(functionResult)+otherfunc.countTokens(JSON.stringify(functions))
     };
 

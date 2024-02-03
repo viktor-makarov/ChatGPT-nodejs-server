@@ -367,7 +367,6 @@ async function chatCompletionStreamAxiosRequest(
       };
 
       dialogueListEdited.push(result);//Для всех остальных элементов кроме запросов функций и ответов на нее.
-  }
   };
 
 
@@ -608,16 +607,10 @@ async function chatCompletionStreamAxiosRequest(
               const sysmsgOn = allSettingsDict[msg.from.id][regime].sysmsg
 
              // console.log("In case of error",JSON.stringify(completionJson))
-              if(completionJson.tool_calls>0){
-                await mongo.upsertCompletionPromise(completionJson);
-
+              await mongo.upsertCompletionPromise(completionJson);
                 //Передаем запрос на обработку.
-              functionResult = await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn)
-              
-          } else {
-              functionResult = "No tool calls found."
-          }
-              await mongo.upsertFuctionResultsPromise(msg, regime,functionResult,functions); //записываем вызова функции в диалог
+              await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn,regime)
+
               
               let msgTGM = msqTemplates.function_result_status_msg
               //Сообщая пользователю
@@ -645,10 +638,11 @@ async function chatCompletionStreamAxiosRequest(
                 sentMsgIdObj.sentMsgId,
                 msg,
                 regime,
-                process.env.OPENAI_API_KEY,
+                open_ai_api_key,
                 model,
                 temperature,
-                functions
+                tools,
+                tool_choice
                 )
               }
 

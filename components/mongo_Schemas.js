@@ -165,7 +165,6 @@ const TelegramDialogSheema = new Schema(
     functions: { type: Object },
     tools: { type: Object },
     tool_choice: Schema.Types.Mixed,
-    function_call:{ type: Object },
     tool_calls:{ type: Object },
     tool_reply:{ type: Object },
     content_parts:{ type: Object },
