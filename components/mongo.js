@@ -66,6 +66,7 @@ async function insert_error_logPromise(error, comment) {
         code: error.code,
         original_code: error.original_code,
         message: error.message,
+        message_from_response:error.message_from_response,
         stack: error.stack,
         details:error.details,
         place_in_code: error.place_in_code,
@@ -252,7 +253,7 @@ const upsertPromptPromise = async (msg, regime,tools,tool_choice) => {
       content: msg.text,
       tools:tools,
       tool_choice:tool_choice,
-      tokens: otherfunc.countTokens(msg.text)+otherfunc.countTokens(JSON.stringify(functions)),
+      tokens: otherfunc.countTokens(msg.text)+otherfunc.countTokens(JSON.stringify(tools)),
     };
 
     return await dialog_collection.updateOne(
@@ -293,7 +294,7 @@ const upsertFuctionResultsPromise = async (msg, regime,tool_reply) => {
       tool_reply:tool_reply,
       roleid: 0,
       content: null,
-      tokens: otherfunc.countTokens(functionResult)+otherfunc.countTokens(JSON.stringify(functions))
+      tokens: otherfunc.countTokens(JSON.stringify(tool_reply))
     };
 
 

@@ -32,7 +32,6 @@ async function adminHandler(botInstance, msg) {
   const adminCode = process.env.ADMIN_KEY;
   let prompt = msg.text.substring("/admin".length).trim();
 
-  console.log("prompt",prompt)
   if (prompt === "") {
     return { text: msqTemplates.blank_admin_code };
   }
@@ -54,6 +53,8 @@ async function adminHandler(botInstance, msg) {
       global.adminArray = await mongo.get_all_adminPromise(); //Если секция permissions успешно добавилась, то обновляем adminArray.
 
       return { text: msqTemplates.admin_welcome };
+    } else {
+      return { text: msqTemplates.admin_reject };
     }
 }
 

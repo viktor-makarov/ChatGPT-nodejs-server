@@ -87,6 +87,25 @@ obj = recursiveReplace(obj) //Заменяем даты на new Date(), что�
 
 };
 
+
+function safeStringify(obj) {
+  const cache = new Set();
+  const stringified = JSON.stringify(obj, function(key, value) {
+      if (typeof value === 'object' && value !== null) {
+          if (cache.has(value)) {
+              // Duplicate reference found, discard key
+              return;
+          }
+          // Store value in our collection
+          cache.add(value);
+      }
+      return value;
+  });
+  cache.clear();
+  return stringified;
+}
+
+
 const replaceISOStr = (str) => {
 
 const obj = JSON.parse(str, (key, value) => {
@@ -288,5 +307,6 @@ module.exports = {
   replaceNewDate,
   replaceISOStr,
   countTokensProportion,
-  reorderArrayForTools
+  reorderArrayForTools,
+  safeStringify
 };

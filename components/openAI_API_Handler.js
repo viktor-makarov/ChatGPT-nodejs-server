@@ -21,6 +21,7 @@ const configuration = new Configuration({
 });
 const openai = new OpenAIApi(configuration);
 const axios = require("axios");
+const { Console } = require("console");
 
 async function getModels() {
   try {
@@ -51,6 +52,7 @@ async function UnSuccessResponseHandle(
     if (error.message.includes("429")) {
       err = new Error(error.message);
       err.code = "OAI_ERR3";
+      err.data = error.data
       err.user_message = msqTemplates.error_api_too_many_req;
       err.mongodblog = false;
       err.place_in_code = err.place_in_code || arguments.callee.name;
@@ -59,6 +61,15 @@ async function UnSuccessResponseHandle(
       err = new Error(error.message);
       err.code = "OAI_ERR1";
       err.user_message = msqTemplates.OAI_ERR1;
+      err.mongodblog = true;
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      throw err;
+    } else if (error.message.includes("400")) {
+    
+      err = new Error(error.message);
+      err.code = "OAI_ERR4";
+      err.message_from_response = error.message_from_response
+      err.user_message = msqTemplates.OAI_ERR4;
       err.mongodblog = true;
       err.place_in_code = err.place_in_code || arguments.callee.name;
       throw err;
@@ -284,6 +295,7 @@ const options = {
     return response
   } catch (err) {
     
+    
     if (err.mongodblog === undefined) {
       err.mongodblog = true;
     }
@@ -342,7 +354,7 @@ async function chatCompletionStreamAxiosRequest(
       modelConfig[allSettingsDict[msg.from.id][regime].model]
         .request_length_limit_in_tokens;
 
-    let dialogueListEdited;//Составляем перечень сообщений для отправки в модель
+    let dialogueListEdited =[];//Составляем перечень сообщений для отправки в модель
     for (let i = 0; i < dialogueList.length; i++) {
       let result ={};
       result['role'] = dialogueList[i].role
@@ -369,12 +381,9 @@ async function chatCompletionStreamAxiosRequest(
       dialogueListEdited.push(result);//Для всех остальных элементов кроме запросов функций и ответов на нее.
   };
 
-
-
     console.log(JSON.stringify(dialogueListEdited))
         //Учитываем потраченные токены
-    const previous_dialogue_tokens = otherFunctions.countTokens(JSON.stringify(dialogueListEdited))+otherFunctions.countTokens(JSON.stringify(functions))
-
+    const previous_dialogue_tokens = otherFunctions.countTokens(JSON.stringify(dialogueListEdited))+otherFunctions.countTokens(JSON.stringify(tools))
 
     //console.log(dialogueListEdited)
 
@@ -392,9 +401,9 @@ async function chatCompletionStreamAxiosRequest(
         "Content-Type": "application/json",
         Authorization: `Bearer ${open_ai_api_key}`,
       },
-      validateStatus: function (status) {
-        return status == appsettings.http_options.SUCCESS_CODE;
-      },
+ //     validateStatus: function (status) {
+  //      return status == appsettings.http_options.SUCCESS_CODE;
+  //    },
       data: {
         model:model,
         temperature: temperature,
@@ -416,6 +425,10 @@ async function chatCompletionStreamAxiosRequest(
           sentEditedMessage,
           appsettings.telegram_options.send_throttle_ms
         );
+          console.log("response.status",response.status)
+        if(response.status!=200){
+          console.log(response.data)
+        }
 
         mainPromiseFinished.status = true;
 
@@ -443,8 +456,6 @@ async function chatCompletionStreamAxiosRequest(
                 0: { id_message: sent_msg_id, to_send: "" },
               };
 
-
-
               completionJson = {
                 //Формируем сообщение completion
                 sourceid: chunkJsonList[0].id,
@@ -470,8 +481,8 @@ async function chatCompletionStreamAxiosRequest(
                 telegramMsgOptions: {
                   chat_id: msg.chat.id,
                   message_id: sent_msg_id,
-                  parse_mode: functionCallObject ? null : "Markdown",
-                  reply_markup: functionCallObject ? null : JSON.stringify({
+                  parse_mode: "Markdown",
+                  reply_markup: JSON.stringify({
                     one_time_keyboard: true,
                     inline_keyboard: [
                       [
@@ -496,6 +507,7 @@ async function chatCompletionStreamAxiosRequest(
               return
             }
 
+
             let content = "";
             for (let i = 0; i < chunkJsonList.length; i++) {
               //собираем несколько сообщений в одно
@@ -506,14 +518,14 @@ async function chatCompletionStreamAxiosRequest(
 
                 choiceArray.forEach((choice) => {
                  content += (choice?.delta?.content ?? "");
-                 const call = choice?.delta?.tool_calls
+                 const call = choice?.delta?.tool_calls ? choice?.delta?.tool_calls[0] : null
 
                  if (call && call.id && call.type && call.function) {
-                  completionJson.tool_calls.push({
-                        id: call.id,
-                        type: call.type,
-                        function: call.function
-                    });
+                  completionJson.telegramMsgOptions.parse_mode = null;
+                  completionJson.telegramMsgOptions.reply_markup = null;
+
+                  completionJson.tool_calls.push(call);
+
                     if(!completionJson.tool_calls[completionJson.tool_calls.length-1].function?.arguments){ //Добавляем, если отсутствует
                       completionJson.tool_calls[completionJson.tool_calls.length-1].function["arguments"] ="" 
                     }
@@ -521,11 +533,13 @@ async function chatCompletionStreamAxiosRequest(
                   if (call && call.function && call.function.arguments && completionJson.tool_calls.length>0) {
                     completionJson.tool_calls[completionJson.tool_calls.length-1].function.arguments += call.function.arguments;
                   }
+                  completionJson.finish_reason = choice.finish_reason;
+   
+                  completionJson.tokens += 1; //считаем токены в комплишене
                 })
               }
 
-              completionJson.finish_reason = choice.finish_reason;
-              completionJson.tokens += 1; //считаем токены в комплишене
+
             }
             completionJson.content += content;
             
@@ -598,9 +612,8 @@ async function chatCompletionStreamAxiosRequest(
               err.mongodblog = true;
               err.user_message = msqTemplates.empty_completion;
               throw err;
-            } 
+            };
 
-            let functionResult = "";
             if(completionJson.finish_reason == 'tool_calls'){ //Уведомляем пользователя, что запрошена функция
           //    console.log("5","it is function call",new Date())
               let sentMsgIdObj = {sentMsgId:sent_msg_id}
@@ -609,28 +622,7 @@ async function chatCompletionStreamAxiosRequest(
              // console.log("In case of error",JSON.stringify(completionJson))
               await mongo.upsertCompletionPromise(completionJson);
                 //Передаем запрос на обработку.
-              await telegramFunctionHandler.runFunctionRequest(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn,regime)
-
-              
-              let msgTGM = msqTemplates.function_result_status_msg
-              //Сообщая пользователю
-              if(sysmsgOn){ 
-                msgTGM = msqTemplates.function_result_msg.replace("[result]",functionResult)
-                if(msgTGM.length>appsettings.telegram_options.big_outgoing_message_threshold){
-                  msgTGM = msgTGM.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
-                }
-                await botInstance.editMessageText(msgTGM,{chat_id: completionJson.telegramMsgOptions.chat_id,message_id: sentMsgIdObj.sentMsgId,
-                  disable_web_page_preview: true
-                  //  link_preview_options: {is_disabled: true}
-                });
-              }
-
-              await botInstance.sendChatAction(completionJson.telegramMsgOptions.chat_id, "typing"); //Отправляем progress msg
-
-              if(allSettingsDict[msg.from.id][regime].sysmsg){ 
-              const rst2 = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "Ждем ответа OpenAi ...");
-              sentMsgIdObj.sentMsgId = rst2.message_id
-              }
+              await telegramFunctionHandler.toolsRouter(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn,regime)
 
            //   console.log("7","another request",new Date())
               await chatCompletionStreamAxiosRequest(
@@ -670,6 +662,8 @@ async function chatCompletionStreamAxiosRequest(
         });
       })
       .catch(async (error) => {
+        mainPromiseFinished.status = true;
+        error.message_from_response = error.response.data._readableState.buffer.head.data.toString('utf8')
         await UnSuccessResponseHandle(
           botInstance,
           msg,
