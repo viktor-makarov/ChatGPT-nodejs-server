@@ -11,53 +11,43 @@ const iconv = require('iconv-lite');
 const modelConfig = require("../config/modelConfig");
 const msqTemplates = require("../config/telegramMsgTemplates");
 const telegramErrorHandler = require("./telegramErrorHandler.js");
+const { Console } = require("console");
+const { ChatCompletionResponseMessageRoleEnum } = require("openai");
 
-async function notifyUser(botInstance,sysmsgOn,full_message,short_message,incoming_msg_id,chat_id,create_follow_up_msg){
+async function notifyUser(botInstance,sysmsgOn,full_message,short_message,incoming_msg_id,chat_id,follow_up_msg){
 //Sends a notification to the user and returns the last message_id
 
-let full_message_to_send =full_message;
-let short_message_to_send =short_message;
 let outcoming_msg_id = incoming_msg_id;
+let text_to_send;
+
 try{
+    if(sysmsgOn){ 
+        text_to_send = full_message;
+    } else {
+        text_to_send = short_message;
+    };
 
-if(full_message_to_send.length>appsettings.telegram_options.big_outgoing_message_threshold){
-    full_message_to_send = full_message_to_send.substring(0, telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
-}
-
-if(short_message_to_send.length>appsettings.telegram_options.big_outgoing_message_threshold){
-    short_message_to_send = short_message.substring(0, telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
+//Проверям, что длина сообщения поместится в одно сообщения telegram.
+if(text_to_send.length>appsettings.telegram_options.big_outgoing_message_threshold){
+    text_to_send = text_to_send.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
 }
 
 if(incoming_msg_id){   //Если есть входящий номер id
 
-    if(sysmsgOn){ //Если включена функция показа системных сообщений
-
       //Сокдащаем сообщение, если оно превышает димит расмера сообщения телеграм.
-        await botInstance.editMessageText(full_message_to_send,{chat_id:chat_id,message_id: incoming_msg_id,
-          disable_web_page_preview: true});
-        if(create_follow_up_msg){
-            const rst = await botInstance.sendMessage(chat_id, msqTemplates.function_request_status_msg2);
-            outcoming_msg_id = rst.message_id
-        }
-
-    } else {
-      await botInstance.editMessageText(short_message_to_send,{chat_id: chat_id,message_id: incoming_msg_id,
+        await botInstance.editMessageText(text_to_send,{chat_id:chat_id,message_id: incoming_msg_id,
         disable_web_page_preview: true});
-    }
-} else {
 
-if(sysmsgOn){ 
-    const rst = await botInstance.sendMessage(chat_id, full_message_to_send);
-    outcoming_msg_id = rst.message_id
-    if(create_follow_up_msg){
-        const rst = await botInstance.sendMessage(chat_id, msqTemplates.function_request_status_msg2);
+        const rst = await botInstance.sendMessage(chat_id, follow_up_msg);
         outcoming_msg_id = rst.message_id
-    }
+
 } else {
-    const rst = await botInstance.sendMessage(chat_id, short_message_to_send);
+    const rst = await botInstance.sendMessage(chat_id, text_to_send);
     outcoming_msg_id = rst.message_id
-};
+    const rst2 = await botInstance.sendMessage(chat_id, follow_up_msg);
+    outcoming_msg_id = rst2.message_id
 }
+
 
 return outcoming_msg_id
 } catch (err){
@@ -75,7 +65,7 @@ return outcoming_msg_id
 
 };
 
-async function CreateImageRouter(function_call){
+async function CreateImageRouter(botInstance,function_call,msg,sentMsgIdObj){
     try{
 
     const arguments = function_call?.function?.arguments
@@ -83,11 +73,11 @@ async function CreateImageRouter(function_call){
     if(arguments === "" || arguments === null || arguments === undefined){
         return {result:"unsuccessful", error:"No arguments provided. You should provide at least required arguments"};
     } 
-    
+    let argumentsjson;
     try{
-    const argumentsjson = JSON.parse(arguments)   
+    argumentsjson = JSON.parse(arguments)   
     } catch(err){
-        return {result:"unsuccessful", error:err};
+        return {result:"unsuccessful", error:{message: err.message,name: err.name}};
     };
     
     if (argumentsjson.prompt === "" || argumentsjson.prompt === null || argumentsjson.prompt === undefined){
@@ -112,11 +102,11 @@ async function CreateImageRouter(function_call){
             return {result:"unsuccessful", error:`Style param can not have other value than vivid or natural. Please choose one of the two.`};
         }
 
-        const resp = await CreateImage(botInstance,prompt,"dall-e-3",size,style,msg)
+        const resp = await CreateImage(botInstance,prompt,"dall-e-3",size,style,msg,sentMsgIdObj)
 
         functionResult = {
             result:"The image has been generated and successfully sent to the user.", 
-            instructions:`Translate the following description of the image:`+JSON.stringify(resp)
+            instructions:`Translate the following description of the image in the language of the user's prompt:`+JSON.stringify(resp)
         };
         return functionResult
         
@@ -126,7 +116,7 @@ async function CreateImageRouter(function_call){
         }
     };
 
-async function CreateImage(botInstance,prompt,model,size,style,msg){
+async function CreateImage(botInstance,prompt,model,size,style,msg,sentMsgIdObj){
     try {
     
       const options = {
@@ -153,10 +143,14 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
         options.data.style = style
       }
 
+
+
+       await botInstance.editMessageText("Создаю изображение ...",{chat_id:msg.chat.id,message_id: sentMsgIdObj.sentMsgId})
        const openai_resp = await axios(options);
        let resultList = []; 
        const photoList = openai_resp.data.data
 
+       await botInstance.editMessageText("Сжимаю изображение ...",{chat_id:msg.chat.id,message_id: sentMsgIdObj.sentMsgId})
        if (!(photoList&&photoList.length>0)){
         throw new Error("No image was provided by OpenAI service. Please retry.");
        }
@@ -196,7 +190,9 @@ async function CreateImage(botInstance,prompt,model,size,style,msg){
               })
             }
             )
-
+            await botInstance.deleteMessage(msg.chat.id,sentMsgIdObj.sentMsgId);
+            const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
+            sentMsgIdObj.sentMsgId = sendResult.message_id
       }
       
         return resultList
@@ -217,7 +213,7 @@ async function fetchUrlContent(url,tokenlimit){
             responseType: 'arraybuffer',
             responseEncoding: 'binary'})
         } catch(err){
-            return  {"url":url,"error":err}
+            return  {"url":url,"error":{message: err.message,name: err.name}}
         };
 
         const contentType = response.headers['content-type'] || 'windows-1251';
@@ -228,7 +224,7 @@ async function fetchUrlContent(url,tokenlimit){
         try {
         decodedHtml = iconv.decode(response.data, encoding);
         } catch(err){
-            return  {"url":url,"error":err}
+            return  {"url":url,"error":{message: err.message,name: err.name}}
         };
 
         const $ = cheerio.load(decodedHtml);
@@ -245,12 +241,12 @@ async function fetchUrlContent(url,tokenlimit){
         }
     } catch(err){
         err.place_in_code = err.place_in_code || arguments.callee.name;
-        err.details = {"url":url}
+        err.details = {url:url,error:{message: err.message,name: err.name}}
         throw err;
     }
     };
 
-async function fetchUrlContentRouter(function_call){
+async function fetchUrlContentRouter(function_call,model){
 
     try{
 
@@ -293,7 +289,7 @@ async function fetchUrlContentRouter(function_call){
         }
     };
 
-async function get_data_from_mongoDB_by_pipepine(function_call){
+async function get_data_from_mongoDB_by_pipepine(function_call,table_name){
 
     const arguments = function_call?.function?.arguments
 
@@ -310,7 +306,13 @@ async function get_data_from_mongoDB_by_pipepine(function_call){
     }
 
     try {
-        const result = await mongo.queryTockensLogsByAggPipeline(pipeline)
+        let result;
+        if(table_name==="errors_log"){
+            result = await mongo.queryLogsErrorByAggPipeline(pipeline)
+        } else if (table_name==="tokens_logs"){
+            result = await mongo.queryTockensLogsByAggPipeline(pipeline)
+        }
+
         const strResult = JSON.stringify(result)
 
         if(strResult.length>appsettings.functions_options.max_characters_in_result){
@@ -332,29 +334,17 @@ async function toolsRouter(botInstance,msg,tool_calls,model,sentMsgIdObj,sysmsgO
 
 try{
 
-    let full_message = msqTemplates.function_request_msg.replace("[function]",JSON.stringify(tool_calls))
-    let short_message = msqTemplates.function_request_status_msg
-
-    console,log("router msg_before",sentMsgIdObj.sentMsgId)
-    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
-    console,log("router msg_after",sentMsgIdObj.sentMsgId)
-    
     if(!(tool_calls && tool_calls.length>0)){
 
-        result = {error:"No tool calls have been provided",instructions: "Provide a valid tool call"}
+        result = {error:"No tool calls have been provided",instructions: "Provide a valid tool call."}
 
-        const tool_reply = {
-            tool_call_id: null,
-            name: null,
-            content:JSON.stringify(result)
-        };
+        await mongo.upsertSystemPromise(JSON.stringify(result),msg, regime);
 
-        await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
-    
-        full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
-        short_message = msqTemplates.function_end.replace("[function]",function_call?.function?.name)
-        sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
-    }
+        full_message = msqTemplates.function_request_error + "\n\n" + JSON.stringify(tool_reply);
+        short_message = msqTemplates.function_request_error
+        sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...")
+        return 
+    };
 
         let promisesList =[];
         for (let i = 0; i < tool_calls.length; i++) {
@@ -372,19 +362,20 @@ try{
                 
                 await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
     
-                full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
-                short_message = msqTemplates.function_end.replace("[function]",function_call?.function?.name)
-                sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
+                full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]",function_call?.function?.name).replace("[result]",JSON.stringify(tool_reply))
+                short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]",function_call?.function?.name)
+                sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...")
                 
                 return
             }
 
             if(tool_call.type==="function"){ 
 
+                full_message = msqTemplates.function_request_msg_full.replace("[function]",tool_call?.function?.name).replace("[request]",JSON.stringify(tool_call))
+                short_message = msqTemplates.function_request_msg_short.replace("[function]",tool_call?.function?.name)
+                sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...")
                 promisesList.push(runFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime))
-
             } else { //Не функции обрабатывать пока не умеем.
-                
                 promisesList.push(runOtherThenFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime))
             }
         };
@@ -393,33 +384,18 @@ try{
         console.log("all_promiseResult",promiseResult)
         resultList = resultList
 
-    const tool_reply = {
-        tool_call_id: function_call.id,
-        name: function_call?.function?.name,
-        content:JSON.stringify(resultList)
-    };
+} catch(error) {
 
-    await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
-    
-    full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
-    short_message = msqTemplates.function_end.replace("[function]",function_call?.function?.name)
-    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
-    //Добавить логирование в диалог и вывод пользователю
-
-} catch(err) {
-
-    const tool_reply = {
-        tool_call_id: null,
-        name: null,
-        content:JSON.stringify([{error:err,instructions: "Provide the user with a brief description of the error and appologise that functions are not currently available."}] )}
+    const result = {error:{message: error.message,name: error.name},instructions: "Provide the user with a brief description of the error and appologise that functions are not currently available."}
 
         try{
-        await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
-        full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
+        await mongo.upsertSystemPromise(JSON.stringify(result),msg, regime);
+
+        full_message = msqTemplates.function_error + "\n\n" + JSON.stringify(result)
         short_message = msqTemplates.function_error
-        sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
-        } catch(err){
-            throw err;
+        sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...")
+        } catch(err2){
+            throw err2;
         }
     //Добавить логирование в диалог и вывод пользователю
 };
@@ -440,19 +416,15 @@ async function runOtherThenFunctionRequest(botInstance,msg,non_function_call,mod
 
 try{
 
-    const functionResult = {result:"unsuccessful",error:"Non function types cannot be processed for now.",instructions:"Rework into a function"}
+    const result = {result:"unsuccessful",error:"Non function types cannot be processed for now.",instructions:"Rework into a function"}
 
-    const tool_reply = {
-        tool_call_id: non_function_call.id,
-        name: non_function_call?.function?.name,
-        content:JSON.stringify(functionResult)
-    }
-    
-    await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
-    
-    full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
-    short_message = msqTemplates.function_end.replace("[function]",function_call?.function?.name)
-    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
+    await mongo.upsertSystemPromise(JSON.stringify(result),msg, regime);   
+
+    full_message = msqTemplates.function_error + "\n\n" + JSON.stringify(result)
+    short_message = msqTemplates.function_error
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...")
+
+    return result
 
 } catch(err){
     err.consolelog = true;
@@ -465,22 +437,19 @@ try{
       err.place_in_code,
       err.user_message
     );
-    const tool_reply = {
-        tool_call_id: function_call.id,
-        name: non_function_call?.function?.name,
-        content:JSON.stringify({error:err,instructions:"Provide the user with a brief description of the error."})
-    }
     
+    const result = {result:"unsuccessful",error:{message: error.message,name: error.name},instructions:"Provide the user with a brief description of the error."}
+
         try{
-    await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
+    await mongo.upsertSystemPromise(JSON.stringify(result),msg, regime); 
     
-    full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
+    full_message = msqTemplates.msqTemplates.function_error + "\n\n" + JSON.stringify(result)
     short_message = msqTemplates.function_error
-    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"... ")
         } catch(err){
             throw err;
         }
-    return {tool_call_id: function_call.id, name: function_call?.function?.name,result:"error"}
+    return result
 
 }
 
@@ -493,12 +462,18 @@ try{
 const function_name = function_call?.function?.name
 let functionResult = ""
 
+const start = new Date();
 if(function_name==="get_current_datetime"){functionResult = await get_current_datetime()} 
-else if(function_name==="fetch_url_content"){functionResult = await fetchUrlContentRouter(function_call)}
-else if(function_name==="create_image"){functionResult = await CreateImageRouter(function_call)} 
-else if(function_name==="get_users_activity"){functionResult = await get_data_from_mongoDB_by_pipepine(function_call)} 
-else if(function_name==="get_chatbot_errors") {functionResult = await get_data_from_mongoDB_by_pipepine(function_call)
+else if(function_name==="fetch_url_content"){functionResult = await fetchUrlContentRouter(function_call,model)}
+else if(function_name==="create_image"){functionResult = await CreateImageRouter(botInstance,function_call,msg,sentMsgIdObj)} 
+else if(function_name==="get_users_activity"){functionResult = await get_data_from_mongoDB_by_pipepine(function_call,"tokens_logs")} 
+else if(function_name==="get_chatbot_errors") {functionResult = await get_data_from_mongoDB_by_pipepine(function_call,"errors_log")
 } else {functionResult = {error:`Function ${function_name} does not exist`,instructions:"Provide a valid function."}}
+const end = new Date();
+
+const timeTaken = (end - start) / 1000; // Time difference in seconds
+
+const timeTakenRounded = timeTaken.toFixed(2); // Rounded to one decimal place
 
 const tool_reply = {
     tool_call_id: function_call.id,
@@ -507,11 +482,13 @@ const tool_reply = {
 
 await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
 
-full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
-short_message = msqTemplates.function_end.replace("[function]",function_call?.function?.name)
-sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
 
-return {tool_call_id: function_call.id, name: function_call?.function?.name,result:"success"}
+console.log("before function result",sentMsgIdObj.sentMsgId)
+full_message = msqTemplates.function_end_successful_full.replace("[function]",function_call?.function?.name).replace("[time]",timeTakenRounded.toString()).replace("[result]",JSON.stringify(tool_reply))
+short_message = msqTemplates.function_end_successful_short.replace("[function]",function_call?.function?.name).replace("[time]",timeTakenRounded.toString())
+sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...")
+
+return {tool_call_id: function_call.id, name: function_call?.function?.name,result:functionResult}
 
 } catch(err){
     err.consolelog = true;
@@ -527,18 +504,18 @@ return {tool_call_id: function_call.id, name: function_call?.function?.name,resu
     const tool_reply = {
         tool_call_id: function_call.id,
         name: function_call?.function?.name,
-        content:JSON.stringify({error:err,instructions:"Provide the user with a brief description of the error on this function."})
+        content:JSON.stringify({error:{message: err.message,name: err.name},instructions:"Provide the user with a brief description of the error on this function."})
     }
     
-        try{
+    try{
     await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
     
-    full_message = msqTemplates.function_result_msg.replace("[result]",JSON.stringify(tool_reply))
-    short_message = msqTemplates.function_error
-    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,true)
-        } catch(err){
-            throw err;
-        }
+    full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]",function_call?.function?.name).replace("[result]",JSON.stringify(tool_reply))
+    short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]",function_call?.function?.name)
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...")
+    } catch(err){
+        throw err;
+    }
     return {tool_call_id: function_call.id, name: function_call?.function?.name,result:"error"}
 }
 };
@@ -591,7 +568,7 @@ functionList.push(
     {"type":"function",
     "function":{
     "name": "get_users_activity",
-    "description": `Use this function to report on this chatbot users' activity of users. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongo.mongooseVersion()}. One document represents one request of a user.`,
+    "description": `Use this function to report on this chatbot users' activity. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongo.mongooseVersion()}. One document represents one request of a user.`,
     "parameters": {
         "type": "object",
         "properties": {

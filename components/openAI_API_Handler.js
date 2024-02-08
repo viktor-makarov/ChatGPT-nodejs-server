@@ -49,34 +49,51 @@ async function UnSuccessResponseHandle(
   try {
     //  var err = new Error(api_res.statusMessage); //создаем ошибку и наполняем содержанием
 
-    if (error.message.includes("429")) {
+    if (error.response_status === 400 || error.message.includes("400")) {
       err = new Error(error.message);
-      err.code = "OAI_ERR3";
+      err.code = "OAI_ERR_400";
+      err.message_from_response = error.message_from_response
+      err.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response?.error?.message ?? "отсутствует");
+      err.mongodblog = true;
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      throw err;
+    } else if (error.response_status === 401 || error.message.includes("401")) {
+      err = new Error(error.message);
+      err.code = "OAI_ERR_401";
+      err.message_from_response = error.message_from_response
+      err.user_message = msqTemplates.OAI_ERR_401.replace("[original_message]",err?.message_from_response?.error?.message ?? "отсутствует");
+      err.mongodblog = true;
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      throw err;
+    } else if (error.response_status === 429 || error.message.includes("429")) {
+      err = new Error(error.message);
+      err.code = "OAI_ERR_429";
       err.data = error.data
-      err.user_message = msqTemplates.error_api_too_many_req;
+      err.message_from_response = error.message_from_response
+      err.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",err?.message_from_response?.error?.message ?? "отсутствует");
       err.mongodblog = false;
       err.place_in_code = err.place_in_code || arguments.callee.name;
       throw err;
-    } else if (error.message.includes("503")) {
+    } else if (error.response_status === 501 || error.message.includes("501")) {
       err = new Error(error.message);
-      err.code = "OAI_ERR1";
-      err.user_message = msqTemplates.OAI_ERR1;
-      err.mongodblog = true;
-      err.place_in_code = err.place_in_code || arguments.callee.name;
-      throw err;
-    } else if (error.message.includes("400")) {
-    
-      err = new Error(error.message);
-      err.code = "OAI_ERR4";
+      err.code = "OAI_ERR_501";
       err.message_from_response = error.message_from_response
-      err.user_message = msqTemplates.OAI_ERR4;
+      err.user_message = msqTemplates.OAI_ERR_501.replace("[original_message]",err?.message_from_response?.error?.message ?? "отсутствует");
       err.mongodblog = true;
       err.place_in_code = err.place_in_code || arguments.callee.name;
       throw err;
-    } else if (error.code === "ECONNABORTED") {
+    } else if (error.response_status === 503 || error.message.includes("503")) {
+      err = new Error(error.message);
+      err.code = "OAI_ERR_503";
+      err.message_from_response = error.message_from_response
+      err.user_message = msqTemplates.OAI_ERR_503.replace("[original_message]",err?.message_from_response?.error?.message ?? "отсутствует");
+      err.mongodblog = true;
+      err.place_in_code = err.place_in_code || arguments.callee.name;
+      throw err;
+    }  else if (error.code === "ECONNABORTED") {
         err = new Error(error.message);
-        err.code = "OAI_ERR1";
-        err.user_message = msqTemplates.OAI_ERR1;
+        err.code = "OAI_ERR_408";
+        err.user_message = msqTemplates.OAI_ERR_408;
         err.mongodblog = true;
         err.place_in_code = err.place_in_code || arguments.callee.name;
         throw err;
@@ -381,7 +398,6 @@ async function chatCompletionStreamAxiosRequest(
       dialogueListEdited.push(result);//Для всех остальных элементов кроме запросов функций и ответов на нее.
   };
 
-    console.log(JSON.stringify(dialogueListEdited))
         //Учитываем потраченные токены
     const previous_dialogue_tokens = otherFunctions.countTokens(JSON.stringify(dialogueListEdited))+otherFunctions.countTokens(JSON.stringify(tools))
 
@@ -401,9 +417,9 @@ async function chatCompletionStreamAxiosRequest(
         "Content-Type": "application/json",
         Authorization: `Bearer ${open_ai_api_key}`,
       },
- //     validateStatus: function (status) {
-  //      return status == appsettings.http_options.SUCCESS_CODE;
-  //    },
+      validateStatus: function (status) {
+        return status == appsettings.http_options.SUCCESS_CODE;
+      },
       data: {
         model:model,
         temperature: temperature,
@@ -425,10 +441,7 @@ async function chatCompletionStreamAxiosRequest(
           sentEditedMessage,
           appsettings.telegram_options.send_throttle_ms
         );
-          console.log("response.status",response.status)
-        if(response.status!=200){
-          console.log(response.data)
-        }
+   
 
         mainPromiseFinished.status = true;
 
@@ -543,9 +556,7 @@ async function chatCompletionStreamAxiosRequest(
             }
             completionJson.content += content;
             
-            if (!content === "") {
-              return; //Если контент пустой, то дальше не идем.
-            }
+  
 
             var list_of_parts_messages = Object.keys(
               completionJson.content_parts
@@ -579,6 +590,10 @@ async function chatCompletionStreamAxiosRequest(
             } else {
               completionJson.content_ending = " ...";
               completionJson.content_parts[last_part].content_ending = " ...";
+            }
+
+            if (completionJson.tool_calls.length && content === "" && ! completionJson.completion_ended) {
+              return; //Если контент пустой, то дальше не идем.
             }
 
             if (completionJson.function_call) {//Проверяем, что это не запрос функции
@@ -625,6 +640,9 @@ async function chatCompletionStreamAxiosRequest(
               await telegramFunctionHandler.toolsRouter(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn,regime)
 
            //   console.log("7","another request",new Date())
+              
+           await botInstance.editMessageText("Анализируем инфо ...",{chat_id:completionJson.telegramMsgOptions.chat_id,message_id: sentMsgIdObj.sentMsgId})
+              
               await chatCompletionStreamAxiosRequest(
                 botInstance,
                 sentMsgIdObj.sentMsgId,
@@ -663,7 +681,13 @@ async function chatCompletionStreamAxiosRequest(
       })
       .catch(async (error) => {
         mainPromiseFinished.status = true;
-        error.message_from_response = error.response.data._readableState.buffer.head.data.toString('utf8')
+        try{
+        error.message_from_response = JSON.parse(error.response.data._readableState.buffer.head.data.toString('utf8'))  
+        error.response_status = error.response.status 
+      } catch(err){
+        error.message_from_response = {error:"Unable to derive error details from the error"}
+        }
+
         await UnSuccessResponseHandle(
           botInstance,
           msg,
