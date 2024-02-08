@@ -137,12 +137,12 @@ const TokensLogSheema = new Schema(
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
-    username: { type: String, description: "Use this field as default and primary identificator of a user." },
-    model: { type: String,description: "OpenAI model used for request." },
+    username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
+    model: { type: String,description: "OpenAI model used for request. Hint: for correct filtering on this field first fetch all the unique values." },
     prompt_tokens: { type: Number,description: "Number of tokens in prompt of the request." },
     completion_tokens: { type: Number,description: "Number of tokens in completion of the request." },
     total_tokens: { type: Number,description: "Total number of tokens in the request: prompt plus completion." },
-    regime: { type: String,description: "Chat bot mode used by user" },
+    regime: { type: String,description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );

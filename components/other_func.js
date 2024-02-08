@@ -88,6 +88,17 @@ obj = recursiveReplace(obj) //Заменяем даты на new Date(), что�
 };
 
 
+function jsonToMarkdownCodeBlock(jsonObject) {
+  const jsonString = JSON.stringify(jsonObject, null, 2);
+
+  // In MarkdownV2, escape the backtick ` and the backslash \ characters.
+  const escapedJsonString = jsonString
+    .replace(/\\/g, '\\\\')  // Escape backslashes
+    .replace(/`/g, '\\`');   // Escape backticks
+
+  return '```\n' + escapedJsonString + '\n```';
+}
+
 function safeStringify(obj) {
   const cache = new Set();
   const stringified = JSON.stringify(obj, function(key, value) {
@@ -308,5 +319,6 @@ module.exports = {
   replaceISOStr,
   countTokensProportion,
   reorderArrayForTools,
-  safeStringify
+  safeStringify,
+  jsonToMarkdownCodeBlock
 };
