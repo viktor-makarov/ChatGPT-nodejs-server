@@ -147,6 +147,23 @@ const TokensLogSheema = new Schema(
   { collection: appsettings.mongodb_names.tokens_log }
 );
 
+const FunctionUsageLogSheema = new Schema(
+  {
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')." },
+    userid: { type: Number, index: true },
+    userFirstName: { type: String },
+    userLastName: { type: String },
+    username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
+    model: { type: String,description: "OpenAI model used for request. Hint: for correct filtering on this field first fetch all the unique values." },
+    tool_function:{ type: String,description: "Function name. Hint: for correct filtering on this field first fetch all the unique values." },
+    tool_reply: { type: Object,description: "Function details. Hint: for correct filtering on this field first fetch all the unique values." },
+    call_duration: {type: Number},
+    call_number: {type: String},
+    regime: { type: String,description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
+  },
+  { collection: appsettings.mongodb_names.coll_functions_log }
+);
+
 const TelegramDialogSheema = new Schema(
   {
     sourceid: { type: String, index: true },
@@ -186,4 +203,5 @@ module.exports = {
   DetailsSheema,
   TokensLogSheema,
   TelegramDialogSheema,
+  FunctionUsageLogSheema,
 };

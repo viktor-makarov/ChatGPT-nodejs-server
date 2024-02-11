@@ -48,7 +48,7 @@ async function UnSuccessResponseHandle(
 ) {
   try {
     //  var err = new Error(api_res.statusMessage); //создаем ошибку и наполняем содержанием
-
+    console.log(error.message_from_response)
     if (error.response_status === 400 || error.message.includes("400")) {
       err = new Error(error.message);
       err.code = "OAI_ERR_400";
@@ -397,7 +397,7 @@ async function chatCompletionStreamAxiosRequest(
 
       dialogueListEdited.push(result);//Для всех остальных элементов кроме запросов функций и ответов на нее.
   };
-
+  console.log(JSON.stringify(dialogueListEdited))
         //Учитываем потраченные токены
     const previous_dialogue_tokens = otherFunctions.countTokens(JSON.stringify(dialogueListEdited))+otherFunctions.countTokens(JSON.stringify(tools))
 
@@ -640,7 +640,7 @@ async function chatCompletionStreamAxiosRequest(
               await telegramFunctionHandler.toolsRouter(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn,regime)
 
            //   console.log("7","another request",new Date())
-              
+              console.log("before_chat_question",sentMsgIdObj.sentMsgId)
            await botInstance.editMessageText("Анализируем инфо ...",{chat_id:completionJson.telegramMsgOptions.chat_id,message_id: sentMsgIdObj.sentMsgId})
               
               await chatCompletionStreamAxiosRequest(

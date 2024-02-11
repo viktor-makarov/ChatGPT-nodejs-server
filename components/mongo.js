@@ -152,6 +152,39 @@ const insertUsagePromise = async (msg, completion) => {
   }
 };
 
+
+const insertFunctionUsagePromise = async (msg, model,tool_function,tool_reply,call_duration,call_number,regime) => {
+  try {
+    const connection = await Connect_to_mongo(
+      connectionString_self_mongo,
+      db_name
+    );
+    const function_collection = connection.model(
+      appsettings.mongodb_names.coll_functions_log,
+      scheemas.FunctionUsageLogSheema
+    );
+
+    const newFunctionUsage = new function_collection({
+      userid: msg.from.id,
+      userFirstName: msg.from.first_name,
+      userLastName: msg.from.last_name,
+      username: msg.from.username,
+      model:model,
+      tool_function:tool_function,
+      tool_reply:tool_reply,
+      call_duration:call_duration,
+      call_number:call_number,
+      regime:regime
+    });
+
+    return await newFunctionUsage.save();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
 const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
   try {
     const connection = await Connect_to_mongo(
@@ -1457,5 +1490,6 @@ module.exports = {
   queryTockensLogsByAggPipeline,
   mongooseVersion,
   queryLogsErrorByAggPipeline,
-  insert_details_logPromise
+  insert_details_logPromise,
+  insertFunctionUsagePromise
 };

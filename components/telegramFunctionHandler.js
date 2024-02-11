@@ -26,7 +26,7 @@ try{
     } else {
         text_to_send = short_message;
     };
-
+console.log("notifyUser", incoming_msg_id,short_message)
 //Проверям, что длина сообщения поместится в одно сообщения telegram.
 if(text_to_send.length>appsettings.telegram_options.big_outgoing_message_threshold){
     text_to_send = text_to_send.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
@@ -47,15 +47,16 @@ if(incoming_msg_id){   //Если есть входящий номер id
             delete options.parse_mode;
             await botInstance.editMessageText(text_to_send,options)
         };
-
+        if(follow_up_msg){
         const rst = await botInstance.sendMessage(chat_id, follow_up_msg);
         outcoming_msg_id = rst.message_id
-
+        }
 } else {
     const rst = await botInstance.sendMessage(chat_id, text_to_send);
     outcoming_msg_id = rst.message_id
+    if(follow_up_msg){
     const rst2 = await botInstance.sendMessage(chat_id, follow_up_msg);
-    outcoming_msg_id = rst2.message_id
+    outcoming_msg_id = rst2.message_id}
 }
 
 
@@ -81,21 +82,21 @@ async function CreateImageRouter(botInstance,function_call,msg,sentMsgIdObj){
     const arguments = function_call?.function?.arguments
 
     if(arguments === "" || arguments === null || arguments === undefined){
-        return {result:"unsuccessful", error:"No arguments provided. You should provide at least required arguments"};
+        return {success:0, error:"No arguments provided. You should provide at least required arguments"};
     } 
     let argumentsjson;
     try{
     argumentsjson = JSON.parse(arguments)   
     } catch(err){
-        return {result:"unsuccessful", error:{message: err.message,name: err.name}};
+        return {success:0, error:{message: err.message,name: err.name}};
     };
     
     if (argumentsjson.prompt === "" || argumentsjson.prompt === null || argumentsjson.prompt === undefined){
-        return {result:"unsuccessful", error:"Prompt param contains no text. You should provide the text."};
+        return {success:0, error:"Prompt param contains no text. You should provide the text."};
     } 
     
     if (argumentsjson.prompt.length > 4000){
-        return {result:"unsuccessful", error:`Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`};
+        return {success:0, error:`Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`};
     } 
     
         const prompt = argumentsjson.prompt
@@ -105,16 +106,21 @@ async function CreateImageRouter(botInstance,function_call,msg,sentMsgIdObj){
         const styleArray = ["vivid","natural"]
 
         if(!sizeArray.includes(size)&&size){
-            return {result:"unsuccessful", error:`Size param can not have other value than 1024x1024, 1792x1024 or 1024x1792. Please choose one of the three.`};
+            return {success:0, error:`Size param can not have other value than 1024x1024, 1792x1024 or 1024x1792. Please choose one of the three.`};
         }
 
         if(!styleArray.includes(style)&&style){
-            return {result:"unsuccessful", error:`Style param can not have other value than vivid or natural. Please choose one of the two.`};
+            return {success:0, error:`Style param can not have other value than vivid or natural. Please choose one of the two.`};
         }
 
         const resp = await CreateImage(botInstance,prompt,"dall-e-3",size,style,msg,sentMsgIdObj)
 
+        await botInstance.deleteMessage(msg.chat.id,sentMsgIdObj.sentMsgId);
+        const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
+        sentMsgIdObj.sentMsgList[function_call?.id]=sendResult.message_id
+
         functionResult = {
+            success:1,
             result:"The image has been generated and successfully sent to the user.", 
             instructions:`Translate the following description of the image in the language of the user's prompt:`+JSON.stringify(resp)
         };
@@ -200,9 +206,7 @@ async function CreateImage(botInstance,prompt,model,size,style,msg,sentMsgIdObj)
               })
             }
             )
-            await botInstance.deleteMessage(msg.chat.id,sentMsgIdObj.sentMsgId);
-            const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
-            sentMsgIdObj.sentMsgId = sendResult.message_id
+
       }
       
         return resultList
@@ -223,7 +227,7 @@ async function fetchUrlContent(url,tokenlimit){
             responseType: 'arraybuffer',
             responseEncoding: 'binary'})
         } catch(err){
-            return  {"url":url,"error":{message: err.message,name: err.name}}
+            return  {success:0,"url":url,"error":{message: err.message,name: err.name}}
         };
 
         const contentType = response.headers['content-type'] || 'windows-1251';
@@ -234,7 +238,7 @@ async function fetchUrlContent(url,tokenlimit){
         try {
         decodedHtml = iconv.decode(response.data, encoding);
         } catch(err){
-            return  {"url":url,"error":{message: err.message,name: err.name}}
+            return  {success:0,"url":url,"error":{message: err.message,name: err.name}}
         };
 
         const $ = cheerio.load(decodedHtml);
@@ -245,9 +249,9 @@ async function fetchUrlContent(url,tokenlimit){
 
         if(tokenCount>tokenlimit){
             const error = `Content of the resource has ${tokenCount} tokens which exceeds limit of ${tokenlimit} tokens.`        
-            return  {url:url,error:error,instructions:"User should adjust the url or use a model with bigger dialogue limit."}
+            return  {success:0,url:url,error:error,instructions:"User should adjust the url or use a model with bigger dialogue limit."}
         } else {
-            return {url:url,content:text}
+            return {success:1,url:url,content:text}
         }
     } catch(err){
         err.place_in_code = err.place_in_code || arguments.callee.name;
@@ -263,7 +267,7 @@ async function fetchUrlContentRouter(function_call,model,tokensLimitPerCall){
     const arguments = function_call?.function?.arguments
 
     if(arguments === "" || arguments === null || arguments === undefined){
-        return {result:"unsuccessful",error: "No arguments provided. You should provide at least required arguments"}
+        return {success:0,error: "No arguments provided. You should provide at least required arguments"}
     } 
 
     let argumentsjson;
@@ -271,17 +275,22 @@ async function fetchUrlContentRouter(function_call,model,tokensLimitPerCall){
     try{
     argumentsjson = JSON.parse(arguments)
     } catch (err){
-        return {result:"unsuccessful",error: `Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`}
+        return {success:0,error: `Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`}
     }   
 
     if (argumentsjson.urls === "" || argumentsjson.urls === null || argumentsjson.urls === undefined){
-        return {result:"unsuccessful",error:"Urls param contains no data. You should provide list of urls."}
+        return {success:0,error:"Urls param contains no data. You should provide list of urls."}
     }
 
-    const UrlsArray = argumentsjson.urls
+    let UrlsArray = [];
+    const Urls = argumentsjson.urls
 
-    if(! Array.isArray(UrlsArray)){
-        return {result:"unsuccessful",error:"Urls should be provided as an array."}
+    if(! Array.isArray(Urls)){
+        UrlsArray = Urls
+    } else if(typeof Urls === "string"){
+        UrlsArray.push(Urls)
+    } else {
+        return {success:0,error:"Urls should be either string or array."}
     };
 
     const tokenLimitPerURL = tokensLimitPerCall/UrlsArray.length
@@ -303,14 +312,14 @@ async function get_data_from_mongoDB_by_pipepine(function_call,table_name,tokens
 
     let pipeline = [];
     if(arguments === "" || arguments === null || arguments === undefined){
-        return {result:"unsuccessful",error:"No arguments provided.",instructions: "You should provide at least required arguments"}
+        return {success:0,error:"No arguments provided.",instructions: "You should provide at least required arguments"}
     } 
     
     try {
         const argumentsjson = JSON.parse(arguments)              
         pipeline =  func.replaceNewDate(argumentsjson.aggregate_pipeline) 
     } catch (err){
-        return {result:"unsuccessful",error:`Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}.`,instructions: "Correct the pipeline."}
+        return {success:0,error:`Received aggregate pipeline is poorly formed which caused the following error on conversion to JSON: ${err.message}.`,instructions: "Correct the pipeline."}
     }
 
     try {
@@ -324,9 +333,9 @@ async function get_data_from_mongoDB_by_pipepine(function_call,table_name,tokens
         const actialTokens = func.countTokensProportion(JSON.stringify(result))
 
         if(actialTokens>tokensLimitPerCall){
-            return {result:"unsuccessful",error:`Result of the function exceeds ${appsettings.functions_options.max_characters_in_result} characters.`,instructions: "Please adjust the query to reduce length of the result."}
+            return {success:0,error:`Result of the function exceeds ${appsettings.functions_options.max_characters_in_result} characters.`,instructions: "Please adjust the query to reduce length of the result."}
         }
-        let response = {result:result}
+        let response = {success:1,result:result}
 
         //Post validation
         if(result.length===0){
@@ -338,7 +347,7 @@ async function get_data_from_mongoDB_by_pipepine(function_call,table_name,tokens
          
     } catch (err){
 
-        return {result:"unsuccessful",error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`,instructions:"Adjust the pipeline provided and retry."}
+        return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`,instructions:"Adjust the pipeline provided and retry."}
     }
 
     };
@@ -352,6 +361,7 @@ try{
     const dialogueSize = modelConfig[model].request_length_limit_in_tokens      
     const overalltokensLimit = dialogueSize*appsettings.functions_options.fetch_text_limit_pcs/100
     const tokensLimitPerCall = overalltokensLimit/tool_calls.length
+    sentMsgIdObj["sentMsgList"] ={};
 
     if(!(tool_calls && tool_calls.length>0)){
 
@@ -366,12 +376,14 @@ try{
     };
         const total_calls = tool_calls.length
 
-
-
         let promisesList =[];
+
+
+
         for (let i = 0; i < tool_calls.length; i++) {
 
             const tool_call = tool_calls[i]
+            let result;
             if(!(tool_call.id && tool_call.type && tool_call.function)){ //Проверяем call на наличие всех необъодимых атрибутов.
 
                 result = ({result:"unsuccessful",error:"Call is malformed. Required fields are missing",instructions:"Fix the call and retry. But undertake no more than three attempts to recall the function."})
@@ -387,29 +399,44 @@ try{
                 full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]","*"+function_call?.function?.name+"*").replace("[result]",jsonToMarkdownCodeBlock(tool_reply)).replace("[number]",(i+1).toString()+"/"+total_calls.toString())
                 short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]","*"+function_call?.function?.name+"*").replace("[number]",(i+1).toString()+"/"+total_calls.toString())
                 sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
-                
                 return
             }
 
             if(tool_call.type==="function"){ 
-                
+                console.log("before assign",sentMsgIdObj)   
+                if(i >0){
+                    const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
+                    sentMsgIdObj.sentMsgId = sendResult.message_id
+                }
                 full_message = msqTemplates.function_request_msg_full.replace("[function]","*"+tool_call?.function?.name+"*").replace("[request]",func.jsonToMarkdownCodeBlock(tool_call)).replace("[number]",(i+1).toString()+"/"+total_calls.toString())
                 short_message = msqTemplates.function_request_msg_short.replace("[function]","*"+tool_call?.function?.name+"*").replace("[number]",(i+1).toString()+"/"+total_calls.toString())
                 sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
-                sentMsgIdObj["sentMsgList"] ={};
+                
                 sentMsgIdObj.sentMsgList[tool_call?.id]=sentMsgIdObj.sentMsgId
-                console.log("AddPlace",sentMsgIdObj)
-                
-                promisesList.push(runFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,i+1,tokensLimitPerCall))
-                
+                console.log("assign",sentMsgIdObj)            
+                result =  runFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,i+1,tokensLimitPerCall)
+                promisesList.push(result)
+
             } else { //Не функции обрабатывать пока не умеем.
-                promisesList.push(runOtherThenFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,i+1,tokensLimitPerCall))
+                result = runOtherThenFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,i+1,tokensLimitPerCall)
+                promisesList.push(result)
             };
+            //Логируем использование функций
+
         };
 
-    const promiseResult = await Promise.all(promisesList) //Запускаем все функции параллеьно и ждем результата всех
+        const promiseResult = await Promise.all(promisesList) //Запускаем все функции параллеьно и ждем результата всех
         console.log("all_promiseResult",promiseResult)
-        resultList = resultList
+        console.log(JSON.stringify(sentMsgIdObj))
+        if(promiseResult.length>0){
+            for (let i = 0; i < promiseResult.length; i++) {
+            mongo.insertFunctionUsagePromise(msg, model,promiseResult[i]?.name,promiseResult[i],promiseResult[i]?.duration,(i+1).toString()+"/"+total_calls.toString(),regime)
+            }
+        };
+
+        const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
+        sentMsgIdObj.sentMsgId = sendResult.message_id
+        console.log("msgid_after_function_end",sentMsgIdObj.sentMsgId)
 
 } catch(error) {
 
@@ -421,6 +448,7 @@ try{
         full_message = msqTemplates.function_error + func.jsonToMarkdownCodeBlock(result)
         short_message = msqTemplates.function_error
         sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
+
         } catch(err2){
             throw err2;
         }
@@ -432,7 +460,7 @@ try{
 async function get_current_datetime(){
 
     try{
-        return {result: new Date().toString()}
+        return {success:1,result: new Date().toString()}
     } catch(err){
         err.place_in_code = err.place_in_code || arguments.callee.name;
         throw err;
@@ -443,13 +471,13 @@ async function runOtherThenFunctionRequest(botInstance,msg,non_function_call,mod
 
 try{
 
-    const result = {result:"unsuccessful",error:"Non function types cannot be processed for now.",instructions:"Rework into a function"}
+    const result = {success:0,error:"Non function types cannot be processed for now.",instructions:"Rework into a function"}
 
     await mongo.upsertSystemPromise(JSON.stringify(result),msg, regime);   
 
     full_message = msqTemplates.function_error + func.jsonToMarkdownCodeBlock(result)
     short_message = msqTemplates.function_error
-    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,null,"Markdown")
 
     return result
 
@@ -465,14 +493,14 @@ try{
       err.user_message
     );
     
-    const result = {result:"unsuccessful",error:{message: error.message,name: error.name},instructions:"Provide the user with a brief description of the error.",warning: "But undertake no more than three attempts to recall the function."}
+    const result = {success:0,error:{message: error.message,name: error.name},instructions:"Provide the user with a brief description of the error.",warning: "But undertake no more than three attempts to recall the function."}
 
         try{
     await mongo.upsertSystemPromise(JSON.stringify(result),msg, regime); 
     
     full_message = msqTemplates.msqTemplates.function_error + func.jsonToMarkdownCodeBlock(result)
     short_message = msqTemplates.function_error
-    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"... ","Markdown")
+    sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,null,"Markdown")
         } catch(err){
             throw err;
         }
@@ -505,19 +533,29 @@ const timeTakenRounded = timeTaken.toFixed(2); // Rounded to one decimal place
 const tool_reply = {
     tool_call_id: function_call.id,
     name: function_call?.function?.name,
-    content:JSON.stringify(functionResult)}
+    content:JSON.stringify(functionResult),
+    duration:timeTakenRounded
+};
 
 await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
 
+try{
 full_message = msqTemplates.function_end_successful_full.replace("[function]","*"+function_call?.function?.name+"*").replace("[time]",timeTakenRounded.toString()).replace("[result]",func.jsonToMarkdownCodeBlock(functionResult)).replace("[number]",callnumber.toString()+"/"+total_calls.toString())
 short_message = msqTemplates.function_end_successful_short.replace("[function]","*"+function_call?.function?.name+"*").replace("[time]",timeTakenRounded.toString()).replace("[number]",callnumber.toString()+"/"+total_calls.toString())
-if(total_calls===1){
-sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
-} else {
-sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgList[function_call.id],msg.chat.id,"...","Markdown")
+await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgList[function_call.id],msg.chat.id,null,"Markdown")
+} catch(err){
+    err.consolelog = true;
+    err.place_in_code = err.place_in_code || arguments.callee.name;
+    await telegramErrorHandler.main(
+        botInstance,
+        msg.chat.id,
+        err,
+        err.place_in_code,
+        err.user_message
+      );
 }
 
-return {tool_call_id: function_call.id, name: function_call?.function?.name,result:functionResult}
+return tool_reply
 
 } catch(err){
     err.consolelog = true;
@@ -531,6 +569,7 @@ return {tool_call_id: function_call.id, name: function_call?.function?.name,resu
       err.user_message
     );
     const tool_reply = {
+        success:0,
         tool_call_id: function_call.id,
         name: function_call?.function?.name,
         content:JSON.stringify({error:{message: err.message,name: err.name},instructions:"Provide the user with a brief description of the error on this function.",warning: "But undertake no more than three attempts to recall the function."})
@@ -539,19 +578,15 @@ return {tool_call_id: function_call.id, name: function_call?.function?.name,resu
     try{
     await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
     
+    console.log("Msg to update",sentMsgIdObj.sentMsgList[function_call.id], function_call.id)
     full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]","*"+function_call?.function?.name+"*").replace("[result]",func.jsonToMarkdownCodeBlock(tool_reply)).replace("[number]",callnumber.toString()+"/"+total_calls.toString())
     short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]","*"+function_call?.function?.name+"*").replace("[number]",callnumber.toString()+"/"+total_calls.toString())
-    if(total_calls===1){
-        sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
-        } else {
-        sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgList[function_call.id],msg.chat.id,"...","Markdown")
-        };    
-
-
-} catch(err){
+    await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgList[function_call.id],msg.chat.id,null,"Markdown")
+        
+    } catch(err){
         throw err;
     }
-    return {tool_call_id: function_call.id, name: function_call?.function?.name,result:"error"}
+    return tool_reply
 }
 };
 
