@@ -34,7 +34,6 @@ if(text_to_send.length>appsettings.telegram_options.big_outgoing_message_thresho
 
 if(incoming_msg_id){   //Если есть входящий номер id
 
-
        let options = {chat_id:chat_id,message_id: incoming_msg_id,
         disable_web_page_preview: true}
         if(format==="Markdown"){
@@ -227,7 +226,7 @@ async function fetchUrlContent(url,tokenlimit){
             responseType: 'arraybuffer',
             responseEncoding: 'binary'})
         } catch(err){
-            return  {success:0,"url":url,"error":{message: err.message,name: err.name}}
+            return  {"url":url,"error":{message: err.message,name: err.name}}
         };
 
         const contentType = response.headers['content-type'] || 'windows-1251';
@@ -238,7 +237,7 @@ async function fetchUrlContent(url,tokenlimit){
         try {
         decodedHtml = iconv.decode(response.data, encoding);
         } catch(err){
-            return  {success:0,"url":url,"error":{message: err.message,name: err.name}}
+            return  {"url":url,"error":{message: err.message,name: err.name}}
         };
 
         const $ = cheerio.load(decodedHtml);
@@ -249,9 +248,9 @@ async function fetchUrlContent(url,tokenlimit){
 
         if(tokenCount>tokenlimit){
             const error = `Content of the resource has ${tokenCount} tokens which exceeds limit of ${tokenlimit} tokens.`        
-            return  {success:0,url:url,error:error,instructions:"User should adjust the url or use a model with bigger dialogue limit."}
+            return  {url:url,error:error,instructions:"User should adjust the url or use a model with bigger dialogue limit."}
         } else {
-            return {success:1,url:url,content:text}
+            return {url:url,content:text}
         }
     } catch(err){
         err.place_in_code = err.place_in_code || arguments.callee.name;
@@ -278,27 +277,21 @@ async function fetchUrlContentRouter(function_call,model,tokensLimitPerCall){
         return {success:0,error: `Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`}
     }   
 
-    if (argumentsjson.urls === "" || argumentsjson.urls === null || argumentsjson.urls === undefined){
-        return {success:0,error:"Urls param contains no data. You should provide list of urls."}
+    if (argumentsjson.url === "" || argumentsjson.url === null || argumentsjson.url === undefined){
+        return {success:0,error:"Url param contains no data. You should provide a url as a string."}
     }
 
-    let UrlsArray = [];
-    const Urls = argumentsjson.urls
 
-    if(! Array.isArray(Urls)){
-        UrlsArray = Urls
-    } else if(typeof Urls === "string"){
-        UrlsArray.push(Urls)
-    } else {
+    const Url = argumentsjson.url
+
+     if(typeof Url != "string"){
         return {success:0,error:"Urls should be either string or array."}
     };
 
-    const tokenLimitPerURL = tokensLimitPerCall/UrlsArray.length
 
-    const promises = UrlsArray.map(url => fetchUrlContent(url, tokenLimitPerURL));
-    const promiseResult = await Promise.all(promises)
+    const result = await fetchUrlContent(Url, tokensLimitPerCall);
 
-    return {result:promiseResult}
+    return {success:1,result:result}
         
         } catch(err){
             err.place_in_code = err.place_in_code || arguments.callee.name;
@@ -396,24 +389,24 @@ try{
                 
                 await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
     
-                full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]","*"+function_call?.function?.name+"*").replace("[result]",jsonToMarkdownCodeBlock(tool_reply)).replace("[number]",(i+1).toString()+"/"+total_calls.toString())
-                short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]","*"+function_call?.function?.name+"*").replace("[number]",(i+1).toString()+"/"+total_calls.toString())
+                full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]","*"+function_call?.function?.name+"*").replace("[result]",jsonToMarkdownCodeBlock(tool_reply))
+                short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]","*"+function_call?.function?.name+"*")
                 sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
                 return
             }
 
             if(tool_call.type==="function"){ 
-                console.log("before assign",sentMsgIdObj)   
+
                 if(i >0){
                     const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
                     sentMsgIdObj.sentMsgId = sendResult.message_id
                 }
-                full_message = msqTemplates.function_request_msg_full.replace("[function]","*"+tool_call?.function?.name+"*").replace("[request]",func.jsonToMarkdownCodeBlock(tool_call)).replace("[number]",(i+1).toString()+"/"+total_calls.toString())
-                short_message = msqTemplates.function_request_msg_short.replace("[function]","*"+tool_call?.function?.name+"*").replace("[number]",(i+1).toString()+"/"+total_calls.toString())
+                full_message = msqTemplates.function_request_msg_full.replace("[function]","*"+tool_call?.function?.name+"-"+tool_call?.id+"*").replace("[request]",func.jsonToMarkdownCodeBlock(tool_call))
+                short_message = msqTemplates.function_request_msg_short.replace("[function]","*"+tool_call?.function?.name+"-"+tool_call?.id+"*")
                 sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
                 
                 sentMsgIdObj.sentMsgList[tool_call?.id]=sentMsgIdObj.sentMsgId
-                console.log("assign",sentMsgIdObj)            
+        
                 result =  runFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,i+1,tokensLimitPerCall)
                 promisesList.push(result)
 
@@ -426,8 +419,7 @@ try{
         };
 
         const promiseResult = await Promise.all(promisesList) //Запускаем все функции параллеьно и ждем результата всех
-        console.log("all_promiseResult",promiseResult)
-        console.log(JSON.stringify(sentMsgIdObj))
+   //     console.log("all_promiseResult",promiseResult)
         if(promiseResult.length>0){
             for (let i = 0; i < promiseResult.length; i++) {
             mongo.insertFunctionUsagePromise(msg, model,promiseResult[i]?.name,promiseResult[i],promiseResult[i]?.duration,(i+1).toString()+"/"+total_calls.toString(),regime)
@@ -436,7 +428,6 @@ try{
 
         const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
         sentMsgIdObj.sentMsgId = sendResult.message_id
-        console.log("msgid_after_function_end",sentMsgIdObj.sentMsgId)
 
 } catch(error) {
 
@@ -538,10 +529,20 @@ const tool_reply = {
 };
 
 await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
+let full_message;
+let short_message;
+
 
 try{
-full_message = msqTemplates.function_end_successful_full.replace("[function]","*"+function_call?.function?.name+"*").replace("[time]",timeTakenRounded.toString()).replace("[result]",func.jsonToMarkdownCodeBlock(functionResult)).replace("[number]",callnumber.toString()+"/"+total_calls.toString())
-short_message = msqTemplates.function_end_successful_short.replace("[function]","*"+function_call?.function?.name+"*").replace("[time]",timeTakenRounded.toString()).replace("[number]",callnumber.toString()+"/"+total_calls.toString())
+    if(functionResult.success===1){
+        full_message = msqTemplates.function_end_successful_full.replace("[function]","*"+function_call?.function?.name+"-"+function_call.id+"*").replace("[time]",timeTakenRounded.toString()).replace("[result]",func.jsonToMarkdownCodeBlock(functionResult))
+        short_message = msqTemplates.function_end_successful_short.replace("[function]","*"+function_call?.function?.name+"-"+function_call.id+"*").replace("[time]",timeTakenRounded.toString())
+
+    } else {
+        full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]","*"+function_call?.function?.name+"-"+function_call.id+"*").replace("[result]",func.jsonToMarkdownCodeBlock(functionResult))
+        short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]","*"+function_call?.function?.name+"-"+function_call.id+"*")
+    };
+
 await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgList[function_call.id],msg.chat.id,null,"Markdown")
 } catch(err){
     err.consolelog = true;
@@ -578,9 +579,8 @@ return tool_reply
     try{
     await mongo.upsertFuctionResultsPromise(msg, regime,tool_reply); //записываем вызова функции в диалог
     
-    console.log("Msg to update",sentMsgIdObj.sentMsgList[function_call.id], function_call.id)
-    full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]","*"+function_call?.function?.name+"*").replace("[result]",func.jsonToMarkdownCodeBlock(tool_reply)).replace("[number]",callnumber.toString()+"/"+total_calls.toString())
-    short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]","*"+function_call?.function?.name+"*").replace("[number]",callnumber.toString()+"/"+total_calls.toString())
+    full_message = msqTemplates.function_end_unsuccessful_full.replace("[function]","*"+function_call?.function?.name+"-"+function_call.id+"*").replace("[result]",func.jsonToMarkdownCodeBlock(tool_reply))
+    short_message = msqTemplates.function_end_unsuccessful_short.replace("[function]","*"+function_call?.function?.name+"-"+function_call.id+"*")
     await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgList[function_call.id],msg.chat.id,null,"Markdown")
         
     } catch(err){
@@ -615,16 +615,16 @@ functionList.push(
     {"type":"function",
     "function":{
     "name": "fetch_url_content",
-    "description": "Use this function to fetch content from urls.",
+    "description": "Use this function to fetch content from a url.",
     "parameters": {
         "type": "object",
         "properties": {
-            "urls": {
+            "url": {
                 "type": "string",
-                "description": `List of urls to fetch content from in the following pattern [url1,url2]`
+                "description": `A url as a string to fetch content from in the following pattern.`
             }
         },
-        "required": ["urls"]
+        "required": ["url"]
     }
 }}
 );

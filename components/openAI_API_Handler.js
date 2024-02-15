@@ -48,7 +48,7 @@ async function UnSuccessResponseHandle(
 ) {
   try {
     //  var err = new Error(api_res.statusMessage); //создаем ошибку и наполняем содержанием
-    console.log(error.message_from_response)
+
     if (error.response_status === 400 || error.message.includes("400")) {
       err = new Error(error.message);
       err.code = "OAI_ERR_400";
@@ -324,6 +324,7 @@ const options = {
 async function sendStatusMEssage(botInstance,msg,sent_msg_id,user_message,mainPromiseFinished){
 
   if(!mainPromiseFinished.status){
+  console.log("sendStatusMEssage",sent_msg_id,user_message)
   await botInstance.editMessageText(
     user_message,
     {
@@ -397,7 +398,7 @@ async function chatCompletionStreamAxiosRequest(
 
       dialogueListEdited.push(result);//Для всех остальных элементов кроме запросов функций и ответов на нее.
   };
-  console.log(JSON.stringify(dialogueListEdited))
+  //console.log(JSON.stringify(dialogueListEdited))
         //Учитываем потраченные токены
     const previous_dialogue_tokens = otherFunctions.countTokens(JSON.stringify(dialogueListEdited))+otherFunctions.countTokens(JSON.stringify(tools))
 
@@ -464,6 +465,7 @@ async function chatCompletionStreamAxiosRequest(
               chunkJsonList.length > 0
             ) {
               //ловим первый чанк, чтобы ввести в игру completionJson
+
 
               const content_parts = {
                 0: { id_message: sent_msg_id, to_send: "" },
@@ -631,7 +633,15 @@ async function chatCompletionStreamAxiosRequest(
 
             if(completionJson.finish_reason == 'tool_calls'){ //Уведомляем пользователя, что запрошена функция
           //    console.log("5","it is function call",new Date())
+              
+          
+              if(completionJson.content.length<5){
+                await botInstance.editMessageText("Мне понадобиться дополнительная информация ... Делаю запрос ...",{chat_id:completionJson.telegramMsgOptions.chat_id,message_id: sent_msg_id})
+              }
+              
               let sentMsgIdObj = {sentMsgId:sent_msg_id}
+              const sendResult = await botInstance.sendMessage(completionJson.telegramMsgOptions.chat_id, "...");
+              sentMsgIdObj.sentMsgId = sendResult.message_id
               const sysmsgOn = allSettingsDict[msg.from.id][regime].sysmsg
 
              // console.log("In case of error",JSON.stringify(completionJson))
@@ -640,7 +650,7 @@ async function chatCompletionStreamAxiosRequest(
               await telegramFunctionHandler.toolsRouter(botInstance,msg,completionJson.tool_calls,model,sentMsgIdObj,sysmsgOn,regime)
 
            //   console.log("7","another request",new Date())
-              console.log("before_chat_question",sentMsgIdObj.sentMsgId)
+
            await botInstance.editMessageText("Анализируем инфо ...",{chat_id:completionJson.telegramMsgOptions.chat_id,message_id: sentMsgIdObj.sentMsgId})
               
               await chatCompletionStreamAxiosRequest(
@@ -889,7 +899,6 @@ async function deliverMessage(botInstance, object) {
         const newMessage = await botInstance.sendMessage(object.telegramMsgOptions.chat_id,text);
         
         if (object.completion_ended) {
-
           options.message_id = newMessage.message_id
           await botInstance.editMessageText(text, options);
         } 
@@ -900,6 +909,7 @@ async function deliverMessage(botInstance, object) {
       if (err.message.includes("can't parse entities")) {
         //   Recovered after MarkdownError
         delete options.parse_mode;
+
         await botInstance.editMessageText(text, options);
         //   resolve([{id:part_id,id_message:msg_id,text:object.content_parts[part_id].to_send}]); //Чтобы без троеточий
         resultArray.push({id: part_id,id_message: msg_id,text: object.content_parts[part_id].to_send});

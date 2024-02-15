@@ -3,6 +3,7 @@ const { Script } = require('vm');
 
 const { encode, decode } = require("gpt-3-encoder");
 const { lte } = require('lodash');
+const msqTemplates = require("../config/telegramMsgTemplates");
 
 function countTokens(text) {
   //Converts string to tokens and counts their number
@@ -87,14 +88,27 @@ obj = recursiveReplace(obj) //Заменяем даты на new Date(), что�
 
 };
 
+function escapeMarkdownV2(text) {
+  // List of special characters to escape for MarkdownV2
+  const escapeChars = '_*[]()~`>#+-=|{}!.\'.';
+
+  // Replace each special character with its escaped version
+  return [...text].map((char) => {
+      return escapeChars.includes(char) ? `\\${char}` : char;
+  }).join('');
+}
 
 function jsonToMarkdownCodeBlock(jsonObject) {
   const jsonString = JSON.stringify(jsonObject, null, 2);
 
   // In MarkdownV2, escape the backtick ` and the backslash \ characters.
-  const escapedJsonString = jsonString
+  let escapedJsonString = jsonString
     .replace(/\\/g, '\\\\')  // Escape backslashes
     .replace(/`/g, '\\`');   // Escape backticks
+
+    if(escapedJsonString.length>appsettings.telegram_options.big_outgoing_message_threshold*0.8){
+      escapedJsonString = escapedJsonString.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
+  }
 
   return '```\n' + escapedJsonString + '\n```';
 }
