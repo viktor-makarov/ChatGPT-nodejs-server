@@ -28,7 +28,6 @@ function mongooseVersion(){
   return mongoose.version
 }
 
-
 async function insert_details_logPromise(object,place_in_code) {
   try {
     const connection = await Connect_to_mongo(

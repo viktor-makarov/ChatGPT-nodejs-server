@@ -21,6 +21,7 @@ let outcoming_msg_id = incoming_msg_id;
 let text_to_send;
 
 try{
+    console.log(sysmsgOn,full_message,short_message)
     if(sysmsgOn){ 
         text_to_send = full_message;
     } else {
