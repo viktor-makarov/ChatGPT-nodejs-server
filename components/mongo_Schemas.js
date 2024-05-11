@@ -72,6 +72,8 @@ const ProfileSheema = new Schema(
   
 );
 
+ProfileSheema.index({ id: -1 });
+
 const LogsSheema = new Schema(
   {
     datetimeUTC: {
@@ -194,6 +196,14 @@ const TelegramDialogSheema = new Schema(
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );
+
+TelegramDialogSheema.index({ sourceid: -1, regime: -1 });
+TelegramDialogSheema.index({ userid: -1, regime: -1 });
+TelegramDialogSheema.index({ userid: -1, TelegramMsgId: -1 });
+TelegramDialogSheema.index({ sourceid: -1});
+TelegramDialogSheema.index({ regime: -1 });
+TelegramDialogSheema.index({ userid: -1 });
+
 
 module.exports = {
   ProfileSheema,
