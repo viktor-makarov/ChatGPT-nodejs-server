@@ -12,17 +12,26 @@ global.allSettingsDict = {}; //В этой переменной будут хр�
 global.registeredArray = []; //В этой переменной будут храниться все зарегистрированные пользователи.
 global.readArray = []; //В этой переменной будут храниться все пользователи, ознакомившиеся с инструкцией.
 global.adminArray = []; //В этой переменной будут храниться все пользователи, у которых есть права администратора.
+
+
 //Подключаем и настраивам телеграм-бот
+
+async function startServer(){
+const mongoClient = require("../components/mongoClient")
+global.mongoConnection = await mongoClient.connectToMongo()
+
 const TelegramBot = require('node-telegram-bot-api');
 const telegramRouter = require("../routerTelegram")
+global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {polling: true});
 
-const token = process.env.TELEGRAM_BOT_TOKEN;
-const bot = new TelegramBot(token, {polling: true});
 
-telegramRouter.setBotParameters(bot) //задаем параметры бота
-telegramRouter.UpdateGlobalVariables(bot) //обновляем глобальные переменные
+telegramRouter.setBotParameters(global.bot) //задаем параметры бота
+telegramRouter.UpdateGlobalVariables(global.bot) //обновляем глобальные переменные
 telegramRouter.GetModelsFromAPI() //получаем список моделей
-telegramRouter.router(bot) //включаем роутер
+telegramRouter.router(global.bot) //включаем роутер
+}
+
+startServer()
 
  
 

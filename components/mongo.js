@@ -4,40 +4,24 @@ const scheemas = require("./mongo_Schemas.js");
 const moment = require("moment-timezone");
 const fs = require("fs").promises;
 
-// Define db connection string depending on circumstances
-let connectionString_self_mongo = process.env.MONGODB_CONNECTION;
-let db_name = appsettings.mongodb_names.db_prod
+//Models
+const details_log_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_details,scheemas.DetailsSheema);
+const error_log_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_errors_log,scheemas.LogsSheema);
+const reg_log_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_reg_log,scheemas.RegistrationLogSheema);
+const token_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_tokens_log,scheemas.TokensLogSheema);
+const function_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_functions_log,scheemas.FunctionUsageLogSheema);
+const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
+const telegram_profile_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_profiles,scheemas.ProfileSheema);
+const telegram_model_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_models,scheemas.ModelsSheema);
 
-if (process.env.PROD_RUN == "true") {
-  connectionString_self_mongo = process.env.MONGODB_CONNECTION; //via internal network of docker-compose
-  db_name = appsettings.mongodb_names.db_prod
-} else {
-  connectionString_self_mongo = process.env.MONGODB_CONNECTION_DEV; ////test db for debuging
-  db_name = appsettings.mongodb_names.db_dev
-}
-
-async function Connect_to_mongo(connectionString, db) {
-  const connection = await mongoose.connect(
-    connectionString + "/" + db + "?authSource=admin",
-    appsettings.mongodb_connections.options
-  );
-  return connection;
-}
-
+//Functions
 function mongooseVersion(){
   return mongoose.version
 }
 
 async function insert_details_logPromise(object,place_in_code) {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const details_log_collection = connection.model(
-      appsettings.mongodb_names.coll_details,
-      scheemas.DetailsSheema
-    );
+
     const newLog = new details_log_collection({
       object: object,
       place_in_code:place_in_code
@@ -52,14 +36,6 @@ async function insert_details_logPromise(object,place_in_code) {
 
 async function insert_error_logPromise(error, comment) {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const error_log_collection = connection.model(
-      appsettings.mongodb_names.coll_errors_log,
-      scheemas.LogsSheema
-    );
     const newLog = new error_log_collection({
       error: {
         code: error.code,
@@ -94,14 +70,7 @@ async function insert_reg_eventPromise(
 ) {
   const func_name = arguments.callee.name;
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const reg_log_collection = connection.model(
-      appsettings.mongodb_names.coll_reg_log,
-      scheemas.RegistrationLogSheema
-    );
+
     const newRegEvent = new reg_log_collection({
       id: id,
       id_chat: id_chat,
@@ -123,14 +92,7 @@ async function insert_reg_eventPromise(
 
 const insertUsagePromise = async (msg, completion) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const token_collection = connection.model(
-      appsettings.mongodb_names.coll_tokens_log,
-      scheemas.TokensLogSheema
-    );
+
     const prompt_tokens_count = otherfunc.countTokens(msg.text);
     const completion_tokens_count = otherfunc.countTokens(completion);
     const newTokenUsage = new token_collection({
@@ -154,14 +116,6 @@ const insertUsagePromise = async (msg, completion) => {
 
 const insertFunctionUsagePromise = async (msg, model,tool_function,tool_reply,call_duration,call_number,regime) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const function_collection = connection.model(
-      appsettings.mongodb_names.coll_functions_log,
-      scheemas.FunctionUsageLogSheema
-    );
 
     const newFunctionUsage = new function_collection({
       userid: msg.from.id,
@@ -186,14 +140,6 @@ const insertFunctionUsagePromise = async (msg, model,tool_function,tool_reply,ca
 
 const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const token_collection = connection.model(
-      appsettings.mongodb_names.coll_tokens_log,
-      scheemas.TokensLogSheema
-    );
 
     return await token_collection.aggregate(agg_pipeline)
   } catch (err) {
@@ -206,15 +152,6 @@ const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
 
 const queryLogsErrorByAggPipeline = async (agg_pipeline) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const token_collection = connection.model(
-      appsettings.mongodb_names.coll_errors_log,
-      scheemas.LogsSheema
-    );
-
     return await token_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
@@ -231,15 +168,6 @@ const insertUsageDialoguePromise = async (
   model
 ) => {
   try {
-
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const token_collection = connection.model(
-      appsettings.mongodb_names.coll_tokens_log,
-      scheemas.TokensLogSheema
-    );
     const newTokenUsage = new token_collection({
       userid: msg.chat.id,
       userFirstName: msg.chat.first_name,
@@ -263,14 +191,7 @@ const insertUsageDialoguePromise = async (
 
 const upsertPromptPromise = async (msg, regime,tools,tool_choice) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const dialog_collection = connection.model(
-      appsettings.mongodb_names.coll_dialogs,
-      scheemas.TelegramDialogSheema
-    );
+
     const newPrompt = {
       sourceid: msg.message_id,
       createdAtSourceTS: msg.date,
@@ -303,17 +224,6 @@ const upsertPromptPromise = async (msg, regime,tools,tool_choice) => {
 const upsertFuctionResultsPromise = async (msg, regime,tool_reply) => {
   try {
 
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-
-
-    const dialog_collection = connection.model(
-      appsettings.mongodb_names.coll_dialogs,
-      scheemas.TelegramDialogSheema
-    );
-
     const newPrompt = {
       sourceid: Math.random().toString(36).substring(2,15) + Math.random().toString(36).substring(2,15),
       createdAtSourceTS: Math.ceil(Number(new Date())/1000),
@@ -345,14 +255,7 @@ const upsertFuctionResultsPromise = async (msg, regime,tool_reply) => {
 
 const upsertSystemPromise = async (content, msg, regime) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const dialog_collection = connection.model(
-      appsettings.mongodb_names.coll_dialogs,
-      scheemas.TelegramDialogSheema
-    );
+
     const newPrompt = {
       sourceid: msg.message_id,
       createdAtSourceTS: msg.date,
@@ -390,15 +293,6 @@ const upsertCompletionPromise = async (CompletionObject) => {
     } else {
     CompletionObject.roleid = 2; //ДОбавляем roleid
     }
-    
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const dialog_collection = connection.model(
-      appsettings.mongodb_names.coll_dialogs,
-      scheemas.TelegramDialogSheema
-    );
 
     return await dialog_collection.updateOne(
       { sourceid: CompletionObject.sourceid },
@@ -414,14 +308,8 @@ const upsertCompletionPromise = async (CompletionObject) => {
 
 const upsertProfilePromise = async (msg) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
+
+
     const newProfile = {
       id: msg.from.id,
       id_chat: msg.chat.id,
@@ -445,14 +333,6 @@ const upsertProfilePromise = async (msg) => {
 
 const insert_profilePromise = async (msg) => {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
     const newProfile = new telegram_profile_collection({
       id: msg.from.id,
       id_chat: msg.chat.id,
@@ -488,15 +368,7 @@ const getDialogueByUserIdPromise = (userid, regime) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const dialogue_collection = connection.model(
-        appsettings.mongodb_names.coll_dialogs,
-        scheemas.TelegramDialogSheema
-      );
-      dialogue_collection
+      dialog_collection
         .find(
           { userid: userid, regime: regime },
           { _id: 0, role: 1, name: 1, content: 1, tool_calls: 1,tool_reply: 1, tokens: 1 }
@@ -524,14 +396,6 @@ const update_models_listPromise = (model_list) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_model_collection = connection.model(
-        appsettings.mongodb_names.coll_models,
-        scheemas.ModelsSheema
-      );
 
       if (model_list.length > 0) {
         //Если array пуст, то сразу возвращаем null
@@ -562,14 +426,7 @@ const update_models_listPromise = (model_list) => {
 
 async function insert_permissionsPromise(msg) {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
+
     return await telegram_profile_collection.findOneAndUpdate(
       { id: msg.from.id },
       {
@@ -587,14 +444,7 @@ async function insert_permissionsPromise(msg) {
 
 async function insert_permissions_migrationPromise(msg) {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
+
     return await telegram_profile_collection.findOneAndUpdate(
       { id: msg.from.id },
       {
@@ -612,14 +462,7 @@ async function insert_permissions_migrationPromise(msg) {
 
 async function insert_adminRolePromise(msg) {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
+
     return await telegram_profile_collection.findOneAndUpdate(
       { id: msg.from.id },
       {
@@ -637,14 +480,7 @@ async function insert_adminRolePromise(msg) {
 
 async function insert_read_sectionPromise(msg) {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
+ 
 
     return await telegram_profile_collection.findOneAndUpdate(
       { id: msg.from.id },
@@ -662,14 +498,6 @@ async function insert_read_sectionPromise(msg) {
 
 async function insert_read_section_migrationPromise(msg) {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
 
     return await telegram_profile_collection.findOneAndUpdate(
       { id: msg.from.id },
@@ -689,15 +517,6 @@ const setDefaultVauesForNonExiting = async () => {
   const func_name = arguments.callee.name;
 
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
 
     const profiles = await telegram_profile_collection.find({});
 
@@ -733,14 +552,6 @@ const get_tokenUsageByRegimes = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const token_collection = connection.model(
-        appsettings.mongodb_names.coll_tokens_log,
-        scheemas.TokensLogSheema
-      );
       token_collection
         .aggregate(
           [
@@ -775,15 +586,6 @@ const get_tokenUsageByRegimes = () => {
 async function profileMigrationScript(path) {
   try {
     const profileArray = JSON.parse(await fs.readFile(path, "utf8"));
-
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-    const telegram_profile_collection = connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema
-    );
 
     for (const item of profileArray) {
       let msg = {
@@ -820,16 +622,7 @@ const get_tokenUsageByDates = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const token_collection = connection.model(
-        appsettings.mongodb_names.coll_tokens_log,
-        scheemas.TokensLogSheema
-      );
-      const tenDaysAgo = moment().subtract(10, "days").startOf("day").toDate();
-        
+      const tenDaysAgo = moment().subtract(10, "days").startOf("day").toDate();    
       token_collection
         .aggregate(
           [
@@ -884,14 +677,7 @@ const get_errorsByMessages = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const error_log_collection = connection.model(
-        appsettings.mongodb_names.coll_errors_log,
-        scheemas.LogsSheema
-      );
+
       error_log_collection
         .aggregate(
           [
@@ -924,14 +710,6 @@ const get_tokenUsageByUsers = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const token_collection = connection.model(
-        appsettings.mongodb_names.coll_tokens_log,
-        scheemas.TokensLogSheema
-      );
       token_collection
         .aggregate(
           [
@@ -971,15 +749,6 @@ const getCompletionById = (sourceid, regime) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const dialog_collection = connection.model(
-        appsettings.mongodb_names.coll_dialogs,
-        scheemas.TelegramDialogSheema
-      );
-
       dialog_collection
         .find({ sourceid: sourceid, regime: regime }, function (err, res) {
           if (err) {
@@ -1002,14 +771,7 @@ const get_all_settingsPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
+
       telegram_profile_collection
         .find({}, function (err, res) {
           if (err) {
@@ -1036,14 +798,6 @@ const UpdateSettingPromise = (msg, pathString, value) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
       telegram_profile_collection.updateOne(
         { id: msg.from.id },
         { $set: { [pathString]: value } },
@@ -1068,14 +822,6 @@ const UpdateCurrentRegimeSettingPromise = (msg, regime) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
 
       telegram_profile_collection.updateOne(
         { id: msg.from.id },
@@ -1101,14 +847,7 @@ const get_all_profilesPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
+
       telegram_profile_collection
         .find({}, function (err, doc) {
           if (err) {
@@ -1129,15 +868,6 @@ const get_all_profilesPromise = () => {
 
 async function get_all_registeredPromise() {
   try {
-    const connection = await Connect_to_mongo(
-      connectionString_self_mongo,
-      db_name
-    );
-
-    const telegram_profile_collection = await connection.model(
-      appsettings.mongodb_names.coll_profiles,
-      scheemas.ProfileSheema2
-    );
 
     const doc = await telegram_profile_collection
       .find({ "permissions.registered": true })
@@ -1156,14 +886,6 @@ const get_all_adminPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
       telegram_profile_collection
         .find({ "permissions.admin": true }, function (err, doc) {
           if (err) {
@@ -1186,14 +908,7 @@ const get_all_readPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
+
       telegram_profile_collection
         .find({ "permissions.readInfo": true }, function (err, doc) {
           if (err) {
@@ -1217,15 +932,6 @@ const DeleteNotUpToDateProfilesPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
-
       const filter = {
         "permissions.registrationCodeUpToDate": false,
         admin: { $exists: false },
@@ -1251,14 +957,6 @@ const UpdateProfilesRegistrationCodeUpToDatePromise = (registration_code) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
       var result_true;
       var result_false;
       //Сначала пометим все профили, где код соответствует
@@ -1318,14 +1016,7 @@ const get_all_profiles_with_old_registrationPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
+ 
       telegram_profile_collection
         .find(
           {
@@ -1353,15 +1044,6 @@ const deleteMsgByIdPromise = (userid, msgid) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const dialog_collection = connection.model(
-        appsettings.mongodb_names.coll_dialogs,
-        scheemas.TelegramDialogSheema
-      );
-
       const filter = { userid: userid, TelegramMsgId: msgid };
 
       dialog_collection.deleteMany(filter, (err, res) => {
@@ -1384,14 +1066,6 @@ const deleteDialogByUserPromise = (userid, regime) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const dialog_collection = connection.model(
-        appsettings.mongodb_names.coll_dialogs,
-        scheemas.TelegramDialogSheema
-      );
 
       let filter;
       if (regime) {
@@ -1420,15 +1094,6 @@ const delete_profile_by_id_arrayPromise = (profileIdArray) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-      const connection = await Connect_to_mongo(
-        connectionString_self_mongo,
-        db_name
-      );
-      const telegram_profile_collection = connection.model(
-        appsettings.mongodb_names.coll_profiles,
-        scheemas.ProfileSheema
-      );
-
       telegram_profile_collection.deleteMany(
         { id: { $in: profileIdArray } },
         (err, res) => {

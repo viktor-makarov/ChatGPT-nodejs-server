@@ -5,6 +5,7 @@ const axios = require("axios");
 const { Readable } = require("stream");
 const FormData = require("form-data");
 const fs = require('fs');
+const FunctionCall = require("./FunctionCall");
 const Jimp = require('jimp');
 const cheerio = require('cheerio');
 const iconv = require('iconv-lite');
@@ -13,53 +14,6 @@ const msqTemplates = require("../config/telegramMsgTemplates");
 const telegramErrorHandler = require("./telegramErrorHandler.js");
 const { Console, error } = require("console");
 const { ChatCompletionResponseMessageRoleEnum } = require("openai");
-
-class FunctionCall{
-
-    #function_call;
-    #argumentsText;
-    #argumentsJson;
-    #name;
-    #tokensLimitPerCallvalue
-
-    constructor(function_call) {
-        this.#function_call = function_call;
-        this.#argumentsText = function_call?.function?.arguments
-        this.#name = function_call?.function?.name
-        
-      };
-
-      isArgumentsFieldValid(){
-        if(this.#argumentsText === "" || this.#argumentsText === null || this.#argumentsText === undefined){
-            console.log("false arguments",this.#argumentsText)
-            return false 
-        } else {
-            console.log("true arguments",this.#argumentsText)
-            return true
-        }
-    }
-
-       convertArgumentsToJSON(){
-        try{
-        this.#argumentsJson=JSON.parse(this.#argumentsText)
-        } catch(err){
-            throw new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
-        }
-
-        console.log(this.#argumentsJson)
-    }
-
-    set tokensLimitPerCall(value){
-        this.#tokensLimitPerCallvalue = value;
-    };
-
-    get argumentsJSON(){
-        return this.#argumentsJson
-    }
-    
-};
-
-
 
 async function notifyUser(botInstance,sysmsgOn,full_message,short_message,incoming_msg_id,chat_id,follow_up_msg,format){
 //Sends a notification to the user and returns the last message_id
