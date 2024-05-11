@@ -356,10 +356,10 @@ async function chatCompletionStreamAxiosRequest(
 
     //Запускаем отложенные сообщения по статусу
     let mainPromiseFinished = {status:false};
-    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[0],mainPromiseFinished)}, appsettings.http_options.first_timeout_notice);
-    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[1],mainPromiseFinished)}, appsettings.http_options.second_timeout_notice);
-    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[2],mainPromiseFinished)}, appsettings.http_options.third_timeout_notice);
-    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[3],mainPromiseFinished)}, appsettings.http_options.fourth_timeout_notice);
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[0],mainPromiseFinished)}, appsettings?.http_options?.first_timeout_notice ? appsettings?.http_options?.first_timeout_notice : 15000);
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[1],mainPromiseFinished)}, appsettings?.http_options?.second_timeout_notice ? appsettings?.http_options?.second_timeout_notice : 30000);
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[2],mainPromiseFinished)}, appsettings?.http_options?.third_timeout_notice ? appsettings?.http_options?.third_timeout_notice : 45000);
+    setTimeout(() => {sendStatusMEssage(botInstance,msg,sent_msg_id,msqTemplates.timeout_messages[3],mainPromiseFinished)}, appsettings?.http_options?.fourth_timeout_notice ? appsettings?.http_options?.fourth_timeout_notice : 60000);
 
     const dialogueList = await mongo.getDialogueByUserIdPromise(
       msg.from.id,

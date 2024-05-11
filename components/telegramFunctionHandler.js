@@ -14,6 +14,53 @@ const telegramErrorHandler = require("./telegramErrorHandler.js");
 const { Console, error } = require("console");
 const { ChatCompletionResponseMessageRoleEnum } = require("openai");
 
+class FunctionCall{
+
+    #function_call;
+    #argumentsText;
+    #argumentsJson;
+    #name;
+    #tokensLimitPerCallvalue
+
+    constructor(function_call) {
+        this.#function_call = function_call;
+        this.#argumentsText = function_call?.function?.arguments
+        this.#name = function_call?.function?.name
+        
+      };
+
+      isArgumentsFieldValid(){
+        if(this.#argumentsText === "" || this.#argumentsText === null || this.#argumentsText === undefined){
+            console.log("false arguments",this.#argumentsText)
+            return false 
+        } else {
+            console.log("true arguments",this.#argumentsText)
+            return true
+        }
+    }
+
+       convertArgumentsToJSON(){
+        try{
+        this.#argumentsJson=JSON.parse(this.#argumentsText)
+        } catch(err){
+            throw new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+        }
+
+        console.log(this.#argumentsJson)
+    }
+
+    set tokensLimitPerCall(value){
+        this.#tokensLimitPerCallvalue = value;
+    };
+
+    get argumentsJSON(){
+        return this.#argumentsJson
+    }
+    
+};
+
+
+
 async function notifyUser(botInstance,sysmsgOn,full_message,short_message,incoming_msg_id,chat_id,follow_up_msg,format){
 //Sends a notification to the user and returns the last message_id
 
@@ -27,7 +74,7 @@ try{
     } else {
         text_to_send = short_message;
     };
-console.log("notifyUser", incoming_msg_id,short_message)
+
 //Проверям, что длина сообщения поместится в одно сообщения telegram.
 if(text_to_send.length>appsettings.telegram_options.big_outgoing_message_threshold){
     text_to_send = text_to_send.substring(0, appsettings.telegram_options.big_outgoing_message_threshold) + msqTemplates.too_long_message
@@ -327,7 +374,7 @@ async function get_data_from_mongoDB_by_pipepine(function_call,table_name,tokens
         const actialTokens = func.countTokensProportion(JSON.stringify(result))
 
         if(actialTokens>tokensLimitPerCall){
-            return {success:0,error:`Result of the function exceeds ${appsettings.functions_options.max_characters_in_result} characters.`,instructions: "Please adjust the query to reduce length of the result."}
+            return {success:0,error:`Result of the function exceeds ${tokensLimitPerCall} characters.`,instructions: "Please adjust the query to reduce length of the result."}
         }
         let response = {success:1,result:result}
 
@@ -346,6 +393,15 @@ async function get_data_from_mongoDB_by_pipepine(function_call,table_name,tokens
 
     };
 
+function hasAllRequiredAtributes(tool_call){
+
+    if(tool_call.id && tool_call.type && tool_call.function){
+        return true
+    } else {
+        return false
+    } 
+}
+
 async function toolsRouter(botInstance,msg,tool_calls,model,sentMsgIdObj,sysmsgOn,regime){
 
     let resultList =[];
@@ -353,7 +409,7 @@ async function toolsRouter(botInstance,msg,tool_calls,model,sentMsgIdObj,sysmsgO
 try{
 
     const dialogueSize = modelConfig[model].request_length_limit_in_tokens      
-    const overalltokensLimit = dialogueSize*appsettings.functions_options.fetch_text_limit_pcs/100
+    const overalltokensLimit = dialogueSize*(appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 30)/100
     const tokensLimitPerCall = overalltokensLimit/tool_calls.length
     sentMsgIdObj["sentMsgList"] ={};
 
@@ -368,17 +424,11 @@ try{
         sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
         return 
     };
-        const total_calls = tool_calls.length
 
-        let promisesList =[];
+    const total_calls = tool_calls.length
+        const promisesList = tool_calls.map(async (tool_call, index) =>  {
 
-
-
-        for (let i = 0; i < tool_calls.length; i++) {
-
-            const tool_call = tool_calls[i]
-            let result;
-            if(!(tool_call.id && tool_call.type && tool_call.function)){ //Проверяем call на наличие всех необъодимых атрибутов.
+            if(!hasAllRequiredAtributes(tool_call)){
 
                 result = ({result:"unsuccessful",error:"Call is malformed. Required fields are missing",instructions:"Fix the call and retry. But undertake no more than three attempts to recall the function."})
                  
@@ -398,28 +448,27 @@ try{
 
             if(tool_call.type==="function"){ 
 
-                if(i >0){
+                const myFunctionCall = new FunctionCall(tool_call);
+                myFunctionCall.tokensLimitPerCall = tokensLimitPerCall;
+
+                if(index >0){
                     const sendResult = await botInstance.sendMessage(msg.chat.id, "...");
                     sentMsgIdObj.sentMsgId = sendResult.message_id
                 }
+                
                 full_message = msqTemplates.function_request_msg_full.replace("[function]","*"+tool_call?.function?.name+"-"+tool_call?.id+"*").replace("[request]",func.jsonToMarkdownCodeBlock(tool_call))
                 short_message = msqTemplates.function_request_msg_short.replace("[function]","*"+tool_call?.function?.name+"-"+tool_call?.id+"*")
                 sentMsgIdObj.sentMsgId = await notifyUser(botInstance,sysmsgOn,full_message,short_message,sentMsgIdObj.sentMsgId,msg.chat.id,"...","Markdown")
                 
                 sentMsgIdObj.sentMsgList[tool_call?.id]=sentMsgIdObj.sentMsgId
-        
-                result =  runFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,i+1,tokensLimitPerCall)
-                promisesList.push(result)
+                return  runFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,index+1,tokensLimitPerCall,myFunctionCall)
+               
+            } else {
+                return runOtherThenFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,index+1,tokensLimitPerCall,myFunctionCall)
+            }
+        });
 
-            } else { //Не функции обрабатывать пока не умеем.
-                result = runOtherThenFunctionRequest(botInstance,msg,tool_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,i+1,tokensLimitPerCall)
-                promisesList.push(result)
-            };
-            //Логируем использование функций
-
-        };
-
-        const promiseResult = await Promise.all(promisesList) //Запускаем все функции параллеьно и ждем результата всех
+        const promiseResult = await Promise.all(promisesList) 
    //     console.log("all_promiseResult",promiseResult)
         if(promiseResult.length>0){
             for (let i = 0; i < promiseResult.length; i++) {
@@ -459,7 +508,109 @@ async function get_current_datetime(){
     }
 }
 
-async function runOtherThenFunctionRequest(botInstance,msg,non_function_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,callnumber,tokensLimitPerCall){
+
+function runJavaScriptCodeAndCaptureLogAndErrors(code) {
+    // Store the original console.log function
+    const originalConsoleLog = console.log;
+    // Create an array to hold all outputs (logs and errors)
+    const outputs = [];
+  
+    // Override the console.log method to capture output
+    console.log = (...args) => {
+      outputs.push(args.join(' '));
+    };
+
+    
+  
+    try {
+      // Run the code
+      eval(code);
+    } catch (e) {
+      // Capture any errors that are thrown
+      outputs.push(`Error: ${e.message}`);
+    } finally {
+      // Restore the original console.log function
+      console.log = originalConsoleLog;
+    }
+  
+    // Return all the captured output as a text
+    return outputs.join('\n');
+  }
+
+
+async function runJavascriptCode(myFunctionCall){
+
+    try{
+
+    if(!myFunctionCall.isArgumentsFieldValid()){
+        return {success:0,error: "No arguments provided. You should provide at least required arguments"}
+    }
+    
+    let argumentsjson;
+
+    try{
+        myFunctionCall.convertArgumentsToJSON()
+    } catch (err){
+        return {success:0,error: err}
+    }   
+    
+    const codeToExdcute = myFunctionCall.argumentsJSON.javascript_code
+
+    
+
+    const result = runJavaScriptCodeAndCaptureLogAndErrors(codeToExdcute)
+    
+
+    return {success:1,result:result}
+        
+        } catch(err){
+            err.place_in_code = err.place_in_code || arguments.callee.name;
+            throw err;
+        }
+    };
+
+async function fetchUrlContentRouter(function_call,model,tokensLimitPerCall){
+
+try{
+
+const arguments = function_call?.function?.arguments
+
+if(arguments === "" || arguments === null || arguments === undefined){
+    return {success:0,error: "No arguments provided. You should provide at least required arguments"}
+} 
+
+let argumentsjson;
+
+try{
+argumentsjson = JSON.parse(arguments)
+} catch (err){
+    return {success:0,error: `Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`}
+}   
+
+if (argumentsjson.url === "" || argumentsjson.url === null || argumentsjson.url === undefined){
+    return {success:0,error:"Url param contains no data. You should provide a url as a string."}
+}
+
+
+const Url = argumentsjson.url
+
+ if(typeof Url != "string"){
+    return {success:0,error:"Urls should be either string or array."}
+};
+
+
+const result = await fetchUrlContent(Url, tokensLimitPerCall);
+
+return {success:1,result:result}
+    
+    } catch(err){
+        err.place_in_code = err.place_in_code || arguments.callee.name;
+        throw err;
+    }
+};
+
+
+async function runOtherThenFunctionRequest(botInstance,msg,non_function_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,callnumber,tokensLimitPerCall,myFunctionCall){
 
 try{
 
@@ -502,15 +653,15 @@ try{
 
 }
 
-async function runFunctionRequest(botInstance,msg,function_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,callnumber,tokensLimitPerCall){
+async function runFunctionRequest(botInstance,msg,function_call,model,sentMsgIdObj,sysmsgOn,regime,total_calls,callnumber,tokensLimitPerCall,myFunctionCall){
 
 try{
-
 const function_name = function_call?.function?.name
 let functionResult = ""
 
 const start = new Date();
 if(function_name==="get_current_datetime"){functionResult = await get_current_datetime()} 
+else if(function_name==="run_javasctipt_code"){functionResult = await runJavascriptCode(myFunctionCall)}
 else if(function_name==="fetch_url_content"){functionResult = await fetchUrlContentRouter(function_call,model,tokensLimitPerCall)}
 else if(function_name==="create_image"){functionResult = await CreateImageRouter(botInstance,function_call,msg,sentMsgIdObj)} 
 else if(function_name==="get_users_activity"){functionResult = await get_data_from_mongoDB_by_pipepine(function_call,"tokens_logs",tokensLimitPerCall)} 
@@ -610,6 +761,24 @@ functionList.push(
     }
 }}
 );
+
+functionList.push(
+    {"type":"function",
+    "function":{
+        "name": "run_javasctipt_code",
+        "description": "You can use this function to execute a javascript code.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "javascript_code": {
+                    "type": "string",
+                    "description": `Text of javascript code. You code should output results to the console.`
+                }
+            },
+            "required": ["javascript_code"]
+        }
+    }}
+    );
 
 
 functionList.push(
