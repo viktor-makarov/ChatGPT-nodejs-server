@@ -1,14 +1,6 @@
 module.exports = {
-"gpt-3.5-turbo-16k-0613":{
-    "name":"GPT-3.5 16K",
-    "request_length_limit_in_tokens": 16000
-},
-"gpt-4":{
-    "name":"GPT-4 8K",
-    "request_length_limit_in_tokens": 8192
-},
-"gpt-4-1106-preview":{
-    "name":"GPT-4 128K",
+"gpt-4o":{
+    "name":"GPT-4 Омни",
     "request_length_limit_in_tokens": 128000
 }
-}
+};

@@ -1,0 +1,319 @@
+const modelSettings = require("../../config/telegramModelsSettings");
+const msqTemplates = require("../../config/telegramMsgTemplates");
+const axios = require("axios");
+const { Readable } = require("stream");
+
+class RequestMsg{
+
+#botInstance;
+
+#callbackId;
+#rawMsg;
+#refRawMsg;
+#refMsgId;
+#text;
+#callback_dataRaw;
+#callback_event;
+#callback_data;
+#user;
+#chatId;
+#msgId;
+#msgTS;
+#isForwarded;
+
+#commandName;
+
+#fromId;
+#inputType;
+
+#fileType;
+#fileMimeType;
+#fileId;
+#fileUniqueId;
+#fileSize;
+#voiceToTextFoleSizeLimit = modelSettings.voicetotext.filesize_limit_mb * 1024 * 1024;
+#voiceToTextAllowedMimeTypes = modelSettings.voicetotext.mime_types;
+#fileLink;
+
+#msgIdsForDbCompletion =[];
+
+constructor(obj) {
+ //   console.log(obj.requestMsg)
+
+    this.#user = obj.userInstance
+    this.#botInstance = obj.botInstance
+
+    if(obj.requestMsg.data){
+        this.#inputType = "call_back"
+        this.#callbackId = obj.requestMsg.id;
+        this.#callback_dataRaw = obj.requestMsg.data
+
+        this.#refMsgId = obj.requestMsg.message.message_id
+        
+        this.#refRawMsg = obj.requestMsg.message
+        this.#text = obj.requestMsg.message.text;
+
+        const callback_data_obj = JSON.parse(this.#callback_dataRaw)
+
+        
+        this.#callback_event = callback_data_obj.e
+        this.#callback_data = callback_data_obj.d
+
+        this.#chatId = obj.requestMsg.message.chat.id
+        this.#fromId = obj.requestMsg.from.id
+
+    } else {
+
+        this.#chatId = obj.requestMsg.chat.id
+        this.#fromId = obj.requestMsg.from.id
+        this.#msgId = obj.requestMsg.message_id
+        this.#msgIdsForDbCompletion.push(obj.requestMsg.message_id)
+        this.#msgTS = obj.requestMsg.date
+
+
+        if(obj.requestMsg.text){
+   
+            this.#rawMsg = obj.requestMsg; 
+
+            if(obj.requestMsg.forward_from){
+                this.#isForwarded = true;
+                this.#text = "\n" + (obj.requestMsg.forward_from.first_name || "" ) + (obj.requestMsg.forward_from.username || "") + ":" + obj.requestMsg?.text;
+            } else {
+                this.#isForwarded =  false;
+                this.#text = obj.requestMsg?.text;
+            }  
+            
+            this.#commandName = this.checkIfCommand(obj.requestMsg)
+    
+            if(this.#commandName){
+                this.#inputType = "text_command"
+            } else {
+                this.#inputType = "text_message"
+            }
+            
+        } else if(obj.requestMsg.audio){ 
+            this.#inputType = "file"
+            this.#fileType = "audio"
+            this.#fileMimeType = obj.requestMsg.audio.mime_type
+            this.#fileId = obj.requestMsg.audio.file_id
+            this.#fileUniqueId = obj.requestMsg.audio.file_unique_id
+            this.#fileSize = obj.requestMsg.audio.file_size
+            
+        } else if(obj.requestMsg.voice){ 
+            this.#inputType = "file"
+            this.#fileType = "audio"
+            this.#fileMimeType = obj.requestMsg.voice.mime_type
+            this.#fileId = obj.requestMsg.voice.file_id
+            this.#fileUniqueId = obj.requestMsg.voice.file_unique_id
+            this.#fileSize = obj.requestMsg.voice.file_size
+            
+        } else if(obj.requestMsg.video_note){ 
+            this.#inputType = "file"
+            this.#fileType = "video_note"
+            this.#fileMimeType = "video_note"
+            this.#fileId = obj.requestMsg.video_note.file_id
+            this.#fileUniqueId = obj.requestMsg.video_note.file_unique_id
+            this.#fileSize = obj.requestMsg.video_note.file_size    
+            
+        } else {
+            this.#inputType = "unknown"
+            console.log("Unknown input type")
+        }
+
+    } 
+    
+    console.log("inputType",this.#inputType)
+  };
+
+voiceToTextConstraintsCheck(){
+
+if(!this.#voiceToTextAllowedMimeTypes.includes(this.#fileMimeType)){
+ return {success:0,response:{text:msqTemplates.audiofile_format_limit_error}}
+}
+
+if(this.#fileSize > this.#voiceToTextFoleSizeLimit){
+
+    return {success:0,response:{text:msqTemplates.audiofile_format_limit_error.replace(
+        "[size]",
+        modelSettings.voicetotext.filesize_limit_mb.toString()
+      )}}
+}
+
+ return {success:1}
+}
+
+authenticateRequest(){
+
+    if(this.#commandName && this.#commandName === "start"){
+        return {passed:true}
+    }
+    if(this.#user.isRegistered){
+        if(this.#user.active){
+            return {passed:true}
+        } else {
+            return {passed:false,response:{text:msqTemplates.profile_deactivated}}
+            //ваш профиль деактивирован
+        }
+    } else {    
+        return {passed:false,response:{text:msqTemplates.no_profile_yet}}
+        //у тебя нет учетной записи
+    }
+}
+
+regenerateCheckRegimeCoinsideness(){
+
+if( this.#user.currentRegime != "chat"){
+    return {success:0,response:{text:msqTemplates.wrong_regime.replace(
+        "[regime]",
+        modelSettings[this.#callback_data].name
+      )}}
+ }
+
+ return {success:1}
+}
+
+textToSpeechConstraintsCheck(){
+    if(this.#text>appsettings.telegram_options.text_to_speach_limit){
+        return {success:0,response:{text:msqTemplates.texttospeech_length_error.replace("[limit]",appsettings.telegram_options.text_to_speach_limit)}}
+    }
+ return {success:1}
+
+}
+
+async getFileLinkFromTgm(){
+    this.#fileLink = await this.#botInstance.getFileLink(this.#fileId)
+    return this.#fileLink
+}
+
+async audioReadableStreamFromTelegram(){
+    const response = await axios({
+        url: this.#fileLink,
+        method: "GET",
+        responseType: "arraybuffer",
+      });
+    const fileData = Buffer.from(response.data, "binary");  
+    var audioReadStream = Readable.from(fileData);
+    audioReadStream.path = this.#fileLink.split("/").pop();
+
+    return audioReadStream
+}
+
+
+print(){
+    console.log(
+        "Request: ",
+        "chatId",
+        this.#chatId,
+        "fromId",
+        this.#fromId,
+        "msg.id",
+        this.#msgId,
+        "timestemp",
+        new Date(),
+        "msg.lenght",
+        (this.#text || "").length,
+        "msg"
+        //,msg.text
+      )
+
+}
+
+checkIfCommand(message) {
+
+    if (message.text && message.text.startsWith('/')) {
+    return message.text.split(' ')[0].substring(1);
+    }
+    return null;
+  }
+
+isCommand(){
+
+    if(/^\//i.test(this.#text)){
+        return true
+    } else {
+        return false
+    }
+};
+
+get fileMimeType(){
+    return this.#fileMimeType
+}
+
+get fileType(){
+    return this.#fileType
+}
+
+get botInstance(){
+    return this.#botInstance
+}
+
+get user(){
+    return this.#user;
+}
+
+get msgIdsForDbCompletion() {
+    return this.#msgIdsForDbCompletion
+}
+
+get msg(){
+    return this.#rawMsg
+}
+get fromId(){
+    return this.#fromId
+}
+
+get chatId(){
+    return this.#chatId
+}
+
+get callback_dataRaw(){
+    return this.#callback_dataRaw
+}
+
+get callback_event(){
+    return this.#callback_event
+}
+get callback_data(){
+    return this.#callback_data
+}
+
+set callback_data(value){
+    this.#callback_data = value
+}
+
+get callbackId(){
+    return this.#callbackId
+}
+
+get msgId(){
+    return this.#msgId
+}
+
+get msgTS(){
+    return this.#msgTS
+}
+
+get refMsgId(){
+    return this.#refMsgId
+}
+
+
+
+get inputType(){
+    return this.#inputType
+}
+
+get commandName(){
+    return this.#commandName
+}
+
+get text(){
+    return this.#text
+}
+
+
+};
+
+
+
+module.exports = RequestMsg;

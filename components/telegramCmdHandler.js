@@ -4,33 +4,343 @@ const modelSettings = require("../config/telegramModelsSettings");
 const reports = require("../config/telegramReportsConfig.js");
 const otherFunctions = require("./other_func");
 const modelConfig = require("../config/modelConfig");
+const openAIApiHandler = require("./openAI_API_Handler.js");
+
+async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
+  let responses =[];
+
+  switch(requestMsgInstance.user.currentRegime) {
+    case "voicetotext":
+        if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
+          const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
+          if(checkResult.success===0){
+            responses.push(checkResult.response)
+            break;
+          }
+          const result = await replyMsgInstance.sendAudioListenMsg()
+          const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
+          replyMsgInstance.text = transcript;
+          await replyMsgInstance.simpleMessageUpdate(transcript,
+            {
+            chat_id:replyMsgInstance.chatId,
+            message_id:result.message_id
+          })
+          break;
+        } else {
+          responses.push({text:msqTemplates.file_type_cannot_be_converted_to_text})
+        }
+      break;
+    case "texttospeech":
+      responses.push({text:msqTemplates.file_is_not_handled_in_the_regime})
+      break;
+    case "chat":
+      if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
+        const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
+        if(checkResult.success===0){
+          responses.push(checkResult.responce)
+          break;
+        }
+        const result = await replyMsgInstance.sendAudioListenMsg()
+        const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
+        replyMsgInstance.text = transcript;
+        await replyMsgInstance.simpleMessageUpdate(transcript,
+          {
+          chat_id:replyMsgInstance.chatId,
+          message_id:result.message_id
+        })
+        await dialogueInstance.getDialogueFromDB()
+        await dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
+
+        break;
+      } else {
+          responses.push({text:msqTemplates.file_handler_is_not_realized})
+      }
+    break;
+}
+
+  return responses
+}
+
+async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
+  let responses =[];
+
+  switch(requestMsgInstance.user.currentRegime) {
+    case "voicetotext":
+      responses.push({text:msqTemplates.error_voicetotext_doesnot_process_text})
+    break;   
+    case "texttospeech":
+      const checkResult = requestMsgInstance.textToSpeechConstraintsCheck()
+      if(checkResult.success===0){
+        responses.push(checkResult.response)
+        break;
+      }
+
+      const result = await replyMsgInstance.sendTextToSpeachWaiterMsg()
+      await openAIApiHandler.TextToVoice(requestMsgInstance);
+      await replyMsgInstance.deleteMsgByID(result.message_id)
+      
+    break;
+    case "chat":
+      await dialogueInstance.getDialogueFromDB()
+      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+
+    break;
+    }
+
+  return responses
+}
+
+async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgInstance,toolCallsInstance){
+
+  const cmpName = requestMsgInstance.commandName
+  const isRegistered = requestMsgInstance.user.isRegistered
+  const hasReadInfo = requestMsgInstance.user.hasReadInfo
+  const isAdmin = requestMsgInstance.user.isAdmin
+  let responses =[];
+
+  if(cmpName==="start"){
+
+    if(isRegistered){
+      responses.push({ text: msqTemplates.already_registered })
+    } else {
+
+      const result = await tokenValidation(requestMsgInstance);
+      switch(result){
+        case "blank":
+        responses.push({ text: msqTemplates.blank_registration })
+        break;
+        case "valid":
+          responses.push({text:infoHandler().mainText})
+          responses.push({text:infoHandler().acceptText,buttons:infoHandler()?.buttons})
+        break;
+        case "invalid":
+          responses.push({ text: msqTemplates.incorrect_code })
+        break;
+      }
+      requestMsgInstance.user.isRegistered =true
+    }
+
+  } else if(!isRegistered){
+    await mongo.insert_reg_eventPromise(
+      requestMsgInstance.user.userid,
+      requestMsgInstance.chatId,
+      requestMsgInstance.user.is_bot,
+      requestMsgInstance.user.user_first_name,
+      requestMsgInstance.user.user_last_name,
+      requestMsgInstance.user.user_username,
+      requestMsgInstance.user.language_code,
+      "unauthorized request",
+      "request"
+    );
+    responses.push({text:msqTemplates.register})
+
+  } else if(!hasReadInfo){
+
+    responses.push({text:infoHandler().mainText})
+    responses.push({text:infoHandler().acceptText,buttons:infoHandler()?.buttons})
+
+  } else if(cmpName==="resetchat"){
+
+    await dialogueInstance.getDialogueFromDB()
+    const completionMsIds = dialogueInstance.getCompletionsLastMsgIds() 
+    await replyMsgInstance.deletePreviousRegenerateButtons(completionMsIds)
+    const toolsMsgIds = dialogueInstance.getToolsMsgIds()
+    await replyMsgInstance.deleteToolsButtons(toolsMsgIds)
+    const response = await resetdialogHandler(requestMsgInstance);
+    responses.push(response)
+
+  } else if(cmpName==="unregister"){
+    const response = await unregisterHandler(requestMsgInstance);
+    responses.push(response)
+
+  } else if(cmpName==="help"){
+
+    if(isAdmin){
+      const response = helpHandler();
+      responses.push(response)
+    } else {
+      responses.push({ text: msqTemplates.help })
+    }
+
+  } else if(cmpName==="faq"){
+    const response = faqHandler();
+    responses.push(response)
+
+  } else if(cmpName==="settings"){
+    const response = await settingsOptionsHandler(requestMsgInstance);
+    responses.push(response)
+
+  } else if(cmpName==="info"){
+    const response = {text:infoHandler().mainText};
+    responses.push(response)
+  } else if(cmpName==="chat" || cmpName==="voicetotext" || cmpName==="texttospeech"){
+    
+    await dialogueInstance.getDialogueFromDB() //чтобы посчитать потраченные токены в диалоге
+    const response = await changeRegimeHandlerPromise({
+      newRegime:cmpName,
+      requestMsgInstance:requestMsgInstance,
+      dialogueInstance:dialogueInstance
+    });
+    responses.push(response)
+
+  }  else if(cmpName==="reports"){
+    if (!isAdmin) {
+      responses.push({text:msqTemplates.reports_no_permission,buttons:{reply_markup: {} }})
+    } else {
+      const response = await reportsOptionsHandler(requestMsgInstance);
+      responses.push(response)
+    }
+  } else if(cmpName==="create_free_account"){
+    if (!isAdmin) {
+      responses.push({text:msqTemplates.no_admin_permissions,buttons:{reply_markup: {} }})
+    } else {
+      const response = await createNewFreeAccount();
+      responses.push(response)
+    }
+  } else if(cmpName==="sendtome"){
+
+    if(isAdmin){
+      const response = sendtomeHandler(requestMsgInstance);
+      responses.push(response)
+    } else {
+      responses.push({ text: msqTemplates.no_admin_permissions })
+    }
+  } else if(cmpName==="sendtoall"){
+    if(isAdmin){
+      const response = sendtoallHandler(requestMsgInstance);
+      responses.push(response)
+    } else {
+      responses.push({ text: msqTemplates.no_admin_permissions })
+    }
+  } else {
+    responses.push({text:msqTemplates.unknown_command})
+  }
+   return responses
+}
 
 function noMessageText() {
   return msqTemplates.no_text_msg;
 }
 
-async function infoacceptHandler(botInstance, callback_msg) {
-    await mongo.insert_read_sectionPromise(callback_msg); // Вставляем новую секцию в базу данных
-    global.readArray = await mongo.get_all_readPromise(); // Получаем все секции read из базы данных
+function formFoldedSysMsg(toolCallFriendlyNameObj,msg_id){
+
+  const toolCallFriendlyName = toolCallFriendlyNameObj[0].tool_reply.functionFriendlyName
+  const replySuccess = toolCallFriendlyNameObj[0].tool_reply.success
+
+  let resultImage;
+  if(replySuccess === 1) {
+    resultImage = "✅"
+} else {
+    resultImage = "❌"
+}
+
+  let text = `${toolCallFriendlyName}. ${resultImage}`
+
+  const callback_data = {e:"unfold_sysmsg",d:msg_id}
+
+  const fold_button = {
+    text: "Показать подробности",
+    callback_data: JSON.stringify(callback_data),
+  };
+
+  const reply_markup = {
+      one_time_keyboard: true,
+      inline_keyboard: [[fold_button],],
+    };
+
+  return {text:text,reply_markup:reply_markup}
+}
+
+function formCallsAndRepliesMsg(callsAndReplies,msg_id){
+
+  let name;
+  let type;
+  let id;
+  let success;
+  let duration;
+  let request;
+  let reply;
+  const overheadSymbolsCount = 100
+  const limit = (appsettings.telegram_options.big_outgoing_message_threshold - overheadSymbolsCount)/2
+
+  for (const msg of callsAndReplies){
+    if(msg.tool_calls){
+      for (const call of msg.tool_calls){
+        if(call.telegramMsgId === msg_id){
+          name = call?.function?.name;
+          id = call?.id;
+          type = call?.type;
+          request = call?.function?.arguments
+          if (request.length > limit){
+            request = request.slice(0, limit) + "... (текст сокращен)"
+
+          }
+          request = otherFunctions.wireHtml(request)
+        }
+      }
+    }
+
+    if(msg.tool_reply){
+
+      name = msg.tool_reply.name
+      id = msg.tool_reply.tool_call_id;
+      const content = JSON.parse(msg.tool_reply.content);
+      success = content.success
+      duration = msg.tool_reply.duration
+      reply = msg.tool_reply.content
+      if (reply.length > limit){
+        reply = reply.slice(0, limit) + "... (текст сокращен)"
+
+      }
+      reply = reply
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/&/g,"&amp;")
+    }
+  }
+
+  let text = `<b>name: ${name}</b>\nid: ${id}\ntype: ${type}\nduration: ${duration} sec.\nsuccess: ${success}\n\nrequest:\n<pre>${request}</pre>\n\nreply:\n<pre>${reply}</pre>`
+
+  const callback_data = {e:"fold_sysmsg",d:msg_id}
+
+  const fold_button = {
+    text: "Скрыть",
+    callback_data: JSON.stringify(callback_data),
+  };
+
+  const reply_markup = {
+      one_time_keyboard: true,
+      inline_keyboard: [[fold_button],],
+    };
+
+  return {text:text,reply_markup:reply_markup}
+}
+
+async function infoacceptHandler(requestMsgInstance) {
+    const result = await mongo.insert_read_sectionPromise(requestMsgInstance); // Вставляем новую секцию в базу данных
     return { text: msqTemplates.welcome };
 }
 
-async function registerHandler(botInstance, msg) {
-  return { text: msqTemplates.register_depricated };
+
+function infoHandler() {
+
+  const callback_data = {e:"info_accepted"}
+  return { 
+    mainText: msqTemplates.info,
+    acceptText: msqTemplates.info_accept,
+    buttons:{
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Подтверждаю", callback_data: JSON.stringify(callback_data) }],
+      ],
+    },
+  }};
 }
 
-function infoHandler(botInstance, msg) {
-  return { text: msqTemplates.info };
-}
-
-async function adminHandler(botInstance, msg) {
-  if (adminArray.includes(msg.from.id)) {
-    //Провевяем, активированы ли уже админские права
-    return { text: msqTemplates.already_admin };
-  }
- 
+async function adminHandler(requestMsgInstance) {
+ try{
   const adminCode = process.env.ADMIN_KEY;
-  let prompt = msg.text.substring("/admin".length).trim();
+  let prompt = requestMsgInstance.text.substring("/admin".length).trim();
 
   if (prompt === "") {
     return { text: msqTemplates.blank_admin_code };
@@ -38,33 +348,41 @@ async function adminHandler(botInstance, msg) {
 
   if (adminCode === prompt) {
     
-      await mongo.insert_adminRolePromise(msg);
+      await mongo.insert_adminRolePromise(requestMsgInstance);
       await mongo.insert_reg_eventPromise(
-        msg.from.id,
-        msg.chat.id,
-        msg.from.is_bot,
-        msg.from.first_name,
-        msg.from.last_name,
-        msg.from.username,
-        msg.from.language_code,
+        requestMsgInstance.user.userid,
+        requestMsgInstance.chatId,
+        requestMsgInstance.user.is_bot,
+        requestMsgInstance.user.user_first_name,
+        requestMsgInstance.user.user_last_name,
+        requestMsgInstance.user.user_username,
+        requestMsgInstance.user.language_code,
         "admin permissions granted",
         "user's command"
       );
-      global.adminArray = await mongo.get_all_adminPromise(); //Если секция permissions успешно добавилась, то обновляем adminArray.
 
       return { text: msqTemplates.admin_welcome };
     } else {
       return { text: msqTemplates.admin_reject };
     }
+  } catch(err){
+    console.log("err",err)
+  }
 }
 
-function sendtomeHandler(botInstance, msg) {
+function sendtomeHandler(requestMsgInstance) {
     const pattern = /\[(.*?)\]/gm; // Regular expression pattern to match strings inside []
-    const matches = msg.text.match(pattern); // Array of all matches found
+    const matches = requestMsgInstance.text.match(pattern); // Array of all matches found
 
     if (matches) {
       const substrings = matches.map((match) => match.slice(1, -1)); // Extracting substring between []
-      return { text: substrings.join(" ") };
+      let buttons = {reply_markup:{
+        one_time_keyboard: true,
+        inline_keyboard: [],
+      }};
+      buttons.reply_markup.inline_keyboard.push()
+
+      return { text: substrings.join(" "),parse_mode:"HTML"};
     } else {
       err = new Error(
         `No match for pattern ${pattern} found in function ${arguments.callee.name}.`
@@ -78,8 +396,7 @@ function sendtomeHandler(botInstance, msg) {
     }
 }
 
-async function unregisterAllNotUpToDate(botInstance, msg) {
-    if (adminArray.includes(msg.from.id)) {//Если у пользователя есть права админа
+async function unregisterAllNotUpToDate(requestMsgInstance) {
 
       const profilesWithOldRegistration = await mongo.get_all_profiles_with_old_registrationPromise()
       console.log("Profiles with not upToDate registration found:",profilesWithOldRegistration.length)
@@ -104,7 +421,7 @@ async function unregisterAllNotUpToDate(botInstance, msg) {
             "register code change"
           );
 
-          await botInstance.sendMessage(
+          await requestMsgInstance.botInstance.sendMessage(
             item.id_chat,
             msqTemplates.code_change_mesage
           );
@@ -122,41 +439,34 @@ async function unregisterAllNotUpToDate(botInstance, msg) {
       }
 
       const resultDeleted = await mongo.DeleteNotUpToDateProfilesPromise()
-      console.log("Deleted profiles:",resultDeleted)
-      global.registeredArray = await mongo.get_all_registeredPromise();     
-      global.readArray = await mongo.get_all_readPromise(); //И проверяем всех ознакомившихся     
-      global.allSettingsDict = await mongo.get_all_settingsPromise();
-      global.adminArray = await mongo.get_all_adminPromise(); //Если секция permissions успешно добавилась, то обновляем adminArray.
+      console.log("Deleted profiles:",resultDeleted)  
 
       return { text: msqTemplates.unregisteredAllResultMsg.replace("[number]",resultDeleted.deletedCount.toString()) };
-    } else {
-      return {text: msqTemplates.no_admin_permissions}
-      
-    }
 }
 
-async function sendtoallHandler(botInstance, msg) {
+async function sendtoallHandler(requestMsgInstance) {
   try {
-    if (adminArray.includes(msg.from.id)) {
+
       const pattern = /\[(.*?)\]/gm; // Regular expression pattern to match strings inside []
-      const matches = msg.text.match(pattern); // Array of all matches found
+      const matches = requestMsgInstance.text.match(pattern); // Array of all matches found
 
       if (matches) {
         const substrings = matches.map((match) => match.slice(1, -1)); // Extracting substring between []
         let text_to_send = substrings.join(" ");
-        const profile_list = await mongo.get_all_profilesPromise();
+        const profile_list = await mongo.get_all_profiles();
         profile_list.forEach(async (item) => {
             if (item.id_chat) {
               await botInstance.sendMessage(
                 item.id_chat,
-                text_to_send + "\n\n Сообщение от Администратора."
+                text_to_send + "\n\n Сообщение от Администратора.",
+                {parse_mode:"HTML"}
               );
             }
         });
         return {
           text:
             msqTemplates.sendtoall_success +
-            ` ${profile_list.length} пользователям.`,
+            ` ${profile_list.length} пользователям.`
         };
       } else {
         err = new Error(
@@ -168,9 +478,7 @@ async function sendtoallHandler(botInstance, msg) {
         err.mongodblog = false;
         throw err
       }
-    } else {
-      return { text: msqTemplates.no_admin_permissions };
-    }
+   
   } catch (err) {
     //Tested
     err.place_in_code = err.place_in_code || arguments.callee.name
@@ -178,116 +486,113 @@ async function sendtoallHandler(botInstance, msg) {
   }
 }
 
-async function changeRegimeHandlerPromise(msg, regime) {
-      await mongo.UpdateCurrentRegimeSettingPromise(msg, regime);
-      const dict = await mongo.get_all_settingsPromise(); //Обновляем глобальную переменную с настроками
-      global.allSettingsDict = dict;
+async function changeRegimeHandlerPromise(obj){
+  obj.requestMsgInstance.user.currentRegime = obj.newRegime
 
-      if (regime == "assistant") {
-        const dialogueList = await mongo.getDialogueByUserIdPromise(
-          msg.from.id,
-          regime
-        ); //получаем текущий диалог
-        if (dialogueList.length > 0) {
-          var previous_dialogue_tokens = 0; //Подсчитаем токены
-          for (const obj of dialogueList) {
-            previous_dialogue_tokens += obj.tokens;
-          }
+   await mongo.updateCurrentRegimeSetting(obj.requestMsgInstance);
+
+      if (obj.newRegime == "chat") {
+        const previous_dialogue_tokens = obj.dialogueInstance.allDialogueTokens
+        
+        if (previous_dialogue_tokens > 0) {
           return {
-            text: modelSettings[regime].incomplete_msg
+            text: modelSettings[obj.newRegime].incomplete_msg
               .replace(
                 "[temperature]",
-                allSettingsDict[msg.from.id][regime].temperature
+                obj.requestMsgInstance.user.currentTemperature
               )
               .replace(
                 "[model]",
-                modelConfig[allSettingsDict[msg.from.id][regime].model].name
+                modelConfig[obj.requestMsgInstance.user.currentModel].name
               )
               .replace("[previous_dialogue_tokens]", previous_dialogue_tokens)
               .replace(
                 "[request_length_limit_in_tokens]",
-                modelConfig[allSettingsDict[msg.from.id][regime].model].request_length_limit_in_tokens
+                modelConfig[obj.requestMsgInstance.user.currentModel].request_length_limit_in_tokens
               ),
           };
         } else {
           return {
-            text: modelSettings[regime].welcome_msg
+            text: modelSettings[obj.newRegime].welcome_msg
             .replace(
               "[temperature]",
-              allSettingsDict[msg.from.id][regime].temperature
+              obj.requestMsgInstance.user.currentTemperature
             ).replace(
               "[model]",
-              modelConfig[allSettingsDict[msg.from.id][regime].model].name
+              modelConfig[obj.requestMsgInstance.user.currentModel].name
             ),
           };
         }
-      } else if (regime == "voicetotext") {
+      } else if (obj.newRegime == "voicetotext") {
         return {
-          text: modelSettings[regime].welcome_msg.replace(
+          text: modelSettings[obj.newRegime].welcome_msg.replace(
             "[size]",
             modelSettings.voicetotext.filesize_limit_mb.toString()
           ),
         };
-      } else if (regime == "texttospeech"){
+      } else if (obj.newRegime == "texttospeech"){
         return {
-          text: modelSettings[regime].welcome_msg
+          text: modelSettings[obj.newRegime].welcome_msg
           .replace(
             "[limit]",
             appsettings.telegram_options.big_message_threshold
           )
           .replace(
             "[voice]",
-            allSettingsDict[msg.from.id][regime].voice
-          ).replace(
-            "[model]",
-            allSettingsDict[msg.from.id][regime].model
+            obj.requestMsgInstance.user.currentVoice
           ),
         };
       } else {
         return {
-          text: modelSettings[regime].welcome_msg
+          text: modelSettings[obj.newRegime].welcome_msg
           .replace(
             "[temperature]",
-            allSettingsDict[msg.from.id][regime].temperature
+            obj.requestMsgInstance.user.currentTemperature
           ).replace(
             "[model]",
-            modelConfig[allSettingsDict[msg.from.id][regime].model].name
+            modelConfig[obj.requestMsgInstance.user.currentModel].name
           ),
         };
       }
-
   };
 
-async function unregisterHandler(botInstance, msg) {
-    await mongo.delete_profile_by_id_arrayPromise([msg.from.id]);
+async function unregisterHandler(requestMsgInstance) {
+    await mongo.delete_profile_by_id_arrayPromise([requestMsgInstance.user.userid]);
     await mongo.insert_reg_eventPromise(
-      msg.from.id,
-      msg.chat.id,
-      msg.from.is_bot,
-      msg.from.first_name,
-      msg.from.last_name,
-      msg.from.username,
-      msg.from.language_code,
+      requestMsgInstance.user.userid,
+      requestMsgInstance.chatId,
+      requestMsgInstance.user.is_bot,
+      requestMsgInstance.user.user_first_name,
+      requestMsgInstance.user.user_last_name,
+      requestMsgInstance.user.user_username,
+      requestMsgInstance.user.language_code,
       "unregister",
       "user's command"
     );
 
-    await mongo.deleteDialogByUserPromise([msg.from.id], null); //Удаляем диалог данного пользователя
-    global.registeredArray = await mongo.get_all_registeredPromise();
-    global.readArray = await mongo.get_all_readPromise();
+    await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
 
-async function resetdialogHandler(botInstance, msg) {
+async function createNewFreeAccount(){
 
-    await mongo.deleteDialogByUserPromise([msg.from.id], "assistant");
-    return { text: msqTemplates.dialogresetsuccessfully };
-
+  const result = await mongo.insert_blank_profile()
+  const accountToken = result.token
+  return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/r2d2_test_chatbot?start=${accountToken}`}
 }
 
-async function settingsChangeHandler(botInstance, msg) {
-    const callbackArray = msg.data.split("_");
+async function resetdialogHandler(requestMsgInstance) {
+    await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "chat");
+    return { text: msqTemplates.dialogresetsuccessfully };
+}
+
+async function settingsChangeHandler(requestMsgInstance) {
+
+  let callbackArray = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
+    if(requestMsgInstance.callback_data){
+      callbackArray =  callbackArray.concat(requestMsgInstance.callback_data)
+    }
     const pathArray = callbackArray.slice(0, callbackArray.length - 1);
     const pathString = pathArray.join(".");
     const value = callbackArray[callbackArray.length - 1];
@@ -303,19 +608,16 @@ async function settingsChangeHandler(botInstance, msg) {
       templateResponseMsg = objectToParce[part].templateRespMsg;
       objectToParce = objectToParce[part].options;
     });
-    const result = await mongo.UpdateSettingPromise(msg, pathString, value);
+    const result = await mongo.UpdateSettingPromise(requestMsgInstance, pathString, value);
     //console.log("Обновление результатов",result)
-    global.allSettingsDict = await mongo.get_all_settingsPromise();
-    //console.log("Обновленные settings", global.allSettingsDict);
-    await botInstance.sendMessage(
-      msg.message.chat.id,
-      
-      templateResponseMsg.replace("[value]", value)
-    );
+    return {operation:"insert",text:templateResponseMsg.replace("[value]", value)}
 }
 
-async function reportsSendHandler(botInstance, msg) {
-    const callbackArray = msg.data.split("_");
+async function reportsSendHandler(requestMsgInstance) {
+    let callbackArray = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
+    if(requestMsgInstance.callback_data){
+      callbackArray =  callbackArray.concat(requestMsgInstance.callback_data)
+    }
     let templateResponseMsg = "";
     let objectToParce = reports;
     callbackArray.forEach((part) => {
@@ -326,8 +628,8 @@ async function reportsSendHandler(botInstance, msg) {
 
     //console.log("Обновление результатов",result)
     let report = "";
-    if (callbackArray.join("_") === "reports_currentProfiles") {
-      const docs = await mongo.get_all_profilesPromise();
+    if (callbackArray.includes("currentProfiles")) {
+      const docs = await mongo.get_all_profiles();
       let count = 1;
       docs.forEach((doc) => {
         report =
@@ -341,7 +643,7 @@ async function reportsSendHandler(botInstance, msg) {
           }).format(new Date(Date.parse(doc.datetimeUTC)))}`;
         count += 1;
       });
-    } else if (callbackArray.join("_") === "reports_oldusers") {
+    } else if (callbackArray.includes("oldusers")) {
       const docs = await mongo.get_all_profiles_with_old_registrationPromise();
       
       let count = 1;
@@ -359,7 +661,7 @@ async function reportsSendHandler(botInstance, msg) {
         count += 1;
       };
 
-    } else if (callbackArray.join("_") === "reports_statistics_userActivity") {
+    } else if (callbackArray.includes("userActivity")) {
       const docs = await mongo.get_tokenUsageByUsers();
       let count = 1;
 
@@ -381,7 +683,7 @@ async function reportsSendHandler(botInstance, msg) {
           }).format(new Date(Date.parse(docs[i].last_request)))}`;
         count += 1;
       };
-    } else if (callbackArray.join("_") === "reports_statistics_regimeUsage") {
+    } else if (callbackArray.includes("regimeUsage")) {
       const docs = await mongo.get_tokenUsageByRegimes();
       let count = 1;
       docs.forEach((doc) => {
@@ -390,14 +692,14 @@ async function reportsSendHandler(botInstance, msg) {
           `\n${count}. ${doc._id.regime} ${doc.requests} req. ${doc.tokens} tok.`;
         count += 1;
       });
-    } else if (callbackArray.join("_") === "reports_statistics_errors") {
+    } else if (callbackArray.includes("errors")) {
       const docs = await mongo.get_errorsByMessages();
       let count = 1;
       docs.forEach((doc) => {
         report = report + `\n${count}. ${doc._id} = (${doc.count}).`;
         count += 1;
       });
-    } else if (callbackArray.join("_") === "reports_statistics_tokenUsage") {
+    } else if (callbackArray.includes("tokenUsage")) {
       const docs = await mongo.get_tokenUsageByDates();
       let count = 1;
       docs.forEach((doc) => {
@@ -407,29 +709,25 @@ async function reportsSendHandler(botInstance, msg) {
         count += 1;
       });
     }
-    //console.log("Обновленные settings", global.allSettingsDict);
-    await botInstance.sendMessage(
-      msg.message.chat.id,
-      templateResponseMsg.replace("[report]", report)
-    );
-
+    return {operation:"insert",text:templateResponseMsg.replace("[report]", report)};
 }
 
-async function reportsOptionsHandler(botInstance, callback_data, msg) {
-    if (!adminArray.includes(msg.from.id)) {
-      return {
-        text: msqTemplates.reports_no_permission,
-        buttons: { reply_markup: {} },
-      };
+async function reportsOptionsHandler(requestMsgInstance) {
+
+
+  let callbackArray = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
+    if(requestMsgInstance.callback_data){
+      callbackArray =  callbackArray.concat(requestMsgInstance.callback_data)
     }
-    let callbackArray = callback_data.split("_");
     // console.log("callbackArray",callbackArray)
     let settingsKeyboard = [];
     let objectToParce = reports;
     //  console.log("initialObject",objectToParce)
     let msgText = "";
+
     if (callbackArray[callbackArray.length - 1] === "back") {
-      callbackArray = callbackArray.slice(0, callbackArray.length - 2); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
+      callbackArray = callbackArray.slice(0, callbackArray.length - 2);    
+      requestMsgInstance.callback_data = requestMsgInstance.callback_data.slice(0, requestMsgInstance.callback_data.length - 2); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
       // console.log("back trigger",callbackArray)
     }
 
@@ -446,10 +744,11 @@ async function reportsOptionsHandler(botInstance, callback_data, msg) {
 
       settingsKeyboard = otherFunctions.optionsToButtons(
         objectToParce,
-        callbackArray.join("_")
+        requestMsgInstance
       );
       //  console.log("Обновленная клавиатура",settingsKeyboard)
       return {
+        operation:"update",
         text: msgText,
         buttons: {
           reply_markup: {
@@ -461,20 +760,20 @@ async function reportsOptionsHandler(botInstance, callback_data, msg) {
     } else {
       //выполняем изменение конфига
       //  console.log("Выполняем действие")
-      await reportsSendHandler(botInstance, msg);
-      return { text: null };
+      const response = await reportsSendHandler(requestMsgInstance);
+      return response;
     }
 }
 
-async function settingsOptionsHandler(botInstance, callback_data, msg) {
-    let callbackArray = callback_data.split("_");
-    //console.log("callbackArray",callbackArray)
-    if(callbackArray.includes("currentsettings")){
-      await botInstance.sendMessage(
-        msg.message.chat.id,
-        msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(allSettingsDict[msg.from.id]))
-      );
-      return { text: null };
+async function settingsOptionsHandler(requestMsgInstance) {
+
+    let callback_data_array = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
+    if(requestMsgInstance.callback_data){
+      callback_data_array =  callback_data_array.concat(requestMsgInstance.callback_data)
+    }
+    console.log("callback_data_array",callback_data_array)
+    if(callback_data_array.includes("currentsettings")){
+      return {operation:"insert", text: msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(requestMsgInstance.user.settings)) };
     }
 
     let settingsKeyboard = [];
@@ -484,32 +783,35 @@ async function settingsOptionsHandler(botInstance, callback_data, msg) {
         options: modelSettings,
       },
     };
+
     //console.log("initialObject",objectToParce)
     let msgText = "";
 
-    if (callbackArray[callbackArray.length - 1] === "back") {
-      callbackArray = callbackArray.slice(0, callbackArray.length - 2); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
+    if (callback_data_array[callback_data_array.length - 1] === "back") {
+      callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
+      requestMsgInstance.callback_data = requestMsgInstance.callback_data.slice(0, requestMsgInstance.callback_data.length - 2); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
       //console.log("back trigger",callbackArray)
     }
 
-    callbackArray.forEach((part) => {
+    callback_data_array.forEach((part) => {
       //Получаем объект, который нужно превратить в кнопки
       msgText = objectToParce[part].options_desc;
       objectToParce = objectToParce[part].options;
+
     });
     // console.log("final object",JSON.stringify(objectToParce))
 
     if (objectToParce) {
       //Если объект с опциями существует
       //Обновляем меню
-
-
       settingsKeyboard = otherFunctions.optionsToButtons(
         objectToParce,
-        callbackArray.join("_")
+        requestMsgInstance
       );
+       
       //console.log("Обновленная клавиатура",settingsKeyboard)
       return {
+        operation:"update",
         text: msgText,
         buttons: {
           reply_markup: {
@@ -521,103 +823,64 @@ async function settingsOptionsHandler(botInstance, callback_data, msg) {
     } else {
       //выполняем изменение конфига
       //console.log("Выполняем действие")
-      await settingsChangeHandler(botInstance, msg);
-      return { text: null };
+      const response = await settingsChangeHandler(requestMsgInstance);
+      return response;
     }
-}
+};
 
-async function startHandler(botInstance, msg) {
-    if (registeredArray.includes(msg.from.id)) {
-      //Провевяем, зарегистрирован ли уже пользователь уже
-      return { text: msqTemplates.already_registered };
-    }
+async function tokenValidation(requestMsgInstance) {
 
-    const registerCode = process.env.REGISTRATION_KEY;
-    const prompt = msg.text.substring("/start".length).trim();
+    const token = requestMsgInstance.text.substring("/start".length).trim();
 
-    if (prompt === "") {
+    if (token === "") {
       await mongo.insert_reg_eventPromise(
-        msg.from.id,
-        msg.chat.id,
-        msg.from.is_bot,
-        msg.from.first_name,
-        msg.from.last_name,
-        msg.from.username,
-        msg.from.language_code,
+        requestMsgInstance.user.userid,
+        requestMsgInstance.chatId,
+        requestMsgInstance.user.is_bot,
+        requestMsgInstance.user.user_first_name,
+        requestMsgInstance.user.user_last_name,
+        requestMsgInstance.user.user_username,
+        requestMsgInstance.user.language_code,
         "failed register attempt",
         "user's command"
       );
-      return { text: msqTemplates.blank_registration };
+      return "blank";
     }
 
-    if (registerCode === prompt) {
-      await mongo.insert_profilePromise(msg); //Пробуем вставить профиль
-      await mongo.insert_permissionsPromise(msg);
+    const result = await mongo.registerUser(requestMsgInstance,token); //Пробуем вставить профиль
+
+    if (result?.token ===token) {
       await mongo.insert_reg_eventPromise(
-        msg.from.id,
-        msg.chat.id,
-        msg.from.is_bot,
-        msg.from.first_name,
-        msg.from.last_name,
-        msg.from.username,
-        msg.from.language_code,
+        requestMsgInstance.user.userid,
+        requestMsgInstance.chatId,
+        requestMsgInstance.user.is_bot,
+        requestMsgInstance.user.user_first_name,
+        requestMsgInstance.user.user_last_name,
+        requestMsgInstance.user.user_username,
+        requestMsgInstance.user.language_code,
         "register",
         "user's command"
       );
-      global.registeredArray = await mongo.get_all_registeredPromise(); //Если секция permissions успешно добавилась, то обновляем registeredArray.
-      global.allSettingsDict = await mongo.get_all_settingsPromise(); //Обновляем глобальную переменную с настроками
 
-      return {
-        text: infoHandler(botInstance, msg).text,
-        buttons: {
-          reply_markup: JSON.stringify({
-            inline_keyboard: [
-              [{ text: "Понятно", callback_data: "info_accepted" }],
-            ],
-          }),
-        },
-      };
+      return "valid";
     } else {
       //Tested
-      err = new Error(`Incorrect registration code ${arguments.callee.name}.`);
-      err.code = "PRM_ERR1";
-      err.user_message = msqTemplates.incorrect_code;
-      err.mongodblog = false;
-      err.place_in_code = err.place_in_code || arguments.callee.name
-      await mongo.insert_reg_eventPromise(
-        msg.from.id,
-        msg.chat.id,
-        msg.from.is_bot,
-        msg.from.first_name,
-        msg.from.last_name,
-        msg.from.username,
-        msg.from.language_code,
-        "failed register attempt",
-        "user's command"
-      );git 
-      throw err
+      return "invalid";
     }
 }
 
 
-function helpHandler(botInstance, msg) {
-    if (adminArray.includes(msg.from.id)) {
-      console.log(adminArray);
+function helpHandler() {
       return { text: msqTemplates.help + msqTemplates.help_advanced };
-    } else {
-      return { text: msqTemplates.help };
-    }
 }
 
-function faqHandler(botInstance, msg) {
+function faqHandler() {
   return { text: msqTemplates.faq };
 }
 
 module.exports = {
-  startHandler,
   helpHandler,
   noMessageText,
-  registerHandler,
   unregisterHandler,
   infoHandler,
   infoacceptHandler,
@@ -630,4 +893,9 @@ module.exports = {
   settingsOptionsHandler,
   reportsOptionsHandler,
   unregisterAllNotUpToDate,
+  textCommandRouter,
+  fileRouter,
+  textMsgRouter,
+  formCallsAndRepliesMsg,
+  formFoldedSysMsg
 };

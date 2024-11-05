@@ -8,12 +8,6 @@ const fs = require('fs');
 const yamlFileContent = fs.readFileSync(path.join(__dirname,'..',"config","main_config.yml"), 'utf8');
 global.appsettings = yaml.load(yamlFileContent);
 
-global.allSettingsDict = {}; //В этой переменной будут храниться текущие настройки пользователей.
-global.registeredArray = []; //В этой переменной будут храниться все зарегистрированные пользователи.
-global.readArray = []; //В этой переменной будут храниться все пользователи, ознакомившиеся с инструкцией.
-global.adminArray = []; //В этой переменной будут храниться все пользователи, у которых есть права администратора.
-
-
 //Подключаем и настраивам телеграм-бот
 
 async function startServer(){
@@ -26,7 +20,7 @@ global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {polling: true});
 
 
 telegramRouter.setBotParameters(global.bot) //задаем параметры бота
-telegramRouter.UpdateGlobalVariables(global.bot) //обновляем глобальные переменные
+telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
 telegramRouter.GetModelsFromAPI() //получаем список моделей
 telegramRouter.router(global.bot) //включаем роутер
 }

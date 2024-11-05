@@ -8,10 +8,6 @@ reports:{
             name:"Все профили",
             templateRespMsg:"Список текущих профилей телеграм бота.\nFirstName LastName UserName RegistrationDate\n[report]",
         },
-        oldusers:{
-            name:"Устаревшая регистрация",
-            templateRespMsg:"Список пользаваетелей, у которых код регистрации отличается от текущего.\nId FirstName LastName UserName RegistrationDate\n[report]",
-        },
         statistics:{
             options_desc:"Статистические отчеты",
             name:"Статистика",

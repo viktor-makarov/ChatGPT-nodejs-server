@@ -3,6 +3,7 @@ mongodb_names:  #db and collections names for mongodb
   db_prod: pva         #db name
   db_dev: pva_dev         #db name
   coll_profiles: telegram_profile #stores profiles of registered users
+  coll_accounts: telegram_account #stores registration info
   coll_tokens_log: tokens_log #stores token usage logs
   coll_errors_log: errors_log #stores erros logs
   coll_dialogs: telegram_dialogs #stores active dialogs
@@ -26,7 +27,10 @@ http_options:
   OAI_request_timeout: 30000
 
 functions_options:
+  fetch_text_limit_pcs: 80
   max_characters_in_result: 6000
+  content_clean_oai_url: https://api.openai.com/v1/chat/completions
+  content_clean_oai_model: gpt-4o
 
 telegram_options:
   send_throttle_ms: 1000 #Send only one message per second
@@ -34,8 +38,8 @@ telegram_options:
   big_message_threshold: 3000 #3000 symbols msgs are considered big 
   big_outgoing_message_threshold: 3900 #After this threshold bot makes second message
   commands:
-    - command: "/assistant"
-      description: "Ассистент (режим диалога)"
+    - command: "/chat"
+      description: "Диалог с ChatGPT "
     - command: "/texteditor"
       description: "Редактор текста"
     - command: "/codereviewer"
@@ -48,7 +52,7 @@ telegram_options:
       description: "Переводчик"
     - command: '/settings'
       description: 'Настройки'
-    - command: "/resetdialogue"
+    - command: "/resetchat"
       description: "Новый диалог"
     - command: "/help"
       description: "Помощь"

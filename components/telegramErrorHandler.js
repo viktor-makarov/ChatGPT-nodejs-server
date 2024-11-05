@@ -42,7 +42,7 @@ if(err.user_message){
 if(botInstance&&chat_id){
     await botInstance.sendMessage(chat_id, err.user_message || msqTemplates.error_strange)
     } else {
-        var err = new Error("You forgot to input botInstans, chat_id into error handling function 'main', so message to user cannot be sent.")
+        var err = new Error("You forgot to input botInstanсe or chat_id into error handling function 'main', so message to user cannot be sent.")
         err.code = "INT_ERR2"
         err.user_message = msqTemplates.INT_ERR
         throw err

@@ -16,48 +16,28 @@ const ProfileSheema = new Schema(
     username: { type: String },
     language_code: { type: String },
     settings: {
-      current_regime: { type: String, default: "assistant" },
-      assistant: {
+      current_regime: { type: String, default: "chat" },
+      chat: {
         temperature: { type: Number, default: 1 },
-        model: { type: String, default: modelSettings.assistant.default_model },
-        sysmsg:{ type: Boolean, default: false }
-      },
-      texteditor: {
-        temperature: { type: Number, default: 1 },
-        model: {
-          type: String,
-          default: modelSettings.texteditor.default_model,
-        },
-        sysmsg:{ type: Boolean, default: false }
-      },
-      codereviewer: {
-        temperature: { type: Number, default: 1 },
-        model: {
-          type: String,
-          default: modelSettings.codereviewer.default_model,
-        },
-        sysmsg:{ type: Boolean, default: false }
-      },
-      translator: {
-        temperature: { type: Number, default: 1 },
-        model: {
-          type: String,
-          default: modelSettings.translator.default_model,
-        },
-        sysmsg:{ type: Boolean, default: false }
+        model: { type: String, default: modelSettings.chat.default_model },
       },
       texttospeech: {
         voice: { type: String, default: modelSettings.texttospeech.voice},
         model: {
           type: String,
           default: modelSettings.texttospeech.default_model,
-        },
-        sysmsg:{ type: Boolean, default: false }
+        }},
+        voicetotext: {
+          model: {
+            type: String,
+            default: modelSettings.voicetotext.default_model,
+          }
       },
     },
+    token: {type: String},
+    plan:{type: String},
+    active:{type: Boolean},
     permissions: {
-      registrationCode: { type: String },
-      registrationCodeUpToDate:{ type: Boolean,default: true },
       registered: { type: Boolean },
       registeredDTUTC: { type: Date },
       readInfo: { type: Boolean },
@@ -65,11 +45,10 @@ const ProfileSheema = new Schema(
       admin: { type: Boolean },
       adminDTUTC: { type: Date },
       adminCode: { type: String },
+      groups: {type: Object}
     },
   },
- 
   { collection: appsettings.mongodb_names.coll_profiles }
-  
 );
 
 ProfileSheema.index({ id: -1 });
@@ -143,8 +122,7 @@ const TokensLogSheema = new Schema(
     model: { type: String,description: "OpenAI model used for request. Hint: for correct filtering on this field first fetch all the unique values." },
     prompt_tokens: { type: Number,description: "Number of tokens in prompt of the request." },
     completion_tokens: { type: Number,description: "Number of tokens in completion of the request." },
-    total_tokens: { type: Number,description: "Total number of tokens in the request: prompt plus completion." },
-    regime: { type: String,description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
+    total_tokens: { type: Number,description: "Total number of tokens in the request: prompt plus completion." }
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );
@@ -171,25 +149,24 @@ const TelegramDialogSheema = new Schema(
     sourceid: { type: String, index: true },
     createdAtSourceTS: { type: Number, index: true },
     createdAtSourceDT_UTC: { type: Date },
-    TelegramMsgId: { type: Number },
+    telegramMsgId:{type: Object},
+    telegramMsgBtns:{type: Boolean},
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
-    telegamPaused:{ type: Boolean },
     model:{ type: String },
     role: { type: String },
     roleid: { type: Number },
     name: { type: String },
-    content: { type: String },
-    functions: { type: Object },
+    content: Schema.Types.Mixed,
+    content_latex_formula: Schema.Types.Mixed,
     tools: { type: Object },
     tool_choice: Schema.Types.Mixed,
     tool_calls:{ type: Object },
     tool_reply:{ type: Object },
-    content_parts:{ type: Object },
+    completion_version:{ type: Number},
     completion_ended:{type: Boolean},
     content_ending: { type: String },
-    telegramMsgOptions: { type: Object },
     finish_reason: { type: String },
     tokens: { type: Number },
     regime: { type: String },
@@ -213,5 +190,5 @@ module.exports = {
   DetailsSheema,
   TokensLogSheema,
   TelegramDialogSheema,
-  FunctionUsageLogSheema,
+  FunctionUsageLogSheema
 };
