@@ -5,6 +5,7 @@ const reports = require("../config/telegramReportsConfig.js");
 const otherFunctions = require("./other_func");
 const modelConfig = require("../config/modelConfig");
 const openAIApiHandler = require("./openAI_API_Handler.js");
+const MdjMethods = require("./midjourneyMethods.js");
 
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
   let responses =[];
@@ -110,36 +111,21 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
         responses.push({ text: msqTemplates.blank_registration })
         break;
         case "valid":
-          responses.push({text:infoHandler().mainText})
-          responses.push({text:infoHandler().acceptText,buttons:infoHandler()?.buttons})
+          responses.push({text:requestMsgInstance.infoHandler().mainText})
+          responses.push({text:requestMsgInstance.infoHandler().acceptText,buttons:requestMsgInstance.infoHandler()?.buttons})
         break;
         case "invalid":
           responses.push({ text: msqTemplates.incorrect_code })
         break;
-      }
+        case "already_used":
+          responses.push({ text: msqTemplates.already_used_code })
+        break;
+      };
       requestMsgInstance.user.isRegistered =true
     }
 
-  } else if(!isRegistered){
-    await mongo.insert_reg_eventPromise(
-      requestMsgInstance.user.userid,
-      requestMsgInstance.chatId,
-      requestMsgInstance.user.is_bot,
-      requestMsgInstance.user.user_first_name,
-      requestMsgInstance.user.user_last_name,
-      requestMsgInstance.user.user_username,
-      requestMsgInstance.user.language_code,
-      "unauthorized request",
-      "request"
-    );
-    responses.push({text:msqTemplates.register})
 
-  } else if(!hasReadInfo){
-
-    responses.push({text:infoHandler().mainText})
-    responses.push({text:infoHandler().acceptText,buttons:infoHandler()?.buttons})
-
-  } else if(cmpName==="resetchat"){
+  }  else if(cmpName==="resetchat"){
 
     await dialogueInstance.getDialogueFromDB()
     const completionMsIds = dialogueInstance.getCompletionsLastMsgIds() 
@@ -171,7 +157,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     responses.push(response)
 
   } else if(cmpName==="info"){
-    const response = {text:infoHandler().mainText};
+    const response = {text:requestMsgInstance.infoHandler().mainText};
     responses.push(response)
   } else if(cmpName==="chat" || cmpName==="voicetotext" || cmpName==="texttospeech"){
     
@@ -183,14 +169,17 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     });
     responses.push(response)
 
-  }  else if(cmpName==="reports"){
+  } else if(cmpName==="reports"){
     if (!isAdmin) {
       responses.push({text:msqTemplates.reports_no_permission,buttons:{reply_markup: {} }})
     } else {
       const response = await reportsOptionsHandler(requestMsgInstance);
       responses.push(response)
     }
-  } else if(cmpName==="create_free_account"){
+  } else if(cmpName==="donate"){
+    console.log(msqTemplates.donate)
+    responses.push({ text: msqTemplates.donate,parse_mode:"HTML"})
+  }  else if(cmpName==="create_free_account"){
     if (!isAdmin) {
       responses.push({text:msqTemplates.no_admin_permissions,buttons:{reply_markup: {} }})
     } else {
@@ -322,20 +311,7 @@ async function infoacceptHandler(requestMsgInstance) {
 }
 
 
-function infoHandler() {
 
-  const callback_data = {e:"info_accepted"}
-  return { 
-    mainText: msqTemplates.info,
-    acceptText: msqTemplates.info_accept,
-    buttons:{
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "Подтверждаю", callback_data: JSON.stringify(callback_data) }],
-      ],
-    },
-  }};
-}
 
 async function adminHandler(requestMsgInstance) {
  try{
@@ -847,9 +823,19 @@ async function tokenValidation(requestMsgInstance) {
       return "blank";
     }
 
-    const result = await mongo.registerUser(requestMsgInstance,token); //Пробуем вставить профиль
+    const getResult = await mongo.getUserProfileByToken(token)
 
-    if (result?.token ===token) {
+    
+    if(getResult.length ===0){
+      return "invalid";
+    }
+
+    const userIdAlreadyExists = getResult[0]?.id ? true : false;
+
+    if (userIdAlreadyExists) {
+      return "already_used"
+    } else {
+    const updateResult = await mongo.registerUser(requestMsgInstance,token); //Пробуем вставить профиль
       await mongo.insert_reg_eventPromise(
         requestMsgInstance.user.userid,
         requestMsgInstance.chatId,
@@ -863,12 +849,41 @@ async function tokenValidation(requestMsgInstance) {
       );
 
       return "valid";
-    } else {
-      //Tested
-      return "invalid";
     }
 }
 
+async function mdj_reroll_handler(requestInstance,replyInstance){
+
+  const mdj_msg_reroll = await mongo.get_mdj_msg_byId(requestInstance.callback_data.h)
+
+  let msg = await MdjMethods.executeReroll({
+  msgId:mdj_msg_reroll[0].id,
+  hash:mdj_msg_reroll[0].hash,
+  content:mdj_msg_reroll[0].content,
+  flags:mdj_msg_reroll[0].flags
+  })
+  console.log("msg",msg)
+
+  msg.prompt = mdj_msg_reroll.prompt;
+  await mongo.insert_mdj_msg(msg,requestInstance.user)
+  
+  let reply_markup = {
+    one_time_keyboard: true,
+    inline_keyboard: []
+  };
+  reply_markup = replyInstance.generateMdjButtons(msg.id,msg.uri,reply_markup);
+
+  const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
+
+  await replyInstance.simpleSendNewImage({
+    caption:mdj_msg_reroll.prompt,
+    reply_markup:reply_markup,
+    contentType:"image/jpeg",
+    fileName:`mdj_image_reroll_${msg.id}.jpeg`,
+    imageBuffer:imageBuffer
+})
+
+};
 
 function helpHandler() {
       return { text: msqTemplates.help + msqTemplates.help_advanced };
@@ -882,7 +897,6 @@ module.exports = {
   helpHandler,
   noMessageText,
   unregisterHandler,
-  infoHandler,
   infoacceptHandler,
   resetdialogHandler,
   changeRegimeHandlerPromise,
@@ -897,5 +911,6 @@ module.exports = {
   fileRouter,
   textMsgRouter,
   formCallsAndRepliesMsg,
-  formFoldedSysMsg
+  formFoldedSysMsg,
+  mdj_reroll_handler
 };

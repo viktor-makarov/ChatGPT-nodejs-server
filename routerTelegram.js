@@ -50,7 +50,6 @@ function router(botInstance) {
 
   botInstance.on("message", async (msg) => {
     //Слушаем сообщения пользователей
-   
     try {
       const user = new User(msg.from)
       await user.getUserProfileFromDB()
@@ -69,7 +68,9 @@ function router(botInstance) {
 
       const authResult = requestMsg.authenticateRequest()
       if(!authResult.passed){
-        await replyMsg.sendToNewMessage(authResult.response.text,null,null);
+        for (const response of authResult.response){
+          await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,null);
+        }
         return
       }
 
@@ -159,7 +160,9 @@ function router(botInstance) {
 
       const authResult = requestMsg.authenticateRequest()
       if(!authResult.passed){
-        await replyMsg.sendToNewMessage(authResult.response.text,null,null);
+        for (const response of authResult.response){
+          await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,null);
+        }
         return
       }
 
@@ -186,7 +189,6 @@ function router(botInstance) {
         toolCallsInstance:toolCalls
       }))
 
-
       let responses =[];
 
         switch(requestMsg.callback_event) {
@@ -200,7 +202,6 @@ function router(botInstance) {
             user.hasReadInfo = true
 
             break;
-
           case "regenerate":
 
             const checkResult = requestMsg.regenerateCheckRegimeCoinsideness()
@@ -225,7 +226,6 @@ function router(botInstance) {
           });      
 
           break;
-
           case "choose_ver":
           
             await dialogue.getDialogueFromDB()
@@ -247,8 +247,7 @@ function router(botInstance) {
             })
 
             break;
-
-            case "latex_formula":
+          case "latex_formula":
             
             await dialogue.getDialogueFromDB()
             const lastdoc = dialogue.getLastCompletionDoc()
@@ -310,7 +309,6 @@ function router(botInstance) {
               }
   
                 break;
-
           case "settings":
             try{
             const response_s = await telegramCmdHandler.settingsOptionsHandler(
@@ -349,6 +347,10 @@ function router(botInstance) {
         }
 
           break;
+          case "reroll":
+          await telegramCmdHandler.mdj_reroll_handler(requestMsg,replyMsg)
+          break;
+          
           default:
               responses = [{text:msqTemplates.unknown_callback}]
         }

@@ -52,6 +52,20 @@ function latexToSvg(latex) {
   });
 }
 
+
+async function getImageByUrl(url){
+
+  const response = await axios({
+      method: 'get',
+      url: url,
+      responseType: "arraybuffer"
+      });
+
+   const binaryImage = Buffer.from(response.data, "binary");
+   return binaryImage
+};
+
+
 async function convertLatexToPNG(latex){
   const svg = await latexToSvg(latex);
 
@@ -700,5 +714,6 @@ module.exports = {
   wireHtml,
   convertMarkdownToLimitedHtml,
   convertLatexToPNG,
-  generateCanvasPNG
+  generateCanvasPNG,
+  getImageByUrl
 };

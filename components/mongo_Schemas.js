@@ -53,6 +53,26 @@ const ProfileSheema = new Schema(
 
 ProfileSheema.index({ id: -1 });
 
+const MdjImages = new Schema(
+{
+  userid: { type: Number},
+  content:{type: String},
+  id:{type: String},
+  url:{type: String},
+  proxy_url:{type: String},
+  flags:{ type: Number },
+  hash:{type: String},
+  progress:{type: String},
+  options: {type: Object},
+  width:{ type: Number },
+  height:{ type: Number },
+  prompt:{type: String}
+},
+  { collection: appsettings.mongodb_names.coll_mdj_image }
+)
+
+MdjImages.index({ id: -1,userid:-1});
+
 const LogsSheema = new Schema(
   {
     datetimeUTC: {
@@ -190,5 +210,6 @@ module.exports = {
   DetailsSheema,
   TokensLogSheema,
   TelegramDialogSheema,
-  FunctionUsageLogSheema
+  FunctionUsageLogSheema,
+  MdjImages
 };

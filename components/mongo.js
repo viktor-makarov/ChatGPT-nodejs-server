@@ -13,11 +13,53 @@ const function_collection = global.mongoConnection.model(global.appsettings.mong
 const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
 const telegram_profile_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_profiles,scheemas.ProfileSheema);
 const telegram_model_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_models,scheemas.ModelsSheema);
+const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
 
 //Functions
 function mongooseVersion(){
   return mongoose.version
 }
+
+
+
+async function insert_mdj_msg(msg,userInstance){
+  try {
+  const mdj_msg = new mdj_image_msg({
+    userid: userInstance.userid,
+    content: msg.content,
+    id:msg.id,
+    url:msg.url,
+    proxy_url:msg.proxy_url,
+    flags:msg.flags,
+    hash:msg.hash,
+    progress:msg.progress,
+    options: msg.options,
+    width:msg.width,
+    height:msg.height
+  })
+
+  return await mdj_msg.save();
+
+} catch (err) {
+  err.code = "MONGO_ERR";
+  err.place_in_code = arguments.callee.name;
+  throw err;
+}
+};
+
+async function get_mdj_msg_byId(msgId){
+  try {
+
+    const filter = { id: msgId }
+    return await mdj_image_msg.find(
+      filter
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
 
 async function insert_details_logPromise(object,place_in_code) {
   try {
@@ -1147,5 +1189,8 @@ module.exports = {
   getToolCallFriendlyName,
   insert_blank_profile,
   getUserProfileByToken,
-  registerUser
+  registerUser,
+  insert_mdj_msg,
+  get_mdj_msg_byId
+
 };

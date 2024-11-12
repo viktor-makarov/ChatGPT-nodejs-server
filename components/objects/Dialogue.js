@@ -115,7 +115,7 @@ class Dialogue extends EventEmitter {
         const endTime = performance.now();
         const executionTime = endTime - start;
         console.log(`getDialogueFromDB execution time: ${executionTime.toFixed(2)} ms`);
-
+          
         //  console.log("messagesFromDb",messagesFromDb)
       
         return this.#dialogueForRequest

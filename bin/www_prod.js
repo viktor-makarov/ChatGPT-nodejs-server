@@ -3,7 +3,6 @@ const yaml = require('js-yaml');
 const path = require('path');
 const fs = require('fs');
 
-
 //load config to global var
 const yamlFileContent = fs.readFileSync(path.join(__dirname,'..',"config","main_config.yml"), 'utf8');
 global.appsettings = yaml.load(yamlFileContent);
@@ -17,7 +16,6 @@ global.mongoConnection = await mongoClient.connectToMongo()
 const TelegramBot = require('node-telegram-bot-api');
 const telegramRouter = require("../routerTelegram")
 global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {polling: true});
-
 
 telegramRouter.setBotParameters(global.bot) //задаем параметры бота
 telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные

@@ -62,8 +62,6 @@ class User{
     return result
     };
 
-    
-
     get userid(){
         return this.#userid
     }

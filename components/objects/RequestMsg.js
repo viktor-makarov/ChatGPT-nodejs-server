@@ -70,7 +70,6 @@ constructor(obj) {
         this.#msgIdsForDbCompletion.push(obj.requestMsg.message_id)
         this.#msgTS = obj.requestMsg.date
 
-
         if(obj.requestMsg.text){
    
             this.#rawMsg = obj.requestMsg; 
@@ -144,22 +143,55 @@ if(this.#fileSize > this.#voiceToTextFoleSizeLimit){
 
 authenticateRequest(){
 
-    if(this.#commandName && this.#commandName === "start"){
+
+    const commandName = this.#commandName
+    const callback_event = this.#callback_event
+    const isRegistered = this.#user.isRegistered
+    const profileIsActive = this.#user.active
+    const userHasReadInfo = this.#user.hasReadInfo
+
+    if(commandName && commandName === "start"){
         return {passed:true}
     }
-    if(this.#user.isRegistered){
-        if(this.#user.active){
-            return {passed:true}
-        } else {
-            return {passed:false,response:{text:msqTemplates.profile_deactivated}}
-            //ваш профиль деактивирован
-        }
-    } else {    
-        return {passed:false,response:{text:msqTemplates.no_profile_yet}}
-        //у тебя нет учетной записи
+
+    if(callback_event && callback_event === "info_accepted"){
+        return {passed:true}
     }
+
+    if(!isRegistered){
+        return {passed:false,response:[{text:msqTemplates.no_profile_yet}]}
+    }
+
+    if(!profileIsActive){
+        return {passed:false,response:[{text:msqTemplates.profile_deactivated}]}
+    }
+
+    if(!userHasReadInfo){
+        return {passed:false,response:[
+            {text:this.infoHandler().mainText},
+            {text:this.infoHandler().acceptText,buttons:this.infoHandler()?.buttons}
+        ]}
+    };
+    
+    return {passed:true}
+
 }
 
+infoHandler() {
+
+    const callback_data = {e:"info_accepted"}
+    return { 
+      mainText: msqTemplates.info,
+      acceptText: msqTemplates.info_accept,
+      buttons:{
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "Подтверждаю", callback_data: JSON.stringify(callback_data) }],
+        ],
+      },
+    }};
+  }
+  
 regenerateCheckRegimeCoinsideness(){
 
 if( this.#user.currentRegime != "chat"){

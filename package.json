@@ -16,6 +16,7 @@
     "js-yaml": "^4.1.0",
     "lodash": "^4.17.21",
     "mathjax-node": "^2.1.1",
+    "midjourney": "^4.3.17",
     "moment-timezone": "^0.5.43",
     "mongodb": "^4.1.2",
     "mongoose": "^5.13.5",

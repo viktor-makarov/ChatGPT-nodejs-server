@@ -182,6 +182,7 @@ if(parse_mode){
   options["parse_mode"] = parse_mode
 }
 
+
 return await this.#botInstance.sendMessage(this.#chatId,text,options)
 }
 
@@ -389,9 +390,55 @@ extractWaitTimeFromError(err){
 return seconds_to_wait
 }
 
+generateMdjButtons(id,url,reply_markup){
+
+  let mdjFirstLineButtons = [];
+  let mdjSecondLineButtons = [];
+  let mdjOtherButtons = [];
+
+  for (let i = 1; i <= 4; i++){
+
+    if(i<=2){
+      mdjFirstLineButtons.push({
+        text: `U${i}`,
+        callback_data:JSON.stringify({e:"ups",d:{h:id,n:i}})
+      });
+      mdjSecondLineButtons.push({
+        text: `U${i+2}`,
+        callback_data:JSON.stringify({e:"ups",d:{h:id,n:i+2}})
+      });
+    } else {
+        mdjFirstLineButtons.push({
+          text: `V${i-2}`,
+          callback_data:JSON.stringify({e:"var",d:{h:id,n:i-2}})
+        });
+        mdjSecondLineButtons.push({
+          text: `V${i}`,
+          callback_data:JSON.stringify({e:"var",d:{h:id,n:i}})
+        });
+    }
+  }
+
+  mdjOtherButtons.push({
+    text: "🔄",
+    callback_data:JSON.stringify({e:"reroll",d:{h:id}})
+  });
+  mdjOtherButtons.push({
+    text: "Ссылка",
+    url:url
+  });
+
+  reply_markup.inline_keyboard.push(mdjFirstLineButtons)
+  reply_markup.inline_keyboard.push(mdjSecondLineButtons)
+  reply_markup.inline_keyboard.push(mdjOtherButtons)
+
+
+  return reply_markup
+}
+
 generateVersionButtons(completionCurrentVersionNumber,versionsCount,reply_markup){
 
-    console.log("completionCurrentVersionNumber",completionCurrentVersionNumber)
+
     let version_row_buttons =[]
     for (let i = 1; i <= versionsCount; i++){
       

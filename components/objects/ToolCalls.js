@@ -274,28 +274,20 @@ generateAvailableTools(userClass){
         functionList.push(
             {type:"function",
             function:{
-                name: "create_image",
-                description: "Use this function to answer user's questions to create or draw an image given a prompt.",
+                name: "create_midjourney_image",
+                description: "Use this function to answer user's questions to create or draw an image.",
                 parameters: {
                     type: "object",
                     properties: {
-                        size: {
-                            type: "string",
-                            description: `Size of the image. It can be 1024x1024, 1792x1024, or 1024x1792.`
-                        },
-                        style: {
-                            type: "string",
-                            description: `The style of the generated images. Must be one of vivid or natural. Vivid causes the model to lean towards generating hyper-real and dramatic images. Natural causes the model to produce more natural, less hyper-real looking images. Default must be vivid.`
-                        },
                         prompt: {
                             type: "string",
-                            description: `A text description of the desired image(s). The maximum length is 4000 characters.`
+                            description: `A text prompt for midjourney imagine function in english. The maximum length is 150 words. Use users prompt without modifications if it is provided, othervise generate your own prompt from the user's request considering the context of the dialogue and the user's request.`
                         },
                     },
                     required: ["prompt"]
                 }
             },
-            friendly_name: "Создать картинку",
+            friendly_name: "Создать изображение",
             try_limit: 3 }
             );
         

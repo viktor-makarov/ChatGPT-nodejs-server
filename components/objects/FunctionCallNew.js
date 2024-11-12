@@ -1,6 +1,8 @@
 const UrlResource = require("./UrlResource.js");
+const MdjMethods = require("../midjourneyMethods.js");
 const mongo = require("../mongo");
 const func = require("../other_func.js");
+const axios = require("axios");
 
 class FunctionCallNew{
 
@@ -40,7 +42,7 @@ class FunctionCallNew{
             if(this.#functionName==="get_current_datetime"){this.#functionResult = this.get_current_datetime()} 
             else if(this.#functionName==="run_javasctipt_code"){this.#functionResult = await this.runJavascriptCode()}
             else if(this.#functionName==="fetch_url_content"){this.#functionResult = await this.fetchUrlContentRouter()}
-            else if(this.#functionName==="create_image"){this.#functionResult = await this.CreateImageRouter()} 
+            else if(this.#functionName==="create_midjourney_image"){this.#functionResult = await this.CreateMdjImageRouter()} 
             else if(this.#functionName==="get_users_activity"){this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
             else if(this.#functionName==="get_chatbot_errors") {this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("errors_log")
             } else {this.#functionName = {error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}}
@@ -139,8 +141,6 @@ class FunctionCallNew{
     
         };
 
-
-    
 
     async runJavascriptCode(){
 
@@ -254,6 +254,87 @@ class FunctionCallNew{
             }
         };
 
+
+
+    async CreateMdjImageRouter(){
+   
+            const argFieldValidationResult = this.argumentsFieldValidation()
+            if(argFieldValidationResult.success===0){
+                return argFieldValidationResult
+            }
+    
+            try{
+                this.convertArgumentsToJSON()
+            } catch (err){
+                return {success:0,error: err.message + "" + err.stack}
+            } 
+    
+            const valuadationResult = this.imageMdjFieldsValidation()
+            if(valuadationResult.success ===0 ){
+                return valuadationResult
+            }
+                const prompt = this.#argumentsJson.prompt;
+
+
+                let msg;
+                try{
+                msg = await MdjMethods.executeImagine(prompt);
+                } catch(err){
+                    return {
+                        success:0,
+                        error: err.message + " " + err.stack
+                    }
+                };
+                console.log("msg",msg)
+                msg.prompt = prompt;
+                await mongo.insert_mdj_msg(msg,this.#user)
+
+                //Get image buffer
+                let imageBuffer;
+                try{
+                imageBuffer = await func.getImageByUrl(msg.uri)
+                } catch(err){
+                    console.log(err)
+                    return {
+                        success:0,
+                        error: err.message + " " + err.stack
+                    }
+                }
+
+                let reply_markup = {
+                    one_time_keyboard: true,
+                    inline_keyboard: []
+                };
+
+                //generate buttons
+                reply_markup = this.#replyMsg.generateMdjButtons(msg.id,msg.uri,reply_markup);
+
+                //send image to telegram
+                try{
+                    await this.#replyMsg.simpleSendNewImage({
+                        caption:prompt,
+                        reply_markup:reply_markup,
+                        contentType:"image/jpeg",
+                        fileName:`mdj_image_reroll_${msg.id}.jpeg`,
+                        imageBuffer:imageBuffer
+                    });
+                } catch(err){
+                    console.log(err)
+                    return {
+                        success:0,
+                        error: "Failed to send image to the user. " + err.message + " " + err.stack
+                    }
+                };
+                
+             const functionResult = {
+                    success:1,
+                    image_url:`${msg.uri}`,
+                    instructions: "No need to provide the url to the user as he already has it",
+                    result:"The image has been generated and successfully sent to the user."
+                };
+                return functionResult
+            };
+
     async CreateImageRouter(){
    
         const argFieldValidationResult = this.argumentsFieldValidation()
@@ -278,6 +359,8 @@ class FunctionCallNew{
                 size:this.#argumentsJson.size,
                 style:this.#argumentsJson.style
             });
+
+            
     
             functionResult = {
                 success:1,
@@ -345,12 +428,12 @@ class FunctionCallNew{
             const image = await Jimp.read(fileData)
             const inputWidth = image.bitmap.width
             const inputHeight = image.bitmap.height
-    
+                
             const outputWidth = 240
             const outputHeight = outputWidth*(inputHeight/inputWidth)
             const resizedImage = image.resize(outputWidth, outputHeight);
             const outputBuffer = await resizedImage.getBufferAsync(Jimp.MIME_JPEG);
-    
+                
             await this.#replyMsg.botInstance.sendPhoto(this.#replyMsg.chatId, outputBuffer,
                 {filename: model+'.jpg',
                 contentType: 'image/jpeg',
@@ -376,6 +459,20 @@ class FunctionCallNew{
         } else {
             return {success:1}
         }
+    }
+
+    imageMdjFieldsValidation(){
+
+        if (this.#argumentsJson.prompt === "" || this.#argumentsJson.prompt === null || this.#argumentsJson.prompt === undefined){
+            return {success:0, error:"Prompt param contains no text. You should provide the text."};
+        } 
+
+        if (this.#argumentsJson.prompt.split(" ").length > 150){
+            return {success:0, error:`Prompt length exceeds limit of 60 words. Please reduce the prompt length.`};
+        }
+
+        return {success:1}
+
     }
 
     imageFieldsValidation(){
