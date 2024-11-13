@@ -66,7 +66,12 @@ const MdjImages = new Schema(
   options: {type: Object},
   width:{ type: Number },
   height:{ type: Number },
-  prompt:{type: String}
+  prompt:{type: String},
+  executionType:{type: String},
+  datetimeUTC: {
+    type: Date,
+    default: Date.now
+  }
 },
   { collection: appsettings.mongodb_names.coll_mdj_image }
 )

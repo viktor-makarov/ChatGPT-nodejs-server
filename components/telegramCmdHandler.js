@@ -854,6 +854,7 @@ async function tokenValidation(requestMsgInstance) {
 
 async function mdj_reroll_handler(requestInstance,replyInstance){
 
+  const statusMsg = await replyInstance.sendStatusMsg()
   const mdj_msg_reroll = await mongo.get_mdj_msg_byId(requestInstance.callback_data.h)
 
   let msg = await MdjMethods.executeReroll({
@@ -861,11 +862,11 @@ async function mdj_reroll_handler(requestInstance,replyInstance){
   hash:mdj_msg_reroll[0].hash,
   content:mdj_msg_reroll[0].content,
   flags:mdj_msg_reroll[0].flags
-  })
-  console.log("msg",msg)
+  });
 
   msg.prompt = mdj_msg_reroll.prompt;
-  await mongo.insert_mdj_msg(msg,requestInstance.user)
+  msg.executionType = "Reroll";
+  await mongo.insert_mdj_msg(msg,requestInstance.user);
   
   let reply_markup = {
     one_time_keyboard: true,
@@ -875,13 +876,87 @@ async function mdj_reroll_handler(requestInstance,replyInstance){
 
   const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
 
+  await   replyInstance.deleteMsgByID(statusMsg.message_id)
   await replyInstance.simpleSendNewImage({
     caption:mdj_msg_reroll.prompt,
     reply_markup:reply_markup,
     contentType:"image/jpeg",
     fileName:`mdj_image_reroll_${msg.id}.jpeg`,
     imageBuffer:imageBuffer
-})
+});
+
+};
+
+async function mdj_variation_handler(requestInstance,replyInstance){
+
+  const statusMsg = await replyInstance.sendStatusMsg()
+  const mdj_msg_variation = await mongo.get_mdj_msg_byId(requestInstance.callback_data.h)
+
+  let msg = await MdjMethods.executeVariation({
+  index:requestInstance.callback_data.n,
+  msgId:mdj_msg_variation[0].id,
+  hash:mdj_msg_variation[0].hash,
+  content:mdj_msg_variation[0].content,
+  flags:mdj_msg_variation[0].flags
+  });
+
+  msg.prompt = mdj_msg_variation.prompt;
+  msg.executionType = "Variation";
+  await mongo.insert_mdj_msg(msg,requestInstance.user);
+  
+  let reply_markup = {
+    one_time_keyboard: true,
+    inline_keyboard: []
+  };
+  reply_markup = replyInstance.generateMdjButtons(msg.id,msg.uri,reply_markup);
+
+  const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
+  
+  await   replyInstance.deleteMsgByID(statusMsg.message_id)
+  await replyInstance.simpleSendNewImage({
+    caption:mdj_msg_variation.prompt,
+    reply_markup:reply_markup,
+    contentType:"image/jpeg",
+    fileName:`mdj_image_variation_${msg.id}.jpeg`,
+    imageBuffer:imageBuffer
+});
+
+};
+
+async function mdj_upscale_handler(requestInstance,replyInstance){
+
+  const statusMsg = await replyInstance.sendStatusMsg()
+  const mdj_msg_reroll = await mongo.get_mdj_msg_byId(requestInstance.callback_data.h)
+
+  let msg = await MdjMethods.executeUpscale({
+  index:requestInstance.callback_data.n,
+  msgId:mdj_msg_reroll[0].id,
+  hash:mdj_msg_reroll[0].hash,
+  content:mdj_msg_reroll[0].content,
+  flags:mdj_msg_reroll[0].flags
+  });
+
+  console.log("Upscale",msg)
+  msg.prompt = mdj_msg_reroll.prompt;
+  msg.executionType = "Upscale";
+  await mongo.insert_mdj_msg(msg,requestInstance.user);
+  
+  let reply_markup = {
+    one_time_keyboard: true,
+    inline_keyboard: []
+  };
+ // reply_markup = replyInstance.generateMdjButtons(msg.id,msg.uri,reply_markup);
+
+  const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
+  
+  await replyInstance.deleteMsgByID(statusMsg.message_id)
+  await replyInstance.simpleSendNewImage({
+    caption:mdj_msg_reroll.prompt,
+    reply_markup:reply_markup,
+    contentType:"image/jpeg",
+    fileName:`mdj_image_reroll_${msg.id}.jpeg`,
+    imageBuffer:imageBuffer
+});
 
 };
 
@@ -912,5 +987,7 @@ module.exports = {
   textMsgRouter,
   formCallsAndRepliesMsg,
   formFoldedSysMsg,
-  mdj_reroll_handler
+  mdj_reroll_handler,
+  mdj_variation_handler,
+  mdj_upscale_handler
 };

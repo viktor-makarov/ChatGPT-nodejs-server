@@ -191,6 +191,7 @@ function router(botInstance) {
 
       let responses =[];
 
+      await replyMsg.answerCallbackQuery(requestMsg.callbackId);
         switch(requestMsg.callback_event) {
           case "info_accepted":
 
@@ -350,7 +351,12 @@ function router(botInstance) {
           case "reroll":
           await telegramCmdHandler.mdj_reroll_handler(requestMsg,replyMsg)
           break;
-          
+          case "var":
+          await telegramCmdHandler.mdj_variation_handler(requestMsg,replyMsg)
+          break;
+          case "ups":
+          await telegramCmdHandler.mdj_upscale_handler(requestMsg,replyMsg)
+          break;
           default:
               responses = [{text:msqTemplates.unknown_callback}]
         }
@@ -359,7 +365,7 @@ function router(botInstance) {
       for (const response of responses){
         await replyMsg.sendToNewMessageWithCheck(response.text,response?.buttons?.reply_markup,response?.parse_mode);
       }
-      await replyMsg.answerCallbackQuery(requestMsg.callbackId);
+      
 
     } catch (err) {
       if (err.mongodblog === undefined) {

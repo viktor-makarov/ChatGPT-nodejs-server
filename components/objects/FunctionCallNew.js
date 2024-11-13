@@ -275,7 +275,6 @@ class FunctionCallNew{
             }
                 const prompt = this.#argumentsJson.prompt;
 
-
                 let msg;
                 try{
                 msg = await MdjMethods.executeImagine(prompt);
@@ -287,6 +286,7 @@ class FunctionCallNew{
                 };
                 console.log("msg",msg)
                 msg.prompt = prompt;
+                msg.executionType = "Imagine";
                 await mongo.insert_mdj_msg(msg,this.#user)
 
                 //Get image buffer
