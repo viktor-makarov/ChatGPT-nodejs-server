@@ -423,14 +423,51 @@ generateMdjButtons(id,url,reply_markup){
     text: "🔄",
     callback_data:JSON.stringify({e:"reroll",d:{h:id}})
   });
-  mdjOtherButtons.push({
+  /*mdjOtherButtons.push({
     text: "Ссылка",
     url:url
-  });
+  });*/
 
   reply_markup.inline_keyboard.push(mdjFirstLineButtons)
   reply_markup.inline_keyboard.push(mdjSecondLineButtons)
   reply_markup.inline_keyboard.push(mdjOtherButtons)
+
+
+  return reply_markup
+}
+
+
+async generateMdjUpscaleButtons(msg,reply_markup){
+
+  let version_row_buttons =[]
+  const buttons = msg.options;
+
+  const buttonsCount =  buttons.length
+
+  let i = 1;
+  for (const button of buttons){
+
+    const dataJson = {
+      label:button.label,
+      custom:button.custom,
+      content:msg.content,
+      id:msg.id,
+      flags:msg.flags
+    }
+    const hash = await otherFunctions.encodeJson(dataJson)
+
+    version_row_buttons.push({
+      text: button.label,
+      callback_data:JSON.stringify({e:"mdjbtn",d:hash})
+    });
+
+    if(i === buttonsCount || i % 2 === 0){
+      reply_markup.inline_keyboard.push(version_row_buttons)
+      version_row_buttons = [];
+    }
+    i++; 
+  };
+
 
 
   return reply_markup

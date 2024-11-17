@@ -6,6 +6,7 @@ const axios = require("axios");
 const aws = require("./aws_func.js")
 const unicodeit = require('unicodeit');
 const mjAPI = require('mathjax-node');
+const mongo = require("./mongo");
 
 mjAPI.start();
 const sharp = require('sharp');
@@ -20,6 +21,18 @@ async function getSvgDimensions(svg) {
   const heightLatex = Math.round(parseFloat(parsedSvg.attributes.height))*8 || 600; // Default to 600 if not specified
   return { widthLatex, heightLatex };
 }
+
+async function encodeJson(json){
+
+  let hash = cryptofy.createHash('md5');
+  hash =  hash.update(JSON.stringify(json)).digest('hex');
+  await mongo.saveHash(hash,json);
+  return hash
+};
+
+async function decodeJson(hash){
+  return await mongo.getJsonBy(hash)
+};
 
 async function createTextImage(text) {
   const fontSize = 10;
@@ -343,7 +356,6 @@ function splitTextByCharLimit(text) {
   const lines = text.split('\n');
   let result = [];
 
-  console.log("1",appsettings.functions_options.content_clean_oai_model)
   const limit = charLimitFor(appsettings.functions_options.content_clean_oai_model)
   
   for (let line of lines) {
@@ -715,5 +727,7 @@ module.exports = {
   convertMarkdownToLimitedHtml,
   convertLatexToPNG,
   generateCanvasPNG,
-  getImageByUrl
+  getImageByUrl,
+  encodeJson,
+  decodeJson
 };

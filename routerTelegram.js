@@ -357,6 +357,10 @@ function router(botInstance) {
           case "ups":
           await telegramCmdHandler.mdj_upscale_handler(requestMsg,replyMsg)
           break;
+          case "mdjbtn":
+          
+          await telegramCmdHandler.mdj_custom_handler(requestMsg,replyMsg)
+          break;
           default:
               responses = [{text:msqTemplates.unknown_callback}]
         }
@@ -366,7 +370,6 @@ function router(botInstance) {
         await replyMsg.sendToNewMessageWithCheck(response.text,response?.buttons?.reply_markup,response?.parse_mode);
       }
       
-
     } catch (err) {
       if (err.mongodblog === undefined) {
         err.mongodblog = true;

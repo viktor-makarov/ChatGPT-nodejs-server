@@ -328,7 +328,6 @@ class FunctionCallNew{
                 
              const functionResult = {
                     success:1,
-                    image_url:`${msg.uri}`,
                     instructions: "No need to provide the url to the user as he already has it",
                     result:"The image has been generated and successfully sent to the user."
                 };

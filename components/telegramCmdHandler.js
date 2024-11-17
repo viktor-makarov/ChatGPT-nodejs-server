@@ -552,8 +552,11 @@ async function unregisterHandler(requestMsgInstance) {
 }
 
 async function createNewFreeAccount(){
+  const date = new Date();
+  const dateString = date.toString();
+  const newToken = otherFunctions.valueToSHA1(dateString)
 
-  const result = await mongo.insert_blank_profile()
+  const result = await mongo.insert_blank_profile(newToken)
   const accountToken = result.token
   return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/r2d2_test_chatbot?start=${accountToken}`}
 }
@@ -941,17 +944,52 @@ async function mdj_upscale_handler(requestInstance,replyInstance){
   msg.executionType = "Upscale";
   await mongo.insert_mdj_msg(msg,requestInstance.user);
   
+
   let reply_markup = {
     one_time_keyboard: true,
     inline_keyboard: []
   };
- // reply_markup = replyInstance.generateMdjButtons(msg.id,msg.uri,reply_markup);
-
+  reply_markup = await replyInstance.generateMdjUpscaleButtons(msg,reply_markup);
   const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
   
   await replyInstance.deleteMsgByID(statusMsg.message_id)
   await replyInstance.simpleSendNewImage({
     caption:mdj_msg_reroll.prompt,
+    reply_markup:reply_markup,
+    contentType:"image/jpeg",
+    fileName:`mdj_image_reroll_${msg.id}.jpeg`,
+    imageBuffer:imageBuffer
+});
+
+};
+
+async function mdj_custom_handler(requestInstance,replyInstance){
+
+  const statusMsg = await replyInstance.sendStatusMsg()
+  const jsonDecoded = await otherFunctions.decodeJson(requestInstance.callback_data)
+
+  let msg = await MdjMethods.executeCustom({
+  msgId:jsonDecoded.id,
+  customId:jsonDecoded.custom,
+  content:jsonDecoded.content,
+  flags:jsonDecoded.flags
+  });
+
+  console.log("Custom",msg)
+  msg.prompt = jsonDecoded.content;
+  msg.buttonTriggered = jsonDecoded.label;
+ // await mongo.insert_mdj_msg(msg,requestInstance.user);
+  
+  let reply_markup = {
+    one_time_keyboard: true,
+    inline_keyboard: []
+  };
+  reply_markup = await replyInstance.generateMdjUpscaleButtons(msg,reply_markup);
+  const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
+  
+  await replyInstance.deleteMsgByID(statusMsg.message_id)
+  await replyInstance.simpleSendNewImage({
+    caption:jsonDecoded.content,
     reply_markup:reply_markup,
     contentType:"image/jpeg",
     fileName:`mdj_image_reroll_${msg.id}.jpeg`,
@@ -989,5 +1027,6 @@ module.exports = {
   formFoldedSysMsg,
   mdj_reroll_handler,
   mdj_variation_handler,
-  mdj_upscale_handler
+  mdj_upscale_handler,
+  mdj_custom_handler
 };

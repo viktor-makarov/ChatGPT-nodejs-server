@@ -53,6 +53,16 @@ const ProfileSheema = new Schema(
 
 ProfileSheema.index({ id: -1 });
 
+const HashStorage = new Schema({
+  hash:{type: String},
+  json: {type: Object}
+},
+{ collection: appsettings.mongodb_names.coll_hash_storage},
+{ capped: 1048576}
+);
+
+HashStorage.index({ hash: -1});
+
 const MdjImages = new Schema(
 {
   userid: { type: Number},
@@ -67,7 +77,7 @@ const MdjImages = new Schema(
   width:{ type: Number },
   height:{ type: Number },
   prompt:{type: String},
-  executionType:{type: String},
+  buttonTriggered:{type: String},
   datetimeUTC: {
     type: Date,
     default: Date.now
@@ -216,5 +226,6 @@ module.exports = {
   TokensLogSheema,
   TelegramDialogSheema,
   FunctionUsageLogSheema,
-  MdjImages
+  MdjImages,
+  HashStorage
 };

@@ -1,4 +1,3 @@
-const otherfunc = require("./other_func");
 const mongoose = require("mongoose");
 const scheemas = require("./mongo_Schemas.js");
 const moment = require("moment-timezone");
@@ -14,6 +13,48 @@ const dialog_collection = global.mongoConnection.model(global.appsettings.mongod
 const telegram_profile_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_profiles,scheemas.ProfileSheema);
 const telegram_model_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_models,scheemas.ModelsSheema);
 const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
+const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_names.coll_hash_storage,scheemas.HashStorage);
+
+
+async function saveHash(hash,json){
+  try {
+
+    return await hash_storage.updateOne(
+      { hash: hash },
+      {hash:hash,
+        json:json
+      },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
+
+async function getJsonBy(hash){
+  try {
+
+     const filter = { hash: hash }
+     const result =  await hash_storage.find(
+       filter
+     );
+
+     if(result.length===0){
+      return null
+     } else {
+      return result[0].json
+     }
+
+    
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
 
 //Functions
 function mongooseVersion(){
@@ -29,6 +70,8 @@ async function insert_mdj_msg(msg,userInstance){
     content: msg.content,
     id:msg.id,
     url:msg.url,
+    prompt:msg.prompt,
+    buttonTriggered:msg.buttonTriggered,
     proxy_url:msg.proxy_url,
     flags:msg.flags,
     hash:msg.hash,
@@ -134,29 +177,6 @@ async function insert_reg_eventPromise(
   }
 }
 
-const insertUsagePromise = async (msg, completion) => {
-  try {
-
-    const prompt_tokens_count = otherfunc.countTokens(msg.text);
-    const completion_tokens_count = otherfunc.countTokens(completion);
-
-    const newTokenUsage = new token_collection({
-      userid: msg.from.id,
-      userFirstName: msg.from.first_name,
-      userLastName: msg.from.last_name,
-      username: msg.from.username,
-      prompt_tokens: prompt_tokens_count,
-      completion_tokens: completion_tokens_count,
-      total_tokens: prompt_tokens_count + completion_tokens_count,
-    });
-
-    return await newTokenUsage.save();
-  } catch (err) {
-    err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
-    throw err;
-  }
-};
 
 async function insertFunctionUsagePromise(obj){
   try {
@@ -339,38 +359,6 @@ const updatePromptTokens = async (promptObject) => {
   );
 };
 
-const upsertFuctionResultsPromise = async (msg, regime,tool_reply) => {
-  try {
-
-    const newPrompt = {
-      sourceid: Math.random().toString(36).substring(2,15) + Math.random().toString(36).substring(2,15),
-      createdAtSourceTS: Math.ceil(Number(new Date())/1000),
-      createdAtSourceDT_UTC: new Date(),
-      userid: msg.from.id,
-      userFirstName: msg.from.first_name,
-      userLastName: msg.from.last_name,
-      regime: regime,
-      role: "tool",
-      tool_reply:tool_reply,
-      roleid: 0,
-      content: null,
-      tokens: otherfunc.countTokens(JSON.stringify(tool_reply))
-    };
-
-
-    const result = await dialog_collection.updateOne(
-      { sourceid: msg.message_id, role: newPrompt.role },
-      newPrompt,
-      { upsert: true }
-    );
-    return result
-  } catch (err) {
-    err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
-    throw err;
-  }
-};
-
 
 async function insertToolCallResult(obj){
   try {
@@ -386,35 +374,7 @@ async function insertToolCallResult(obj){
   }
 };
 
-const upsertSystemPromise = async (content, msg, regime) => {
-  try {
 
-    const newPrompt = {
-      sourceid: msg.message_id,
-      createdAtSourceTS: msg.date,
-      createdAtSourceDT_UTC: new Date(msg.date * 1000),
-      telegramMsgId: msg.message_id,
-      userid: msg.from.id,
-      userFirstName: msg.from.first_name,
-      userLastName: msg.from.last_name,
-      regime: regime,
-      role: "system",
-      roleid: 0,
-      content: content,
-      tokens: otherfunc.countTokens(content),
-    };
-
-    return await dialog_collection.updateOne(
-      { sourceid: msg.message_id, role: newPrompt.role },
-      newPrompt,
-      { upsert: true }
-    );
-  } catch (err) {
-    err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
-    throw err;
-  }
-};
 
 const upsertCompletionPromise = async (CompletionObject) => {
   try {
@@ -481,12 +441,9 @@ async function registerUser(requestMsgInstance,token) {
   }
 }
 
-async function insert_blank_profile(){
+async function insert_blank_profile(newToken){
 
   try {
-    const date = new Date();
-    const dateString = date.toString();
-    const newToken = otherfunc.valueToSHA1(dateString)
     const newBlankProfile = new telegram_profile_collection({
       token:newToken,
       plan: "free",
@@ -1149,9 +1106,7 @@ module.exports = {
   get_all_readPromise,
   get_all_profiles,
   update_models_listPromise,
-  insertUsagePromise,
   updatePromptTokens,
-  upsertSystemPromise,
   upsertCompletionPromise,
   deleteDialogByUserPromise,
   insertTokenUsage,
@@ -1170,7 +1125,6 @@ module.exports = {
   profileMigrationScript,
   insert_permissions_migrationPromise,
   insert_read_section_migrationPromise,
-  upsertFuctionResultsPromise,
   queryTockensLogsByAggPipeline,
   mongooseVersion,
   queryLogsErrorByAggPipeline,
@@ -1191,6 +1145,7 @@ module.exports = {
   getUserProfileByToken,
   registerUser,
   insert_mdj_msg,
-  get_mdj_msg_byId
-
+  get_mdj_msg_byId,
+  saveHash,
+  getJsonBy
 };

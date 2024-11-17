@@ -64,11 +64,29 @@ async function executeUpscale(obj) {
     return msg
 };
 
+async function executeCustom(obj) {
+
+    const progressFunction = function(uri) {  // Use standard function syntax
+        console.log("loading custom",new Date(), uri);
+    }
+
+    const msg = await MdjClient.Custom({
+        msgId:obj.msgId,
+        customId:obj.customId,
+        content:obj.content,
+        flags:obj.flags,
+        loading:progressFunction
+    });
+
+    return msg
+};
+
 
 
 module.exports = {
     executeImagine,
     executeReroll,
     executeVariation,
-    executeUpscale
+    executeUpscale,
+    executeCustom
 }
