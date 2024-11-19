@@ -348,15 +348,6 @@ function router(botInstance) {
         }
 
           break;
-          case "reroll":
-          await telegramCmdHandler.mdj_reroll_handler(requestMsg,replyMsg)
-          break;
-          case "var":
-          await telegramCmdHandler.mdj_variation_handler(requestMsg,replyMsg)
-          break;
-          case "ups":
-          await telegramCmdHandler.mdj_upscale_handler(requestMsg,replyMsg)
-          break;
           case "mdjbtn":
           
           await telegramCmdHandler.mdj_custom_handler(requestMsg,replyMsg)

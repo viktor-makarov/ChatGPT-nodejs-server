@@ -390,58 +390,18 @@ extractWaitTimeFromError(err){
 return seconds_to_wait
 }
 
-generateMdjButtons(id,url,reply_markup){
 
-  let mdjFirstLineButtons = [];
-  let mdjSecondLineButtons = [];
-  let mdjOtherButtons = [];
-
-  for (let i = 1; i <= 4; i++){
-
-    if(i<=2){
-      mdjFirstLineButtons.push({
-        text: `U${i}`,
-        callback_data:JSON.stringify({e:"ups",d:{h:id,n:i}})
-      });
-      mdjSecondLineButtons.push({
-        text: `U${i+2}`,
-        callback_data:JSON.stringify({e:"ups",d:{h:id,n:i+2}})
-      });
-    } else {
-        mdjFirstLineButtons.push({
-          text: `V${i-2}`,
-          callback_data:JSON.stringify({e:"var",d:{h:id,n:i-2}})
-        });
-        mdjSecondLineButtons.push({
-          text: `V${i}`,
-          callback_data:JSON.stringify({e:"var",d:{h:id,n:i}})
-        });
-    }
-  }
-
-  mdjOtherButtons.push({
-    text: "🔄",
-    callback_data:JSON.stringify({e:"reroll",d:{h:id}})
-  });
-  /*mdjOtherButtons.push({
-    text: "Ссылка",
-    url:url
-  });*/
-
-  reply_markup.inline_keyboard.push(mdjFirstLineButtons)
-  reply_markup.inline_keyboard.push(mdjSecondLineButtons)
-  reply_markup.inline_keyboard.push(mdjOtherButtons)
-
-
-  return reply_markup
-}
-
-
-async generateMdjUpscaleButtons(msg,reply_markup){
+async generateMdjButtons(msg,reply_markup){
 
   let version_row_buttons =[]
-  const buttons = msg.options;
 
+
+  const sorted_buttons = appsettings.mdj_options.sorted_buttons
+  const exclude_buttons = appsettings.mdj_options.exclude_buttons;
+
+  let buttons = msg.options.filter(button => !exclude_buttons.includes(button.label));
+  buttons.sort((a, b) => sorted_buttons.indexOf(a.label) - sorted_buttons.indexOf(b.label));
+  
   const buttonsCount =  buttons.length
 
   let i = 1;
@@ -468,32 +428,6 @@ async generateMdjUpscaleButtons(msg,reply_markup){
     i++; 
   };
 
-
-
-  return reply_markup
-}
-
-generateVersionButtons(completionCurrentVersionNumber,versionsCount,reply_markup){
-
-
-    let version_row_buttons =[]
-    for (let i = 1; i <= versionsCount; i++){
-      
-      let versionName = `Вер. ${i.toString()}`
-      if(i === completionCurrentVersionNumber){
-        versionName = versionName+" (тек.)"
-      }
-      version_row_buttons.push({
-        text: versionName,
-        callback_data:JSON.stringify({e:"choose_ver",d:i})
-      })
-
-      if(i === versionsCount || i % 8 === 0){
-        reply_markup.inline_keyboard.push(version_row_buttons)
-        version_row_buttons = [];
-      }
-    }
-  
   return reply_markup
 }
 

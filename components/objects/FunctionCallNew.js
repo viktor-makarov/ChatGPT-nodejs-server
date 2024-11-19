@@ -284,10 +284,7 @@ class FunctionCallNew{
                         error: err.message + " " + err.stack
                     }
                 };
-                console.log("msg",msg)
-                msg.prompt = prompt;
-                msg.executionType = "Imagine";
-                await mongo.insert_mdj_msg(msg,this.#user)
+                console.log("Imagine",msg)
 
                 //Get image buffer
                 let imageBuffer;
@@ -307,15 +304,15 @@ class FunctionCallNew{
                 };
 
                 //generate buttons
-                reply_markup = this.#replyMsg.generateMdjButtons(msg.id,msg.uri,reply_markup);
-
+                reply_markup = await this.#replyMsg.generateMdjButtons(msg,reply_markup);
+                
                 //send image to telegram
                 try{
                     await this.#replyMsg.simpleSendNewImage({
                         caption:prompt,
                         reply_markup:reply_markup,
                         contentType:"image/jpeg",
-                        fileName:`mdj_image_reroll_${msg.id}.jpeg`,
+                        fileName:`mdj_imagine_${msg.id}.jpeg`,
                         imageBuffer:imageBuffer
                     });
                 } catch(err){
