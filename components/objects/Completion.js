@@ -88,7 +88,7 @@ class Completion extends Transform {
           appsettings.telegram_options.send_throttle_ms
         );
 
-        this.#completionPreviousVersionsDoc = this.completionPeriousVersions(this.#dialogue.dialogueFull);
+        this.#completionPreviousVersionsDoc = this.completionPreviousVersions(this.#dialogue.dialogueFull);
         
         setTimeout(() => {this.updateStatusMsg(msqTemplates.timeout_messages[0],this.#responseReceived)}, appsettings?.http_options?.first_timeout_notice ? appsettings?.http_options?.first_timeout_notice : 15000);
         setTimeout(() => {this.updateStatusMsg(msqTemplates.timeout_messages[1],this.#responseReceived)}, appsettings?.http_options?.second_timeout_notice ? appsettings?.http_options?.second_timeout_notice : 30000);
@@ -111,13 +111,13 @@ class Completion extends Transform {
       })
     }
 
-    completionPeriousVersions(dialogueFromDB){
+    completionPreviousVersions(dialogueFromDB){
 
       if(!Array.isArray(dialogueFromDB) || dialogueFromDB.length ===0){
         return null;
       }
 
-      const lastDocumentInDialogue = dialogueFromDB[dialogueFromDB.length-1]
+      const lastDocumentInDialogue = dialogueFromDB.pop()
       
       if(lastDocumentInDialogue.role === "assistant"){
         this.#completionPreviousVersionsContent = lastDocumentInDialogue.content;
@@ -325,6 +325,7 @@ class Completion extends Transform {
           ` Размер вашего диалога = ${this.#dialogue.tokensWithCurrentPrompt} токенов. Ограничение данной модели = ${this.#overalltokensLimit} токенов.`) 
         
         await mongo.deleteDialogByUserPromise([this.#user.userid], null); //Удаляем диалог
+        await aws.deleteS3FilesByPefix(this.#user.userid) 
         await this.#replyMsg.simpleSendNewMessage(msqTemplates.dialogresetsuccessfully)
         //Сообщение, что диалог перезапущен
     }

@@ -71,7 +71,11 @@ toolConfigByFunctionName(functionName){
 }
 
 availableToolsForCompetion(){
-    return this.#available_tools.map((doc) => ({ type:doc.type, function:doc.function}));
+    if(this.#available_tools){
+        return this.#available_tools.map((doc) => ({ type:doc.type, function:doc.function}));
+    } else {
+        return null
+    }
 }
 
 async router(){
@@ -275,19 +279,19 @@ generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "create_midjourney_image",
-                description: "Use this function to answer user's questions to create or draw an image.",
+                description: "Use this function to answer user's questions to create, modify or compile an image. If you are given a midjourney text prompt - you must use it exactly as is, otherwise generate your own text prompt from the user's request considering the context of the dialogue. Use following guidelines: (1) all the text that should be written in the image must be put into double commas and translated into english.",
                 parameters: {
                     type: "object",
                     properties: {
-                        prompt: {
+                        midjourney_query: {
                             type: "string",
-                            description: `A text prompt for midjourney imagine function in english. The maximum length is 150 words. Use users prompt without modifications if it is provided, othervise generate your own prompt from the user's request considering the context of the dialogue and the user's request.`
+                            description: `A query for midjourney imagine function in english. The query may consist of the following components: <url1> <url2> text_prompt --param1 --param2. Maximum length of the text prompt is 150 words. By default use model 6.1`
                         },
                     },
-                    required: ["prompt"]
+                    required: ["midjourney_query"]
                 }
             },
-            friendly_name: "Создать изображение",
+            friendly_name: "Генерация изображения",
             try_limit: 3 }
             );
         

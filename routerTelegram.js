@@ -78,14 +78,14 @@ function router(botInstance) {
         replyMsgInstance:replyMsg,
         userInstance:user
       })
-
+      
       const toolCalls = new ToolCalls({
         replyMsgInstance:replyMsg,
         userInstance:user,
         requestMsgInstance:requestMsg,
         dialogueInstance:dialogue
       })
-
+      
 
       dialogue.on('callCompletion', () => callCompletion({
         requestMsgInstance:requestMsg, 
@@ -94,6 +94,11 @@ function router(botInstance) {
         toolCallsInstance:toolCalls
       }))
 
+      dialogue.on('fileSystemCommited', () => fileSystemCommited({
+        requestMsgInstance:requestMsg, 
+        replyMsgInstance:replyMsg,
+        dialogueInstance:dialogue
+      }))
 
       dialogue.on('triggerToolCall', () => triggerToolCall({
         toolCallsInstance:toolCalls
@@ -183,6 +188,12 @@ function router(botInstance) {
         replyMsgInstance:replyMsg,
         dialogueInstance:dialogue,
         toolCallsInstance:toolCalls
+      }))
+
+      dialogue.on('fileSystemCommited', () => fileSystemCommited({
+        requestMsgInstance:requestMsg, 
+        replyMsgInstance:replyMsg,
+        dialogueInstance:dialogue
       }))
 
       dialogue.on('triggerToolCall', () => triggerToolCall({
@@ -393,6 +404,16 @@ async function callCompletion(obj){
     dialogueInstance,
     toolCallsInstance
   );
+
+}
+
+async function fileSystemCommited(obj){
+
+  const replyMsgInstance = obj.replyMsgInstance;
+  const requestMsgInstance = obj.requestMsgInstance;
+  const dialogueInstance = obj.dialogueInstance;
+
+ console.log(new Date(),"Send system msg")
 
 }
 

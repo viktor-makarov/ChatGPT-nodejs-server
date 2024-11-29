@@ -93,7 +93,7 @@ class Dialogue extends EventEmitter {
 
         const start = performance.now();
 
-        const messagesFromDb = await mongo.getDialogueByUserId(this.#user.userid,"chat")
+        const messagesFromDb = await mongo.getDialogueByUserId(this.#user.userid,this.#user.currentRegime)
         
         this.#dialogueFull = await messagesFromDb.map(document => ({
             _id: document._id,
@@ -131,7 +131,7 @@ class Dialogue extends EventEmitter {
         let lastTgmMsgIdsFromCompletions = [];
         let dialogueList = this.copyValue(this.#dialogueFull)
 
-        const lastDocumentInDialogue = dialogueList[dialogueList.length-1]
+        const lastDocumentInDialogue = dialogueList.pop()
         if(lastDocumentInDialogue.role === "assistant"){
             dialogueList.pop()
         }
@@ -139,7 +139,7 @@ class Dialogue extends EventEmitter {
         for (const doc of dialogueList){
  
             if(doc.telegramMsgBtns === true){
-                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId[doc.telegramMsgId.length-1])
+                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId.pop())
             }
         }
 
@@ -153,7 +153,7 @@ class Dialogue extends EventEmitter {
         for (const doc of dialogueList){
  
             if(doc.telegramMsgBtns === true){
-                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId[doc.telegramMsgId.length-1])
+                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId.pop())
             }
         }
         return lastTgmMsgIdsFromCompletions
@@ -173,8 +173,7 @@ class Dialogue extends EventEmitter {
     }
 
     getLastCompletionTelegramMsgIds(){
-        const lastDocumentInDialogue = this.#dialogueFull[this.#dialogueFull.length-1]
-       // console.log("lastDocumentInDialogue",lastDocumentInDialogue)
+        const lastDocumentInDialogue = this.#dialogueFull.pop()
         if(lastDocumentInDialogue.role === "assistant"){
             return lastDocumentInDialogue.telegramMsgId
         } else {
@@ -183,7 +182,7 @@ class Dialogue extends EventEmitter {
     };
 
     getLastCompletionDoc(){
-        const lastDocumentInDialogue = this.#dialogueFull[this.#dialogueFull.length-1]
+        const lastDocumentInDialogue = this.#dialogueFull.pop()
        // console.log("lastDocumentInDialogue",lastDocumentInDialogue)
         if(lastDocumentInDialogue.role === "assistant"){
             return lastDocumentInDialogue
@@ -263,6 +262,105 @@ class Dialogue extends EventEmitter {
         
         console.log("USER MESSAGE")
         this.emit('callCompletion')
+    };
+
+    async commitSystemToDialogue(text,requestInstance){
+
+        const currentRole = "system"
+
+
+        let fileSystemObj = {
+            sourceid: requestInstance.msgId,
+            createdAtSourceTS: requestInstance.msgTS,
+            createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: currentRole,
+            roleid: 0,
+            content: text
+          }
+
+        const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
+        fileSystemObj._id = savedSystem.upserted[0]._id
+
+        this.#dialogueForRequest.push({
+            role:fileSystemObj.role,
+            content:fileSystemObj.content,
+        });
+
+        this.#dialogueFull.push({
+            _id:fileSystemObj._id,
+            sourceid: fileSystemObj.sourceid,
+            createdAtSourceDT_UTC:fileSystemObj.createdAtSourceDT_UTC,
+            role: fileSystemObj.role,
+            content: fileSystemObj.content
+        });
+
+        //update variables
+        this.#previousRole = this.#currentRole;
+        this.#currentRole = currentRole
+
+        this.#previousMsg = this.#currentMsg;
+        this.#currentMsg = fileSystemObj;
+        
+        console.log("SYSTEM MESSAGE")
+    };
+
+    async commitFileSystemToDialogue(url,requestInstance){
+
+        const currentRole = "system"
+
+        const obj = {
+            filename:requestInstance.fileName,
+            download_url:url,
+            fileCaption:requestInstance.fileCaption
+        }
+
+        const text = `User provided the following file\n${JSON.stringify(obj, null, 4)}`
+
+        let fileSystemObj = {
+            sourceid: requestInstance.msgId,
+            createdAtSourceTS: requestInstance.msgTS,
+            createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
+            fileName:requestInstance.fileName,
+            fileUrl:url,
+            fileCaption:requestInstance.fileCaption,
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: currentRole,
+            roleid: 0,
+            content: text
+          }
+
+        const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
+        fileSystemObj._id = savedSystem.upserted[0]._id
+
+        this.#dialogueForRequest.push({
+            role:fileSystemObj.role,
+            content:fileSystemObj.content,
+        });
+
+        this.#dialogueFull.push({
+            _id:fileSystemObj._id,
+            sourceid: fileSystemObj.sourceid,
+            createdAtSourceDT_UTC:fileSystemObj.createdAtSourceDT_UTC,
+            role: fileSystemObj.role,
+            content: fileSystemObj.content
+        });
+
+        //update variables
+        this.#previousRole = this.#currentRole;
+        this.#currentRole = currentRole
+
+        this.#previousMsg = this.#currentMsg;
+        this.#currentMsg = fileSystemObj;
+        
+        console.log("SYSTEM MESSAGE")
+        this.emit('fileSystemCommited')
     };
 
     async commitToolCallResults(obj){

@@ -27,6 +27,9 @@ class RequestMsg{
 #inputType;
 
 #fileType;
+#fileName;
+#fileCaption;
+#fileExtention;
 #fileMimeType;
 #fileId;
 #fileUniqueId;
@@ -42,7 +45,6 @@ constructor(obj) {
 
     this.#user = obj.userInstance
     this.#botInstance = obj.botInstance
-
     if(obj.requestMsg.data){
         this.#inputType = "call_back"
         this.#callbackId = obj.requestMsg.id;
@@ -55,7 +57,6 @@ constructor(obj) {
 
         const callback_data_obj = JSON.parse(this.#callback_dataRaw)
 
-        
         this.#callback_event = callback_data_obj.e
         this.#callback_data = callback_data_obj.d
 
@@ -114,15 +115,60 @@ constructor(obj) {
             this.#fileUniqueId = obj.requestMsg.video_note.file_unique_id
             this.#fileSize = obj.requestMsg.video_note.file_size    
             
+        } else if(obj.requestMsg.photo){
+            
+            this.#inputType = "file"
+            this.#fileType = "image"
+            const lastPart = obj.requestMsg.photo.pop()
+            this.#fileId = lastPart.file_id
+            this.#fileUniqueId = lastPart.file_unique_id
+            this.#fileSize = lastPart.file_size
+            this.#fileCaption = obj.requestMsg?.caption;
+
+            
+        } else if(obj.requestMsg.document){ 
+            
+            this.#inputType = "file"
+            this.#fileType = "document"
+
+            this.#fileName = obj.requestMsg.document?.file_name
+            this.#fileExtention = this.extractFileExtention(this.#fileName)
+            this.#fileMimeType = obj.requestMsg.document?.mime_type
+
+            this.#fileId = obj.requestMsg.document?.file_id
+            this.#fileUniqueId = obj.requestMsg.document?.file_unique_id
+            this.#fileSize = obj.requestMsg.document?.file_size
+            this.#fileCaption = obj.requestMsg?.caption;
+
         } else {
             this.#inputType = "unknown"
             console.log("Unknown input type")
         }
 
-    } 
+    }
     
     console.log("inputType",this.#inputType)
   };
+
+extractFileExtention(fileName){
+
+    const parts = fileName.split('.');
+    if (parts.length < 2 || (parts.length === 2 && parts[0] === '')) {
+        return '';
+    };
+
+    return parts.pop();
+}
+
+extractFileNameFromURL(fileLink){
+
+    const parts = fileLink.split('/');
+    if (parts.length < 2 || (parts.length === 2 && parts[0] === '')) {
+        return '';
+    };
+
+    return parts.pop();
+}
 
 voiceToTextConstraintsCheck(){
 
@@ -194,7 +240,8 @@ infoHandler() {
   
 regenerateCheckRegimeCoinsideness(){
 
-if( this.#user.currentRegime != "chat"){
+if( this.#user.currentRegime != this.#callback_data){
+    
     return {success:0,response:{text:msqTemplates.wrong_regime.replace(
         "[regime]",
         modelSettings[this.#callback_data].name
@@ -214,8 +261,10 @@ textToSpeechConstraintsCheck(){
 
 async getFileLinkFromTgm(){
     this.#fileLink = await this.#botInstance.getFileLink(this.#fileId)
+    this.#fileName = this.#fileName ? this.#fileName : this.extractFileNameFromURL(this.#fileLink)
+    this.#fileExtention = this.extractFileExtention(this.#fileName)
     return this.#fileLink
-}
+};
 
 async audioReadableStreamFromTelegram(){
     const response = await axios({
@@ -319,6 +368,22 @@ get callbackId(){
 
 get msgId(){
     return this.#msgId
+}
+
+get fileLink(){
+    return this.#fileLink
+}
+
+get fileName(){
+    return this.#fileName
+}
+
+get fileCaption(){
+    return this.#fileCaption
+}
+
+get fileExtention(){
+    return this.#fileExtention
 }
 
 get msgTS(){

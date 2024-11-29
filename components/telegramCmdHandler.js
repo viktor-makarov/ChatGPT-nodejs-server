@@ -6,6 +6,7 @@ const otherFunctions = require("./other_func");
 const modelConfig = require("../config/modelConfig");
 const openAIApiHandler = require("./openAI_API_Handler.js");
 const MdjMethods = require("./midjourneyMethods.js");
+const aws = require("./aws_func.js")
 
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
   let responses =[];
@@ -53,7 +54,13 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         await dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
 
         break;
-      } else {
+      } else if(requestMsgInstance.fileType === "image" || requestMsgInstance.fileType === "document"){
+        await requestMsgInstance.getFileLinkFromTgm()
+        const uploadResult = await uploadFileToS3Handler(requestMsgInstance)
+        const url = uploadResult.Location
+        await dialogueInstance.commitFileSystemToDialogue(url,requestMsgInstance)
+        break;
+      }  else {
           responses.push({text:msqTemplates.file_handler_is_not_realized})
       }
     break;
@@ -83,6 +90,12 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
     break;
     case "chat":
       await dialogueInstance.getDialogueFromDB()
+      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+
+    break;
+    case "translator":
+      await resetTranslatorDialogHandler(requestMsgInstance)
+      await dialogueInstance.commitSystemToDialogue(msqTemplates.translator_prompt,requestMsgInstance)
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
 
     break;
@@ -124,7 +137,6 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       requestMsgInstance.user.isRegistered =true
     }
 
-
   }  else if(cmpName==="resetchat"){
 
     await dialogueInstance.getDialogueFromDB()
@@ -159,8 +171,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   } else if(cmpName==="info"){
     const response = {text:requestMsgInstance.infoHandler().mainText};
     responses.push(response)
-  } else if(cmpName==="chat" || cmpName==="voicetotext" || cmpName==="texttospeech"){
-    
+  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="voicetotext" || cmpName==="texttospeech"){
+
     await dialogueInstance.getDialogueFromDB() //чтобы посчитать потраченные токены в диалоге
     const response = await changeRegimeHandlerPromise({
       newRegime:cmpName,
@@ -168,6 +180,20 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       dialogueInstance:dialogueInstance
     });
     responses.push(response)
+
+  } else if(cmpName==="imagine"){
+
+    const statusMsg = await replyMsgInstance.sendStatusMsg()
+
+    const result = getPromtFomMsg(requestMsgInstance)
+
+    if(result.success === 0){
+      responses.push({text:result.error})
+    } else {
+      await  mdj_create_handler(replyMsgInstance,result.prompt)
+    }
+
+    await replyMsgInstance.deleteMsgByID(statusMsg.message_id)
 
   } else if(cmpName==="reports"){
     if (!isAdmin) {
@@ -177,7 +203,6 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       responses.push(response)
     }
   } else if(cmpName==="donate"){
-    console.log(msqTemplates.donate)
     responses.push({ text: msqTemplates.donate,parse_mode:"HTML"})
   }  else if(cmpName==="create_free_account"){
     if (!isAdmin) {
@@ -310,9 +335,6 @@ async function infoacceptHandler(requestMsgInstance) {
     return { text: msqTemplates.welcome };
 }
 
-
-
-
 async function adminHandler(requestMsgInstance) {
  try{
   const adminCode = process.env.ADMIN_KEY;
@@ -345,6 +367,19 @@ async function adminHandler(requestMsgInstance) {
     console.log("err",err)
   }
 }
+
+async function uploadFileToS3Handler(requestMsgInstance){
+
+
+const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+
+const filename = requestMsgInstance.user.userid + "_" + requestMsgInstance.msgId + "." + requestMsgInstance.fileExtention;
+
+const uploadResult  = await aws.uploadFileToS3(downloadStream,filename)
+
+return uploadResult
+}
+
 
 function sendtomeHandler(requestMsgInstance) {
     const pattern = /\[(.*?)\]/gm; // Regular expression pattern to match strings inside []
@@ -499,6 +534,18 @@ async function changeRegimeHandlerPromise(obj){
             ),
           };
         }
+      } else if (obj.newRegime == "translator") {
+        return {
+          text: modelSettings[obj.newRegime].welcome_msg
+          .replace(
+            "[temperature]",
+            obj.requestMsgInstance.user.currentTemperature
+          ).replace(
+            "[model]",
+            modelConfig[obj.requestMsgInstance.user.currentModel].name
+          ),
+        };
+
       } else if (obj.newRegime == "voicetotext") {
         return {
           text: modelSettings[obj.newRegime].welcome_msg.replace(
@@ -547,6 +594,7 @@ async function unregisterHandler(requestMsgInstance) {
     );
 
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
+    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) 
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
@@ -561,8 +609,15 @@ async function createNewFreeAccount(){
   return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/r2d2_test_chatbot?start=${accountToken}`}
 }
 
+async function resetTranslatorDialogHandler(requestMsgInstance) {
+  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "translator");
+
+  return;
+}
+
 async function resetdialogHandler(requestMsgInstance) {
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "chat");
+    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) 
     return { text: msqTemplates.dialogresetsuccessfully };
 }
 
@@ -807,6 +862,22 @@ async function settingsOptionsHandler(requestMsgInstance) {
     }
 };
 
+function getPromtFomMsg(requestMsgInstance){
+
+ const prompt = requestMsgInstance.text.substring("/imagine".length).trim();
+
+ if(prompt){
+  if(prompt===""){
+    return {success:0,error:msqTemplates.mdj_lacks_prompt}
+  } else {
+    return {success:1,prompt:prompt}
+  }
+ } else {
+  return {success:0,error:msqTemplates.mdj_lacks_prompt}
+};
+
+}
+
 async function tokenValidation(requestMsgInstance) {
 
     const token = requestMsgInstance.text.substring("/start".length).trim();
@@ -855,22 +926,68 @@ async function tokenValidation(requestMsgInstance) {
     }
 }
 
+async function mdj_create_handler(replyInstance,prompt){
+
+  const info = await MdjMethods.executeInfo()
+  console.log(info)
+
+let msg;
+try{
+  msg = await MdjMethods.executeImagine(prompt);
+} catch(err){
+  err.code = "MDJ_ERR"
+  err.user_message = err.message
+  throw err
+}
+
+  const imageBuffer = await otherFunctions.getImageByUrl(msg.uri)
+
+  let reply_markup = {
+    one_time_keyboard: true,
+    inline_keyboard: []
+  };
+
+  reply_markup = await replyInstance.generateMdjButtons(msg,reply_markup);
+  
+  const msgResult = await replyInstance.simpleSendNewImage({
+    caption:prompt,
+    reply_markup:reply_markup,
+    contentType:"image/jpeg",
+    fileName:`mdj_imagine_${msg.id}.jpeg`,
+    imageBuffer:imageBuffer
+  });
+
+
+  return {
+    imageBuffer:imageBuffer,
+    replymsg:msg
+  }
+}
+
+function extractTextBetweenDoubleAsterisks(text) {
+  const matches = text.match(/\*\*(.*?)\*\*/);
+  return matches ? matches[1] : null;
+}
+
 async function mdj_custom_handler(requestInstance,replyInstance){
 
   const statusMsg = await replyInstance.sendStatusMsg()
   const jsonDecoded = await otherFunctions.decodeJson(requestInstance.callback_data)
 
-  let msg = await MdjMethods.executeCustom({
+  let msg;
+  try{
+  msg = await MdjMethods.executeCustom({
   msgId:jsonDecoded.id,
   customId:jsonDecoded.custom,
   content:jsonDecoded.content,
   flags:jsonDecoded.flags
   });
+  } catch(err){
+    err.code = "MDJ_ERR"
+    err.user_message = err.message
+    throw err
+  }
 
-  console.log("Custom",msg)
-  msg.prompt = jsonDecoded.content;
-  msg.buttonTriggered = jsonDecoded.label;
-  
   let reply_markup = {
     one_time_keyboard: true,
     inline_keyboard: []
@@ -880,7 +997,7 @@ async function mdj_custom_handler(requestInstance,replyInstance){
   
   await replyInstance.deleteMsgByID(statusMsg.message_id)
   await replyInstance.simpleSendNewImage({
-    caption:jsonDecoded.content,
+    caption:extractTextBetweenDoubleAsterisks(jsonDecoded.content),
     reply_markup:reply_markup,
     contentType:"image/jpeg",
     fileName:`mdj_image_custom_${msg.id}.jpeg`,
@@ -916,5 +1033,7 @@ module.exports = {
   textMsgRouter,
   formCallsAndRepliesMsg,
   formFoldedSysMsg,
-  mdj_custom_handler
+  mdj_custom_handler,
+  mdj_create_handler,
+  resetTranslatorDialogHandler
 };

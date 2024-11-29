@@ -50,8 +50,56 @@ module.exports = {
         "url_path":'/v1/chat/completions',
         "default_dialogue_ttl_ms":3600000,
     },
-
-
+    "translator":{
+        "welcome_msg":"Это Переводчик. Достаточно прислать текст. Русский текст будет переведен на английский. Текст на любом другом языке будет переведен на русский. t° = [temperature], модель = [model]" ,
+        "name":"Переводчик",
+        "options_desc":"Параметры работы Переводчика:",
+        "options":{
+            "temperature":{
+                "name":"Температура (t°)",
+                "options_desc":"Выберите новое значение температуры:",
+                "templateRespMsg":"Параметр Температура (t°) для Ассистента изменен на [value].",
+                "options":{
+                "0":{
+                    "name":"0",
+                },
+                "0.25":{
+                "name":"0.25",
+                },
+                "0.5":{
+                "name":"0.5",
+                },
+                "0.75":{
+                "name":"0.75",
+                },
+                "1":{
+                "name":"1",
+                },
+                "back":{
+                    "name":"<< Назад"
+                }
+            }},
+            "model":{
+                "name":"Версия модели",
+                "options_desc":"Выберите версию модели:",
+                "templateRespMsg":"Модель для функции Переводчик изменена на [value].",
+                "options":{
+                    "gpt-4o":{
+                        "name":"GPT-4 Омни",
+                    },
+                    "back":{
+                        "name":"<< Назад"
+                    }
+            }},
+            "back":{
+                "name":"<< Назад"
+            }
+        },
+        "hostname":'https://api.openai.com',
+        "default_model":'gpt-4o',
+        "url_path":'/v1/chat/completions',
+        "default_dialogue_ttl_ms":3600000,
+    },
     "voicetotext":{
         "welcome_msg":"Функция 'Голос в текст' может преобразовать аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
         "name":"Голос в текст",

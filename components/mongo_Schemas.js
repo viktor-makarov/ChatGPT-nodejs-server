@@ -21,6 +21,10 @@ const ProfileSheema = new Schema(
         temperature: { type: Number, default: 1 },
         model: { type: String, default: modelSettings.chat.default_model },
       },
+      translator: {
+        temperature: { type: Number, default: 1 },
+        model: { type: String, default: modelSettings.translator.default_model },
+      },
       texttospeech: {
         voice: { type: String, default: modelSettings.texttospeech.voice},
         model: {
@@ -192,6 +196,9 @@ const TelegramDialogSheema = new Schema(
     model:{ type: String },
     role: { type: String },
     roleid: { type: Number },
+    fileName:{ type: String },
+    fileUrl:{ type: String },
+    fileCaption:{ type: String },
     name: { type: String },
     content: Schema.Types.Mixed,
     content_latex_formula: Schema.Types.Mixed,

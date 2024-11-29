@@ -28,9 +28,15 @@ async function executeCustom(obj) {
     return msg
 };
 
+async function executeInfo(){
+    const msg = await MdjClient.Info() 
+    return msg
+}
+
 
 
 module.exports = {
     executeImagine,
-    executeCustom
+    executeCustom,
+    executeInfo
 }

@@ -5,7 +5,7 @@ const { Midjourney } = require('midjourney')
     ChannelId: process.env.DISCORD_CHANNEL_ID,
     SalaiToken: process.env.DISCORD_SALAI_TOKEN,
     Debug: false,
-    Ws:false,
+    Ws:true,
   });
 
 module.exports = {

@@ -31,6 +31,13 @@ try{
         //Ничего не меняем
     } else if(err.original_code && err.original_code.includes("OAI_ERR")){
         //Ничего не меняем
+    } else if(err.original_code && err.original_code.includes("MDJ_ERR")){
+
+        if (err.message.includes("run out of hours")) {
+            err.code = "MDJ_ERR1"
+            err.user_message = msqTemplates.MDJ_ERR1
+        }
+        //Ничего не меняем
     } else {
         //All other errors
         err.code = "INT_ERR1"

@@ -14,3 +14,5 @@ RUN npm install --omit=dev
 COPY . .
 
 EXPOSE 7000
+
+CMD ["node", "/chatbot/bin/www_prod.js"]

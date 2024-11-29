@@ -8,6 +8,16 @@ const unicodeit = require('unicodeit');
 const mjAPI = require('mathjax-node');
 const mongo = require("./mongo");
 
+async function startFileDownload(url){
+  const response = await axios({
+    url,
+    method: 'GET',
+    responseType: 'stream'
+  });
+
+return response
+}  
+
 mjAPI.start();
 const sharp = require('sharp');
 const svgson = require('svgson');
@@ -389,8 +399,6 @@ function splitTextByCharLimit(text) {
   return result;
 }
 
-
-
 function recursiveReplace(obj) {
   for (var key in obj) {
     if (typeof obj[key] === 'object') {
@@ -424,7 +432,6 @@ obj = recursiveReplace(obj) //Заменяем даты на new Date(), что�
   return obj
 
 };
-
 
 function jsonToMarkdownCodeBlock(jsonObject) {
   const jsonString = JSON.stringify(jsonObject, null, 2);
@@ -729,5 +736,6 @@ module.exports = {
   generateCanvasPNG,
   getImageByUrl,
   encodeJson,
-  decodeJson
+  decodeJson,
+  startFileDownload
 };

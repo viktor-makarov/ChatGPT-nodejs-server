@@ -44,7 +44,7 @@ constructor(obj) {
           "[temperature]",
           this.#user.currentTemperature
         ),
-        callback_data: JSON.stringify({e:"regenerate"}),
+        callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
       };
 };
 

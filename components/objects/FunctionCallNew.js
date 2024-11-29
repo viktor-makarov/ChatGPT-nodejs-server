@@ -2,7 +2,7 @@ const UrlResource = require("./UrlResource.js");
 const MdjMethods = require("../midjourneyMethods.js");
 const mongo = require("../mongo");
 const func = require("../other_func.js");
-const axios = require("axios");
+const telegramCmdHandler = require("../telegramCmdHandler.js")
 
 class FunctionCallNew{
 
@@ -75,7 +75,7 @@ class FunctionCallNew{
             // If 'function' field is missing, add the nested fields as missing too
             missingFields.push('function.name', 'function.arguments');
         }
-    
+        
         // Return validation result
         if (missingFields.length === 0) {
             return { valid: true };
@@ -143,8 +143,6 @@ class FunctionCallNew{
 
 
     async runJavascriptCode(){
-
-        
 
         try{
             
@@ -254,8 +252,6 @@ class FunctionCallNew{
             }
         };
 
-
-
     async CreateMdjImageRouter(){
    
             const argFieldValidationResult = this.argumentsFieldValidation()
@@ -273,180 +269,27 @@ class FunctionCallNew{
             if(valuadationResult.success ===0 ){
                 return valuadationResult
             }
-                const prompt = this.#argumentsJson.prompt;
 
-                let msg;
-                try{
-                msg = await MdjMethods.executeImagine(prompt);
-                } catch(err){
-                    return {
-                        success:0,
-                        error: err.message + " " + err.stack
-                    }
-                };
-                console.log("Imagine",msg)
+            const prompt = this.#argumentsJson.midjourney_query;
 
-                //Get image buffer
-                let imageBuffer;
-                try{
-                imageBuffer = await func.getImageByUrl(msg.uri)
-                } catch(err){
-                    console.log(err)
-                    return {
-                        success:0,
-                        error: err.message + " " + err.stack
-                    }
+
+            let result;
+            try{
+            result = await telegramCmdHandler.mdj_create_handler(this.#replyMsg,prompt)
+            } catch(err){
+                return {
+                    success:0,
+                    error: err.message + " " + err.stack
                 }
+            };
 
-                let reply_markup = {
-                    one_time_keyboard: true,
-                    inline_keyboard: []
-                };
-
-                //generate buttons
-                reply_markup = await this.#replyMsg.generateMdjButtons(msg,reply_markup);
-                
-                //send image to telegram
-                try{
-                    await this.#replyMsg.simpleSendNewImage({
-                        caption:prompt,
-                        reply_markup:reply_markup,
-                        contentType:"image/jpeg",
-                        fileName:`mdj_imagine_${msg.id}.jpeg`,
-                        imageBuffer:imageBuffer
-                    });
-                } catch(err){
-                    console.log(err)
-                    return {
-                        success:0,
-                        error: "Failed to send image to the user. " + err.message + " " + err.stack
-                    }
-                };
-                
              const functionResult = {
                     success:1,
-                    instructions: "No need to provide the url to the user as he already has it",
                     result:"The image has been generated and successfully sent to the user."
                 };
                 return functionResult
             };
-
-    async CreateImageRouter(){
-   
-        const argFieldValidationResult = this.argumentsFieldValidation()
-        if(argFieldValidationResult.success===0){
-            return argFieldValidationResult
-        }
-
-        try{
-            this.convertArgumentsToJSON()
-        } catch (err){
-            return {success:0,error: err.message + "" + err.stack}
-        } 
-
-        const valuadationResult = imageFieldsValidation()
-        if(valuadationResult.success ===0 ){
-            return valuadationResult
-        }
   
-            const resp = await CreateImage({
-                prompt:this.#argumentsJson.prompt,
-                model:"dall-e-3",
-                size:this.#argumentsJson.size,
-                style:this.#argumentsJson.style
-            });
-
-            
-    
-            functionResult = {
-                success:1,
-                result:"The image has been generated and successfully sent to the user.", 
-                instructions:`Translate the following description of the image in the language of the user's prompt:`+JSON.stringify(resp)
-            };
-            return functionResult
-        };
-        
-    async CreateImage(obj){
-       
-            const options = {
-            url: "https://api.openai.com/v1/images/generations",
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${this.#user.openAIToken}`,
-            },
-            validateStatus: function (status) {
-                return status == appsettings.http_options.SUCCESS_CODE;
-            },
-            data: {
-                model:obj,model,
-                prompt:obj.prompt,
-                size:obj.size,
-                style:obj.style,
-                n: 1,
-            //     response_format:"b64_json" 
-            }};
-            
-            this.#replyMsg.simpleMessageUpdate("\n"&"Создаю изображение ...",
-                {
-                    chat_id:this.#replyMsg.chatId,
-                    message_id: this.#systemMsgId
-                }
-            )
-            const openai_resp = await axios(options);
-            let resultList = []; 
-            const photoList = openai_resp.data.data
-            
-            this.#replyMsg.simpleMessageUpdate("\n"&"Сжимаю изображение ...",
-                {
-                    chat_id:this.#replyMsg.chatId,
-                    message_id: this.#systemMsgId
-                }
-            )
-            if (!(photoList&&photoList.length>0)){
-                throw new Error("No image was provided by OpenAI service. Please retry.");
-            }
-    
-            for (let i = 0; i < photoList.length; i++) {
-            const photo = photoList[i]
-            // console.log(photo)
-            //   const filePath = './img/img-resided_600_600.png';
-            //   const readableStream = fs.createReadStream(filePath);
-            resultList.push(photo.revised_prompt)
-    
-            const response = await axios({
-                method: 'get',
-                url: photo.url,
-                responseType: "arraybuffer"
-                });
-            const fileData = Buffer.from(response.data, "binary");
-    
-            const image = await Jimp.read(fileData)
-            const inputWidth = image.bitmap.width
-            const inputHeight = image.bitmap.height
-                
-            const outputWidth = 240
-            const outputHeight = outputWidth*(inputHeight/inputWidth)
-            const resizedImage = image.resize(outputWidth, outputHeight);
-            const outputBuffer = await resizedImage.getBufferAsync(Jimp.MIME_JPEG);
-                
-            await this.#replyMsg.botInstance.sendPhoto(this.#replyMsg.chatId, outputBuffer,
-                {filename: model+'.jpg',
-                contentType: 'image/jpeg',
-                caption:"Revised_prompt: "+ photo.revised_prompt,
-                reply_markup: JSON.stringify({ 
-                    inline_keyboard: [
-                        [{ text: 'Открыть в оригинальном размере', url: photo.url}]
-                    ]
-                    })
-                }
-                )
-    
-            }
-            
-            return resultList
-
-        }
     
     argumentsFieldValidation(){
 
@@ -459,43 +302,19 @@ class FunctionCallNew{
 
     imageMdjFieldsValidation(){
 
-        if (this.#argumentsJson.prompt === "" || this.#argumentsJson.prompt === null || this.#argumentsJson.prompt === undefined){
-            return {success:0, error:"Prompt param contains no text. You should provide the text."};
+        if (this.#argumentsJson.midjourney_query === "" || this.#argumentsJson.midjourney_query === null || this.#argumentsJson.midjourney_query === undefined){
+            return {success:0, error:"midjourney_query param contains no text. You should provide the text."};
         } 
 
-        if (this.#argumentsJson.prompt.split(" ").length > 150){
-            return {success:0, error:`Prompt length exceeds limit of 60 words. Please reduce the prompt length.`};
+        if (this.#argumentsJson.midjourney_query.split(" ").length > 150){
+            return {success:0, error:`midjourney_query length exceeds limit of 60 words. Please reduce the prompt length.`};
         }
 
         return {success:1}
 
     }
 
-    imageFieldsValidation(){
 
-        if (this.#argumentsJson.prompt === "" || this.#argumentsJson.prompt === null || this.#argumentsJson.prompt === undefined){
-            return {success:0, error:"Prompt param contains no text. You should provide the text."};
-        } 
-        
-        if (this.#argumentsJson.prompt.length > 4000){
-            return {success:0, error:`Prompt length exceeds limit of 4000 characters. Please reduce the prompt length.`};
-        }
-
-        const size = this.#argumentsJson?.size || this.#imageSizeDefault
-
-        if(!sizeArray.includes(size)){
-            return {success:0, error:`Size param can not have other value than 1024x1024, 1792x1024 or 1024x1792. Please choose one of the three.`};
-        }
-
-        const style = this.#argumentsJson?.style || this.#imageStyleDefault
-
-        if(!styleArray.includes(style)){
-            return {success:0, error:`Style param can not have other value than vivid or natural. Please choose one of the two.`};
-        }
-
-        return {success:1}
-
-    }
 
     convertArgumentsToJSON(){
         try{

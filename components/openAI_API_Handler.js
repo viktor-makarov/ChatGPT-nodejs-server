@@ -10,7 +10,6 @@ const Completion = require("./objects/Completion.js");
 
 const axios = require("axios");
 
-
 async function getModels() {
   try {
     const openai = new OpenAI({
@@ -31,7 +30,7 @@ async function getModels() {
       err.user_message
     );
   }
-}
+};
 
 async function VoiceToText(requestMsgInstance) {
   try {
@@ -168,7 +167,6 @@ async function chatCompletionStreamAxiosRequest(
 ) {
   try {
 
-
     const completionInstance = new Completion(
       {
        requestMsg:requestMsg,
@@ -177,8 +175,6 @@ async function chatCompletionStreamAxiosRequest(
        dialogueClass:dialogueClass,
        toolCallsInstance:toolCallsInstance
       });
-
- // console.log("dialogueFull",dialogueClass.dialogueFull)
 
     const options = {
       url: modelSettings[requestMsg.user.currentRegime].hostname + modelSettings[requestMsg.user.currentRegime].url_path,

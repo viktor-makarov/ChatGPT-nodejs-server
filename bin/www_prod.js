@@ -16,14 +16,15 @@ global.mongoConnection = await mongoClient.connectToMongo()
 const TelegramBot = require('node-telegram-bot-api');
 const telegramRouter = require("../routerTelegram")
 const options = {
-    webHook: {
+ /*   webHook: {
         port: process.env.WEBHOOK_PORT
-    }
+    },*/
+    polling:true
 };
 
 global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, options);
 
-global.bot.setWebHook(`${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`,{ip_address:process.env.IP_ADDRESS})
+//global.bot.setWebHook(`${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`,{ip_address:process.env.IP_ADDRESS})
 
 telegramRouter.setBotParameters(global.bot) //задаем параметры бота
 telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
