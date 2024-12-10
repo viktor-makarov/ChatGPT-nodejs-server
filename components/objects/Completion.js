@@ -117,8 +117,8 @@ class Completion extends Transform {
         return null;
       }
 
-      const lastDocumentInDialogue = dialogueFromDB.pop()
-      
+      const lastDocumentInDialogue = dialogueFromDB[dialogueFromDB.length-1]
+
       if(lastDocumentInDialogue.role === "assistant"){
         this.#completionPreviousVersionsContent = lastDocumentInDialogue.content;
         this.#completionPreviousVersionsLatexFormulas = lastDocumentInDialogue.content_latex_formula;
@@ -199,6 +199,7 @@ class Completion extends Transform {
       this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
 
       const completionId = this.#completionPreviousVersionsDoc?.sourceid ? this.#completionPreviousVersionsDoc.sourceid : this.#completionId
+      
       const completionTokenCount = this.#completionPreviousVersionsDoc?.tokens ? this.#completionPreviousVersionsDoc?.tokens + this.#tokenUsage.completion_tokens : this.#tokenUsage.completion_tokens
         return {
             //Формируем сообщение completion

@@ -195,7 +195,7 @@ async deleteMsgByID(msgId){
   return await this.#botInstance.deleteMessage(this.#chatId, msgId)
 }
 
-async deleteMsgsByID(msgIds){
+async deleteMsgsByIDs(msgIds){
   let deleteCount =0;
  
   if(Array.isArray(msgIds) && msgIds.length >0){
@@ -429,6 +429,30 @@ async generateMdjButtons(msg,reply_markup){
   };
 
   return reply_markup
+}
+
+generateVersionButtons(completionCurrentVersionNumber,versionsCount,reply_markup){
+
+
+  let version_row_buttons =[]
+  for (let i = 1; i <= versionsCount; i++){
+    
+    let versionName = `Вер. ${i.toString()}`
+    if(i === completionCurrentVersionNumber){
+      versionName = versionName+" (тек.)"
+    }
+    version_row_buttons.push({
+      text: versionName,
+      callback_data:JSON.stringify({e:"choose_ver",d:i})
+    })
+
+    if(i === versionsCount || i % 8 === 0){
+      reply_markup.inline_keyboard.push(version_row_buttons)
+      version_row_buttons = [];
+    }
+  }
+
+return reply_markup
 }
 
 generateFormulasButton(reply_markup){

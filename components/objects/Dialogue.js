@@ -1,5 +1,7 @@
 const mongo = require("../mongo");
 const EventEmitter = require('events');
+const otherFunctions = require("../other_func");
+
 
 class Dialogue extends EventEmitter {
 
@@ -107,7 +109,11 @@ class Dialogue extends EventEmitter {
             content_latex_formula:document.content_latex_formula,
             tokens: document.tokens,
             tool_calls: document.tool_calls,
-            tool_reply: document.tool_reply
+            tool_reply: document.tool_reply,
+            fileName:document.fileName,
+            fileUrl:document.fileUrl,
+            fileCaption:document.fileCaption,
+            fileAIDescription:document.fileAIDescription
           }));
 
         this.#dialogueForRequest = this.generateDialogueForRequest(this.#dialogueFull)
@@ -131,15 +137,15 @@ class Dialogue extends EventEmitter {
         let lastTgmMsgIdsFromCompletions = [];
         let dialogueList = this.copyValue(this.#dialogueFull)
 
-        const lastDocumentInDialogue = dialogueList.pop()
+        const lastDocumentInDialogue = dialogueList[dialogueList.length-1]
         if(lastDocumentInDialogue.role === "assistant"){
-            dialogueList.pop()
+            dialogueList[dialogueList.length-1]
         }
 
         for (const doc of dialogueList){
  
             if(doc.telegramMsgBtns === true){
-                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId.pop())
+                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId[doc.telegramMsgId.length-1])
             }
         }
 
@@ -153,7 +159,7 @@ class Dialogue extends EventEmitter {
         for (const doc of dialogueList){
  
             if(doc.telegramMsgBtns === true){
-                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId.pop())
+                lastTgmMsgIdsFromCompletions.push(doc.telegramMsgId[doc.telegramMsgId.length-1])
             }
         }
         return lastTgmMsgIdsFromCompletions
@@ -173,7 +179,7 @@ class Dialogue extends EventEmitter {
     }
 
     getLastCompletionTelegramMsgIds(){
-        const lastDocumentInDialogue = this.#dialogueFull.pop()
+        const lastDocumentInDialogue = this.#dialogueFull[this.#dialogueFull.length-1]
         if(lastDocumentInDialogue.role === "assistant"){
             return lastDocumentInDialogue.telegramMsgId
         } else {
@@ -182,7 +188,7 @@ class Dialogue extends EventEmitter {
     };
 
     getLastCompletionDoc(){
-        const lastDocumentInDialogue = this.#dialogueFull.pop()
+        const lastDocumentInDialogue = this.#dialogueFull[this.#dialogueFull.length-1]
        // console.log("lastDocumentInDialogue",lastDocumentInDialogue)
         if(lastDocumentInDialogue.role === "assistant"){
             return lastDocumentInDialogue
@@ -268,8 +274,7 @@ class Dialogue extends EventEmitter {
 
         const currentRole = "system"
 
-
-        let fileSystemObj = {
+        let systemObj = {
             sourceid: requestInstance.msgId,
             createdAtSourceTS: requestInstance.msgTS,
             createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
@@ -282,20 +287,20 @@ class Dialogue extends EventEmitter {
             content: text
           }
 
-        const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
-        fileSystemObj._id = savedSystem.upserted[0]._id
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+        systemObj._id = savedSystem.upserted[0]._id
 
         this.#dialogueForRequest.push({
-            role:fileSystemObj.role,
-            content:fileSystemObj.content,
+            role:systemObj.role,
+            content:systemObj.content,
         });
 
         this.#dialogueFull.push({
-            _id:fileSystemObj._id,
-            sourceid: fileSystemObj.sourceid,
-            createdAtSourceDT_UTC:fileSystemObj.createdAtSourceDT_UTC,
-            role: fileSystemObj.role,
-            content: fileSystemObj.content
+            _id:systemObj._id,
+            sourceid: systemObj.sourceid,
+            createdAtSourceDT_UTC:systemObj.createdAtSourceDT_UTC,
+            role: systemObj.role,
+            content: systemObj.content
         });
 
         //update variables
@@ -303,19 +308,60 @@ class Dialogue extends EventEmitter {
         this.#currentRole = currentRole
 
         this.#previousMsg = this.#currentMsg;
-        this.#currentMsg = fileSystemObj;
+        this.#currentMsg = systemObj;
         
         console.log("SYSTEM MESSAGE")
+    };
+
+    async  sendUnsuccessFileMsg(fileSystemObj){
+
+        const MsgText = `❌ Файл <code>${fileSystemObj.fileName}</code> не может быть включен в диалог. К сожалению, файлы с расширением <code>${fileSystemObj.fileExtention}</code> не обрабатываются.`
+
+        const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,null,"html")
+    }
+
+    async  sendSuccessFileMsg(fileSystemObj){
+
+        const MsgText = `✅ Файл <code>${fileSystemObj.fileName}</code> включен в диалог.`
+
+        let infoForUser = {
+            fileName:`<code>${fileSystemObj.fileName}</code>`,
+            fileUrl:`<code>${fileSystemObj.fileUrl}</code>`,
+           }
+          
+        if(fileSystemObj.fileCaption){
+            infoForUser["fileCaption"] = fileSystemObj.fileCaption
+        }
+        
+        const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:infoForUser,folded_text:MsgText})
+        
+        const callback_data = {e:"un_f_up",d:infoForUserEncoded}
+
+        const fold_button = {
+        text: "Показать подробности",
+        callback_data: JSON.stringify(callback_data),
+        };
+
+        const reply_markup = {
+            one_time_keyboard: true,
+            inline_keyboard: [[fold_button],],
+          };
+          
+        const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,reply_markup,"html")
+        await mongo.updateManyEntriesInDbById({
+        filter: {"sourceid": fileSystemObj.sourceid},       
+        updateBody:{ "telegramMsgId": resultTGM.message_id }
+        })
+
     };
 
     async commitFileSystemToDialogue(url,requestInstance){
 
         const currentRole = "system"
-
         const obj = {
             filename:requestInstance.fileName,
             download_url:url,
-            fileCaption:requestInstance.fileCaption
+            fileDescription:requestInstance.fileCaption
         }
 
         const text = `User provided the following file\n${JSON.stringify(obj, null, 4)}`
@@ -327,6 +373,7 @@ class Dialogue extends EventEmitter {
             fileName:requestInstance.fileName,
             fileUrl:url,
             fileCaption:requestInstance.fileCaption,
+            fileExtention:requestInstance.fileExtention,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
@@ -335,6 +382,13 @@ class Dialogue extends EventEmitter {
             roleid: 0,
             content: text
           }
+
+        const prohibitedExtentions = appsettings.file_options.prohibited_extentions
+
+        if(prohibitedExtentions.includes(requestInstance.fileExtention)){
+            await this.sendUnsuccessFileMsg(fileSystemObj)
+            return
+        }
 
         const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
         fileSystemObj._id = savedSystem.upserted[0]._id
@@ -359,8 +413,9 @@ class Dialogue extends EventEmitter {
         this.#previousMsg = this.#currentMsg;
         this.#currentMsg = fileSystemObj;
         
+        await this.sendSuccessFileMsg(fileSystemObj)
+        
         console.log("SYSTEM MESSAGE")
-        this.emit('fileSystemCommited')
     };
 
     async commitToolCallResults(obj){

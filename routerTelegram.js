@@ -51,6 +51,7 @@ function router(botInstance) {
   botInstance.on("message", async (msg) => {
     //Слушаем сообщения пользователей
     try {
+      
       const user = new User(msg.from)
       await user.getUserProfileFromDB()
 
@@ -59,6 +60,7 @@ function router(botInstance) {
         userInstance:user,
         botInstance:botInstance
       })
+      
 
       const replyMsg = new ReplyMsg({
         botInstance:botInstance,
@@ -94,11 +96,6 @@ function router(botInstance) {
         toolCallsInstance:toolCalls
       }))
 
-      dialogue.on('fileSystemCommited', () => fileSystemCommited({
-        requestMsgInstance:requestMsg, 
-        replyMsgInstance:replyMsg,
-        dialogueInstance:dialogue
-      }))
 
       dialogue.on('triggerToolCall', () => triggerToolCall({
         toolCallsInstance:toolCalls
@@ -224,10 +221,9 @@ function router(botInstance) {
 
             await dialogue.getDialogueFromDB()
             const previousVersionMsgIds = dialogue.getLastCompletionTelegramMsgIds()
+            console.log("previousVersionMsgIds",previousVersionMsgIds)
+            await replyMsg.deleteMsgsByIDs(previousVersionMsgIds)
             
-            await replyMsg.deleteMsgsByID(previousVersionMsgIds)
-            
-
             dialogue.regenerateCompletionFlag = true
 
             await callCompletion({
@@ -242,7 +238,7 @@ function router(botInstance) {
           
             await dialogue.getDialogueFromDB()
             const doc = dialogue.getLastCompletionDoc()
-            await replyMsg.deleteMsgsByID(doc.telegramMsgId)
+            await replyMsg.deleteMsgsByIDs(doc.telegramMsgId)
             await replyMsg.sendTypingStatus()
             const choosenVersionIndex = requestMsg.callback_data
             const choosenContent = doc.content[choosenVersionIndex-1]
@@ -320,7 +316,71 @@ function router(botInstance) {
                 }
               }
   
-                break;
+          break;
+          case "un_f_up":
+          
+            const hash_unfolded = requestMsg.callback_data
+            const contentObject = await otherFunctions.decodeJson(hash_unfolded)
+            
+            const unfoldedFileSysMsg = `<b>Uploaded file info:</b>\n${JSON.stringify(contentObject.unfolded_text,null,4)}`;
+
+
+            const callback_data = {e:"f_f_up",d:hash_unfolded}
+            
+            const fold_button = {
+              text: "Скрыть",
+              callback_data: JSON.stringify(callback_data),
+            };
+
+            const reply_markup = {
+              one_time_keyboard: true,
+              inline_keyboard: [[fold_button],],
+            };
+
+            try{
+            await replyMsg.simpleMessageUpdate(unfoldedFileSysMsg, {
+              chat_id: callback_msg.message.chat.id,
+              message_id: callback_msg.message.message_id,
+              parse_mode:"HTML",
+              reply_markup: reply_markup
+            })
+          } catch(err){
+            if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
+              throw err
+            }
+          }
+            break;
+
+          case "f_f_up":
+              const hash_folded = requestMsg.callback_data
+               const contentFoldObject = await otherFunctions.decodeJson(hash_folded)
+
+               const callback_data_fold = {e:"un_f_up",d:hash_folded};
+            
+               const unfold_button = {
+                 text: "Скрыть",
+                 callback_data: JSON.stringify(callback_data_fold),
+               };
+   
+               const reply_markup_unfold = {
+                 one_time_keyboard: true,
+                 inline_keyboard: [[unfold_button],],
+               };
+                try{
+                await replyMsg.simpleMessageUpdate(contentFoldObject.folded_text, {
+                  chat_id: callback_msg.message.chat.id,
+                  message_id: callback_msg.message.message_id,
+                  parse_mode:"HTML",
+                  reply_markup: reply_markup_unfold
+                })
+              } catch(err){
+                if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
+                  throw err
+                }
+              }
+  
+          break;
+
           case "settings":
             try{
             const response_s = await telegramCmdHandler.settingsOptionsHandler(
@@ -404,16 +464,6 @@ async function callCompletion(obj){
     dialogueInstance,
     toolCallsInstance
   );
-
-}
-
-async function fileSystemCommited(obj){
-
-  const replyMsgInstance = obj.replyMsgInstance;
-  const requestMsgInstance = obj.requestMsgInstance;
-  const dialogueInstance = obj.dialogueInstance;
-
- console.log(new Date(),"Send system msg")
 
 }
 

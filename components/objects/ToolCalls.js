@@ -29,8 +29,9 @@ class ToolCalls{
      this.#tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100
      this.#overalTokenLimit = this.#user?.currentModel ? modelConfig[this.#user.currentModel]?.request_length_limit_in_tokens : null
     
-     this.#available_tools = this.generateAvailableTools(this.#user);
     }
+
+
 
 countUnsuccessfullFunctionCalls(functionName,functionOutcome){
     if(functionOutcome.success===0){
@@ -210,7 +211,7 @@ async updateFinalMsg(chat_id,callResult){
 }
 
 
-generateAvailableTools(userClass){
+async generateAvailableTools(userClass){
 
         var functionList = []
         
@@ -279,13 +280,13 @@ generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "create_midjourney_image",
-                description: "Use this function to answer user's questions to create, modify or compile an image. If you are given a midjourney text prompt - you must use it exactly as is, otherwise generate your own text prompt from the user's request considering the context of the dialogue. Use following guidelines: (1) all the text that should be written in the image must be put into double commas and translated into english.",
+                description: "Use this function to create, modify or compile an image. If you are given a midjourney text prompt - you must use it exactly as is, otherwise generate your own text prompt from the user's request considering the context of the dialogue.",
                 parameters: {
                     type: "object",
                     properties: {
                         midjourney_query: {
                             type: "string",
-                            description: `A query for midjourney imagine function in english. The query may consist of the following components: <url1> <url2> text_prompt --param1 --param2. Maximum length of the text prompt is 150 words. By default use model 6.1`
+                            description: `A prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. Maximum length of the text prompt is 150 words. By default use model --v 6.1`
                         },
                     },
                     required: ["midjourney_query"]
@@ -294,6 +295,27 @@ generateAvailableTools(userClass){
             friendly_name: "Генерация изображения",
             try_limit: 3 }
             );
+
+            const kngBaseItems = await mongo.getKwgItemsForUser(userClass.userid)
+            functionList.push(
+                {type:"function",
+                function:{
+                    name: "get_knowledge_base_item",
+                    description: `Use this function when you need to get instructions to better perform on user's tasks on the following topics:\n ${JSON.stringify(kngBaseItems,null,4)}`,
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            id: {
+                                type: "string",
+                                description: `id of a knowledge base item`
+                            },
+                        },
+                        required: ["id"]
+                    }
+                },
+                friendly_name: "Запрос в базу знаний",
+                try_limit: 3 }
+                );
         
         
         if (userClass.isAdmin) {
@@ -342,12 +364,15 @@ generateAvailableTools(userClass){
         
         //Завершаем. Если ни одной функции нет, то передаем null
         if (functionList.length===0){
+            this.#available_tools = null;
             return null
         } else {
+            this.#available_tools = functionList;
             return functionList
         }
         
         } else {
+            this.#available_tools = null
             return null
         }
         };

@@ -8,6 +8,27 @@ const unicodeit = require('unicodeit');
 const mjAPI = require('mathjax-node');
 const mongo = require("./mongo");
 
+
+function extractSystemRolesFromEnd(documents) {
+  const result = [];
+  for (let i = documents.length - 1; i >= 0; i--) {
+      if (documents[i].role === 'system' && documents[i].fileName) {
+          result.push({
+            sourceid:documents[i].sourceid,
+            telegramMsgId:documents[i].telegramMsgId,
+            fileName:documents[i].fileName,
+            fileUrl:documents[i].fileUrl,
+            fileCaption:documents[i].fileCaption,
+            fileAIDescription:documents[i].fileAIDescription
+          });
+      } else {
+          break;
+      }
+  }
+  return result;
+}
+
+
 async function startFileDownload(url){
   const response = await axios({
     url,
@@ -16,7 +37,7 @@ async function startFileDownload(url){
   });
 
 return response
-}  
+}
 
 mjAPI.start();
 const sharp = require('sharp');
@@ -33,7 +54,7 @@ async function getSvgDimensions(svg) {
 }
 
 async function encodeJson(json){
-
+  
   let hash = cryptofy.createHash('md5');
   hash =  hash.update(JSON.stringify(json)).digest('hex');
   await mongo.saveHash(hash,json);
@@ -51,7 +72,6 @@ async function createTextImage(text) {
 
   const svgText = `<svg width="${estimatedWidth}" height="${height}">
     <text x="0" y="${fontSize}" font-family="Arial" font-size="${fontSize}">${text}</text></svg>`;
-
   return {
     pngBufferText: await sharp(Buffer.from(svgText)).png().toBuffer(),
     widthText: estimatedWidth,
@@ -113,7 +133,7 @@ async function generateCanvasPNG(letexObject){
     const number = latexArray[i][0]
     const latexText = latexArray[i][1]
 
-    const { pngBufferText,widthText,heightText} = await createTextImage(`Формула ${number}`);
+    const { pngBufferText,widthText,heightText} = await createTextImage(`# ${number}`);
     const { pngBufferLatex,widthLatex,heightLatex} = await convertLatexToPNG(latexText);
     
     compositeImages.push({
@@ -283,7 +303,7 @@ async function countTokensLambda(text,model){
   const requestObj = {"text":text,"model":model}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2_simple_tokencount",requestObj)
+  const result = await aws.lambda_invoke("R2D2_countTokens",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -291,7 +311,7 @@ async function countTokensLambda(text,model){
   const resultJSON = JSON.parse(result)
 
   if(resultJSON.statusCode === 200){
-    return resultJSON.body
+    return resultJSON.body.tokens_count
   } else if (resultJSON.statusCode){
       const err = new Error("countTokensLambda: " + resultJSON.body)
       throw err
@@ -737,5 +757,6 @@ module.exports = {
   getImageByUrl,
   encodeJson,
   decodeJson,
-  startFileDownload
+  startFileDownload,
+  extractSystemRolesFromEnd
 };

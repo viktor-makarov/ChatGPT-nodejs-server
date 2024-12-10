@@ -36,6 +36,9 @@ try{
         if (err.message.includes("run out of hours")) {
             err.code = "MDJ_ERR1"
             err.user_message = msqTemplates.MDJ_ERR1
+        }  else if (err.message.includes("403")){
+            err.code = "MDJ_ERR2"
+            err.user_message = msqTemplates.MDJ_ERR2
         }
         //Ничего не меняем
     } else {

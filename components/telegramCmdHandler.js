@@ -55,6 +55,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
 
         break;
       } else if(requestMsgInstance.fileType === "image" || requestMsgInstance.fileType === "document"){
+        
         await requestMsgInstance.getFileLinkFromTgm()
         const uploadResult = await uploadFileToS3Handler(requestMsgInstance)
         const url = uploadResult.Location
@@ -146,6 +147,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     await replyMsgInstance.deleteToolsButtons(toolsMsgIds)
     const response = await resetdialogHandler(requestMsgInstance);
     responses.push(response)
+    //await dialogueInstance.commitSystemToDialogue(msqTemplates.system_start_dialogue,requestMsgInstance)
 
   } else if(cmpName==="unregister"){
     const response = await unregisterHandler(requestMsgInstance);

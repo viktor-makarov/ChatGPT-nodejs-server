@@ -200,7 +200,7 @@ async function chatCompletionStreamAxiosRequest(
       },
     };
 
-    const available_tools =  toolCallsInstance.availableToolsForCompetion()
+    const available_tools =  await toolCallsInstance.generateAvailableTools(requestMsg.user)
     if(available_tools){
       //Add functions, if they exist
       options.data.tools = available_tools;

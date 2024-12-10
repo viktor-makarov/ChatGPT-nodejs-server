@@ -2,6 +2,7 @@ require('dotenv').config(); //Загружаем переменные из .env 
 const yaml = require('js-yaml');
 const path = require('path');
 const fs = require('fs');
+const aws = require('../components/aws_func.js');
 
 //load config to global var
 const yamlFileContent = fs.readFileSync(path.join(__dirname,'..',"config","main_config.yml"), 'utf8');
@@ -15,16 +16,27 @@ global.mongoConnection = await mongoClient.connectToMongo()
 
 const TelegramBot = require('node-telegram-bot-api');
 const telegramRouter = require("../routerTelegram")
-const options = {
- /*   webHook: {
-        port: process.env.WEBHOOK_PORT
-    },*/
+
+
+let options = {
     polling:true
 };
 
+if(process.env.WEBHOOK_ENABLED){
+    options["webHook"] = {
+        port: process.env.WEBHOOK_PORT
+    }
+    options["polling"] = false
+}
+
 global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, options);
 
-//global.bot.setWebHook(`${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`,{ip_address:process.env.IP_ADDRESS})
+if(process.env.WEBHOOK_ENABLED){
+global.bot.setWebHook(`${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`,{ip_address:process.env.IP_ADDRESS})
+}
+
+console.log("TelegramBot options",options)
+
 
 telegramRouter.setBotParameters(global.bot) //задаем параметры бота
 telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные

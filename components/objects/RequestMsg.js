@@ -1,6 +1,7 @@
 const modelSettings = require("../../config/telegramModelsSettings");
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const axios = require("axios");
+const mime = require('mime-types');
 const { Readable } = require("stream");
 
 class RequestMsg{
@@ -119,7 +120,8 @@ constructor(obj) {
             
             this.#inputType = "file"
             this.#fileType = "image"
-            const lastPart = obj.requestMsg.photo.pop()
+            const photoParts = obj.requestMsg.photo
+            const lastPart = photoParts[photoParts.length-1]
             this.#fileId = lastPart.file_id
             this.#fileUniqueId = lastPart.file_unique_id
             this.#fileSize = lastPart.file_size
@@ -134,7 +136,6 @@ constructor(obj) {
             this.#fileName = obj.requestMsg.document?.file_name
             this.#fileExtention = this.extractFileExtention(this.#fileName)
             this.#fileMimeType = obj.requestMsg.document?.mime_type
-
             this.#fileId = obj.requestMsg.document?.file_id
             this.#fileUniqueId = obj.requestMsg.document?.file_unique_id
             this.#fileSize = obj.requestMsg.document?.file_size
@@ -157,7 +158,7 @@ extractFileExtention(fileName){
         return '';
     };
 
-    return parts.pop();
+    return parts[parts.length-1];
 }
 
 extractFileNameFromURL(fileLink){
@@ -167,7 +168,7 @@ extractFileNameFromURL(fileLink){
         return '';
     };
 
-    return parts.pop();
+    return parts[parts.length-1]
 }
 
 voiceToTextConstraintsCheck(){
@@ -263,8 +264,10 @@ async getFileLinkFromTgm(){
     this.#fileLink = await this.#botInstance.getFileLink(this.#fileId)
     this.#fileName = this.#fileName ? this.#fileName : this.extractFileNameFromURL(this.#fileLink)
     this.#fileExtention = this.extractFileExtention(this.#fileName)
+    this.#fileMimeType = this.#fileMimeType ? this.#fileMimeType : mime.lookup(this.#fileName)
     return this.#fileLink
 };
+
 
 async audioReadableStreamFromTelegram(){
     const response = await axios({
@@ -274,11 +277,10 @@ async audioReadableStreamFromTelegram(){
       });
     const fileData = Buffer.from(response.data, "binary");  
     var audioReadStream = Readable.from(fileData);
-    audioReadStream.path = this.#fileLink.split("/").pop();
-
+    const fileLinkParts = this.#fileLink.split("/")
+    audioReadStream.path = fileLinkParts[fileLinkParts.length-1];
     return audioReadStream
-}
-
+};
 
 print(){
     console.log(
@@ -372,6 +374,9 @@ get msgId(){
 
 get fileLink(){
     return this.#fileLink
+}
+get fileSize(){
+    return this.#fileSize
 }
 
 get fileName(){

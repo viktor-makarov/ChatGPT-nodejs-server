@@ -57,6 +57,28 @@ const ProfileSheema = new Schema(
 
 ProfileSheema.index({ id: -1 });
 
+const KnowledgeBaseSheema = new Schema({
+  created_datetimeUTC: {
+    type: Date,
+    default: Date.now,
+  },
+  updated_datetimeUTC: {
+    type: Date
+  },
+  id:{type: String},
+  name:{type: String},
+  description:{type: String},
+  instructions:{type: String},
+  content:{type: String},
+  content_size_tokens: {type: Number},
+  fileName:{type: String},
+  fileUrl:{type: String},
+  access:{type: Object}
+},
+{ collection: appsettings.mongodb_names.coll_knowledge_base}
+)
+KnowledgeBaseSheema.index({ id: -1});
+
 const HashStorage = new Schema({
   hash:{type: String},
   json: {type: Object}
@@ -199,6 +221,7 @@ const TelegramDialogSheema = new Schema(
     fileName:{ type: String },
     fileUrl:{ type: String },
     fileCaption:{ type: String },
+    fileAIDescription: { type: String },
     name: { type: String },
     content: Schema.Types.Mixed,
     content_latex_formula: Schema.Types.Mixed,
@@ -234,5 +257,6 @@ module.exports = {
   TelegramDialogSheema,
   FunctionUsageLogSheema,
   MdjImages,
-  HashStorage
+  HashStorage,
+  KnowledgeBaseSheema
 };

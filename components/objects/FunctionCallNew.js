@@ -44,7 +44,8 @@ class FunctionCallNew{
             else if(this.#functionName==="fetch_url_content"){this.#functionResult = await this.fetchUrlContentRouter()}
             else if(this.#functionName==="create_midjourney_image"){this.#functionResult = await this.CreateMdjImageRouter()} 
             else if(this.#functionName==="get_users_activity"){this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
-            else if(this.#functionName==="get_chatbot_errors") {this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("errors_log")
+            else if(this.#functionName==="get_chatbot_errors") {this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("errors_log")}
+            else if(this.#functionName==="get_knowledge_base_item") {this.#functionResult = await this.get_knowledge_base_item()   
             } else {this.#functionName = {error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}}
 
             return this.#functionResult
@@ -178,6 +179,38 @@ class FunctionCallNew{
                 throw err;
             }
         };
+
+        async get_knowledge_base_item(){
+
+            try{
+                
+            let result;
+            const argFieldValidationResult = this.argumentsFieldValidation()
+            if(argFieldValidationResult.success===0){
+                return argFieldValidationResult
+            }
+            
+            try{
+                this.convertArgumentsToJSON()
+            } catch (err){
+                return {success:0,error: err.message + "" + err.stack}
+            }   
+            
+            const kwg_base_id = this.#argumentsJson.id
+            
+            try{
+            result = await mongo.getKwgItemBy(kwg_base_id)
+            } catch(err) {
+                return {success:0,error: err.message + "" + err.stack}
+            }
+            
+            return {success:1,result:result[0].content}
+                
+                } catch(err){
+                    err.place_in_code = err.place_in_code || "get_knowledge_base_item";
+                    throw err;
+                }
+            };
 
     runJavaScriptCodeAndCaptureLogAndErrors(code) {
         // Store the original console.log function

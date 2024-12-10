@@ -47,11 +47,10 @@ class User{
         this.#active = result[0]?.active
         this.#plan = result[0]?.plan
         this.#groups = result[0]?.permissions?.groups
-
         this.#showSystemMsgs = this.#settings[this.#currentRegime]?.sysmsg
         this.#isRegistered = result[0]?.permissions?.registered
         this.#hasReadInfo = result[0]?.permissions?.readInfo
-        this.#isAdmin = this.#groups.includes("admin")
+        this.#isAdmin = this.#groups?.includes("admin")
 
     } else {
         this.#active = false;

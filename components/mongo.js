@@ -14,6 +14,44 @@ const telegram_profile_collection = global.mongoConnection.model(global.appsetti
 const telegram_model_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_models,scheemas.ModelsSheema);
 const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
 const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_names.coll_hash_storage,scheemas.HashStorage);
+const knowledge_base_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_knowledge_base,scheemas.KnowledgeBaseSheema);
+
+async function getKwgItemBy(id){
+  try {
+
+     const filter = { id: id }
+     const result =  await knowledge_base_collection.find(
+       filter
+     );
+
+     return result
+    
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
+async function getKwgItemsForUser(user){
+  try {
+
+    let filter = {"$or":[{"access":user},{"access":"all"}]};
+
+     const result =  await knowledge_base_collection.find(
+      filter,
+      { _id: 0, id: 1, name: 1,description:1,instructions:1}
+     );
+     
+     return result
+    
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
 
 
 async function saveHash(hash,json){
@@ -262,6 +300,24 @@ async function updateCompletionInDb(obj){
   }
 };
 
+
+async function updateManyEntriesInDbById(obj){
+  try {
+    const filter = obj.filter
+    const updateBody = obj.updateBody
+
+    return await dialog_collection.updateMany(
+      filter,
+      updateBody
+    );
+
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
 async function addMsgIdToToolCall(obj){
   try {
     const filter = obj.filter
@@ -373,7 +429,6 @@ async function insertToolCallResult(obj){
     throw err;
   }
 };
-
 
 
 const upsertCompletionPromise = async (CompletionObject) => {
@@ -527,7 +582,7 @@ const getDialogueByUserId = async (userid, regime) => {
     const result = await dialog_collection
       .find(
         filter,
-        { role: 1, sourceid: 1,createdAtSourceDT_UTC: 1, name: 1, content: 1, content_latex_formula: 1, tool_calls: 1, tool_reply: 1, tokens: 1, telegramMsgId:1, telegramMsgBtns:1, completion_version:1}
+        { role: 1, sourceid: 1,createdAtSourceDT_UTC: 1, name: 1, content: 1, content_latex_formula: 1, tool_calls: 1, tool_reply: 1, tokens: 1, telegramMsgId:1, telegramMsgBtns:1, completion_version:1,fileName:1,fileUrl:1,fileCaption:1,fileAIDescription:1}
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
@@ -1147,5 +1202,8 @@ module.exports = {
   insert_mdj_msg,
   get_mdj_msg_byId,
   saveHash,
-  getJsonBy
+  getJsonBy,
+  updateManyEntriesInDbById,
+  getKwgItemBy,
+  getKwgItemsForUser
 };

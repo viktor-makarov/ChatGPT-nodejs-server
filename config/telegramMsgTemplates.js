@@ -57,6 +57,7 @@ module.exports = {
     "OAI_ERR_503":"Сервер OpenAI не смог обработать запрос, т.к. перегружен другими запросами. Попробуйте еще раз, сейчас или позже.\n\nОригинальное сообщение сервера OpenAI: [original_message].",
     "DB_ERROR":"Ошибка базы данных. Обратитесь к администратору.",
     "MDJ_ERR1":"Midjourney отклонил запрос из-за превышения месячного лимита. Обратитесь к администратору.",
+    "MDJ_ERR2":"Midjourney не смог получить доступ к указанному файлу c картинкой. Возможно, после загрузки файла вы перезапустили диалог, что привело к удалению файла из временного хранилища. Загрузите файл повторно и повторите Ваш запрос.",
     "telegram_wait_time":"⚠️ Сервер Телеграмм перегружен. Оставшаяся часть сообщения будет доставлена через [seconds_to_wait] сек.",
     "wrong_regime":"Для запроса еще одного варианта, пожалуйста, переключитесь на функцию [regime], т.к. именно в ней было сформировано первоначальное сообщение.",
     "resend_to_admin":"Переслать администратору",
@@ -86,5 +87,6 @@ module.exports = {
     "unknown_command":"Неизвестная команда. Бот не умеет обрабатываеть данную команду.",
     "unknown_msg_type":"Данный тип сообщения не обрабатывается.",
     "unknown_callback":"Получен неизвестный call_back. Он не будет обработан.",
-    "translator_prompt":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian."
+    "translator_prompt":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian.",
+    "system_start_dialogue":"Use knowledge base from get_knowledge_base_item function when appropriate."
 };
