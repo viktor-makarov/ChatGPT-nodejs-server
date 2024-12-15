@@ -227,9 +227,6 @@ async function chatCompletionStreamAxiosRequest(
   }
 }
 
-
-
-
 module.exports = {
   getModels,
   chatCompletionStreamAxiosRequest,

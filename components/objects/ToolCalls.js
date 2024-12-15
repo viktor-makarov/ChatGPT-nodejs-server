@@ -296,26 +296,50 @@ async generateAvailableTools(userClass){
             try_limit: 3 }
             );
 
-            const kngBaseItems = await mongo.getKwgItemsForUser(userClass.userid)
-            functionList.push(
-                {type:"function",
-                function:{
-                    name: "get_knowledge_base_item",
-                    description: `Use this function when you need to get instructions to better perform on user's tasks on the following topics:\n ${JSON.stringify(kngBaseItems,null,4)}`,
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            id: {
-                                type: "string",
-                                description: `id of a knowledge base item`
-                            },
+        functionList.push(
+            {type:"function",
+            function:{
+                name: "extract_text_from_file",
+                description: "Use this function extract text from documents or images provided my user.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        file_url: {
+                            type: "string",
+                            description: `A url of the file to extract text from.`
                         },
-                        required: ["id"]
-                    }
-                },
-                friendly_name: "Запрос в базу знаний",
-                try_limit: 3 }
-                );
+                        file_mime_type: {
+                            type: "string",
+                            description: `A mime tupe of the file to extract text from. Allowed mime_types ${appsettings.file_options.allowed_mime_types.join(', ')}`
+                        },
+                    },
+                    required: ["file_url","file_mime_type"]
+                }
+            },
+            friendly_name: "Чтение файла",
+            try_limit: 3 }
+            );
+
+        const kngBaseItems = await mongo.getKwgItemsForUser(userClass.userid)
+        functionList.push(
+            {type:"function",
+            function:{
+                name: "get_knowledge_base_item",
+                description: `Use this function when you need to get instructions to better perform on user's tasks on the following topics:\n ${JSON.stringify(kngBaseItems,null,4)}`,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "string",
+                            description: `id of a knowledge base item`
+                        },
+                    },
+                    required: ["id"]
+                }
+            },
+            friendly_name: "Запрос в базу знаний",
+            try_limit: 3 }
+            );
         
         
         if (userClass.isAdmin) {

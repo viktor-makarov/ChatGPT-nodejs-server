@@ -59,7 +59,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         await requestMsgInstance.getFileLinkFromTgm()
         const uploadResult = await uploadFileToS3Handler(requestMsgInstance)
         const url = uploadResult.Location
-        await dialogueInstance.commitFileSystemToDialogue(url,requestMsgInstance)
+        await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
         break;
       }  else {
           responses.push({text:msqTemplates.file_handler_is_not_realized})
@@ -265,6 +265,19 @@ function formFoldedSysMsg(toolCallFriendlyNameObj,msg_id){
     };
 
   return {text:text,reply_markup:reply_markup}
+}
+
+function generateButtonDescription(buttons){
+
+  let description ={};
+  const descriotionSource = appsettings.mdj_options.buttons_description
+
+  for (const button of buttons){
+    const btnLabel = button.label;
+    description[btnLabel] = descriotionSource[btnLabel]
+  }
+
+  return description
 }
 
 function formCallsAndRepliesMsg(callsAndReplies,msg_id){
@@ -966,6 +979,8 @@ try{
   }
 }
 
+
+
 function extractTextBetweenDoubleAsterisks(text) {
   const matches = text.match(/\*\*(.*?)\*\*/);
   return matches ? matches[1] : null;
@@ -1037,5 +1052,6 @@ module.exports = {
   formFoldedSysMsg,
   mdj_custom_handler,
   mdj_create_handler,
-  resetTranslatorDialogHandler
+  resetTranslatorDialogHandler,
+  generateButtonDescription
 };

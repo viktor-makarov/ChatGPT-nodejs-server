@@ -69,7 +69,7 @@ class Dialogue extends EventEmitter {
 
 
 
-            if(Array.isArray(document.content) && document.content.length >0){
+            if(Array.isArray(document.content) && document.content.length >0 && document.role === "assistant"){
                 object.content = document.content[document.completion_version-1]
             } else {
                 object.content = document.content
@@ -93,8 +93,6 @@ class Dialogue extends EventEmitter {
 
     async getDialogueFromDB(){
 
-        const start = performance.now();
-
         const messagesFromDb = await mongo.getDialogueByUserId(this.#user.userid,this.#user.currentRegime)
         
         this.#dialogueFull = await messagesFromDb.map(document => ({
@@ -117,11 +115,7 @@ class Dialogue extends EventEmitter {
           }));
 
         this.#dialogueForRequest = this.generateDialogueForRequest(this.#dialogueFull)
-        
-        const endTime = performance.now();
-        const executionTime = endTime - start;
-        console.log(`getDialogueFromDB execution time: ${executionTime.toFixed(2)} ms`);
-          
+
         //  console.log("messagesFromDb",messagesFromDb)
       
         return this.#dialogueForRequest
@@ -237,7 +231,7 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 1,
-            content: text
+            content: [{type:"text",text:text}]
           }
 
         const savedPrompt = await mongo.upsertPrompt(promptObj); //записываем prompt в базу
@@ -315,18 +309,20 @@ class Dialogue extends EventEmitter {
 
     async  sendUnsuccessFileMsg(fileSystemObj){
 
-        const MsgText = `❌ Файл <code>${fileSystemObj.fileName}</code> не может быть включен в диалог. К сожалению, файлы с расширением <code>${fileSystemObj.fileExtention}</code> не обрабатываются.`
+        const MsgText = `❌ Файл <code>${fileSystemObj.fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы с расширением <code>${fileSystemObj.fileExtention}</code> не обрабатываются.`
 
         const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,null,"html")
     }
 
     async  sendSuccessFileMsg(fileSystemObj){
 
-        const MsgText = `✅ Файл <code>${fileSystemObj.fileName}</code> включен в диалог.`
+        const MsgText = `✅ Файл <code>${fileSystemObj.fileName}</code> добавлен в наш диалог.`
 
         let infoForUser = {
             fileName:`<code>${fileSystemObj.fileName}</code>`,
             fileUrl:`<code>${fileSystemObj.fileUrl}</code>`,
+            fileExtention: fileSystemObj.fileExtention,
+            fileMimeType:fileSystemObj.fileMimeType
            }
           
         if(fileSystemObj.fileCaption){
@@ -355,9 +351,9 @@ class Dialogue extends EventEmitter {
 
     };
 
-    async commitFileSystemToDialogue(url,requestInstance){
+    async commitFileToDialogue(url,requestInstance){
 
-        const currentRole = "system"
+        const currentRole = "user"
         const obj = {
             filename:requestInstance.fileName,
             download_url:url,
@@ -374,13 +370,17 @@ class Dialogue extends EventEmitter {
             fileUrl:url,
             fileCaption:requestInstance.fileCaption,
             fileExtention:requestInstance.fileExtention,
+            fileMimeType:requestInstance.fileMimeType,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 0,
-            content: text
+            content: [
+                {type:"text",text:text},
+                {type:"image_url",image_url: {url:url}}
+            ]
           }
 
         const prohibitedExtentions = appsettings.file_options.prohibited_extentions
@@ -415,7 +415,7 @@ class Dialogue extends EventEmitter {
         
         await this.sendSuccessFileMsg(fileSystemObj)
         
-        console.log("SYSTEM MESSAGE")
+        console.log("FILE UPLOADED")
     };
 
     async commitToolCallResults(obj){

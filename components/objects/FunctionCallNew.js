@@ -45,8 +45,9 @@ class FunctionCallNew{
             else if(this.#functionName==="create_midjourney_image"){this.#functionResult = await this.CreateMdjImageRouter()} 
             else if(this.#functionName==="get_users_activity"){this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
             else if(this.#functionName==="get_chatbot_errors") {this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("errors_log")}
-            else if(this.#functionName==="get_knowledge_base_item") {this.#functionResult = await this.get_knowledge_base_item()   
-            } else {this.#functionName = {error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}}
+            else if(this.#functionName==="get_knowledge_base_item") {this.#functionResult = await this.get_knowledge_base_item()} 
+            else if(this.#functionName==="extract_text_from_file") {this.#functionResult = await this.extract_text_from_file()}    
+            else {this.#functionName = {error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}}
 
             return this.#functionResult
         }
@@ -211,6 +212,39 @@ class FunctionCallNew{
                     throw err;
                 }
             };
+        async extract_text_from_file(){
+
+            try{
+                
+            let result;
+            const argFieldValidationResult = this.argumentsFieldValidation()
+            if(argFieldValidationResult.success===0){
+                return argFieldValidationResult
+            }
+            
+            try{
+                this.convertArgumentsToJSON()
+            } catch (err){
+                return {success:0,error: err.message + "" + err.stack}
+            }   
+
+            try{
+                this.validateRequiredFields()
+            } catch (err){
+                return {success:0,error: err.message + "" + err.stack}
+            }
+            
+            const url = this.#argumentsJson.file_url
+            const mine_type = this.#argumentsJson.file_mime_type
+            
+                        
+            return {success:1,result:"Данная функция еще не реализована"}
+                
+                } catch(err){
+                    err.place_in_code = err.place_in_code || "extract_text_from_file";
+                    throw err;
+                }
+            };
 
     runJavaScriptCodeAndCaptureLogAndErrors(code) {
         // Store the original console.log function
@@ -316,9 +350,13 @@ class FunctionCallNew{
                 }
             };
 
+            const buttons = result.replymsg.options
+            const btnsDescription = telegramCmdHandler.generateButtonDescription(buttons)
+
              const functionResult = {
                     success:1,
-                    result:"The image has been generated and successfully sent to the user."
+                    result:"The image has been generated and successfully sent to the user with several options to handle the image.",
+                    buttonsDescription: btnsDescription
                 };
                 return functionResult
             };
@@ -354,6 +392,20 @@ class FunctionCallNew{
         this.#argumentsJson=JSON.parse(this.#argumentsText)
         } catch(err){
             throw new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+        }
+    }
+
+    validateRequiredFields(){
+        if(!this.#argumentsJson.file_mime_type){
+            throw new Error(`file_mime_type parameter is missing. Provide the value for the agrument.`)
+        }
+
+        if(!appsettings.file_options.allowed_mime_types.includes(this.#argumentsJson.file_mime_type)){
+            throw new Error(`file_mime_type ${this.#argumentsJson.file_mime_type} is not supported for extraction.`)
+        }
+
+        if(!this.#argumentsJson.file_url){
+            throw new Error(`file_mime_type parameter is missing. Provide the value for the agrument.`)
         }
     }
     
