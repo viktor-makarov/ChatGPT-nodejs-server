@@ -267,10 +267,13 @@ function formFoldedSysMsg(toolCallFriendlyNameObj,msg_id){
   return {text:text,reply_markup:reply_markup}
 }
 
-function generateButtonDescription(buttons){
+function generateButtonDescription(buttonsInput){
 
   let description ={};
+  let buttons = buttonsInput;
   const descriotionSource = appsettings.mdj_options.buttons_description
+  const exclude_buttons = appsettings.mdj_options.exclude_buttons;
+  buttons = buttons.filter(button => !exclude_buttons.includes(button.label));
 
   for (const button of buttons){
     const btnLabel = button.label;
@@ -632,8 +635,15 @@ async function resetTranslatorDialogHandler(requestMsgInstance) {
 
 async function resetdialogHandler(requestMsgInstance) {
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "chat");
-    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) 
+    const deleteS3Results = await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) 
+    const deletedFiles = deleteS3Results.Deleted
+
+   if(deletedFiles){
+
+    return { text: msqTemplates.dialogresetsuccessfully_extended.replace("[files]",deletedFiles.length) };
+   } else {
     return { text: msqTemplates.dialogresetsuccessfully };
+   }
 }
 
 async function settingsChangeHandler(requestMsgInstance) {
@@ -979,8 +989,6 @@ try{
   }
 }
 
-
-
 function extractTextBetweenDoubleAsterisks(text) {
   const matches = text.match(/\*\*(.*?)\*\*/);
   return matches ? matches[1] : null;
@@ -988,17 +996,19 @@ function extractTextBetweenDoubleAsterisks(text) {
 
 async function mdj_custom_handler(requestInstance,replyInstance){
 
-  const statusMsg = await replyInstance.sendStatusMsg()
   const jsonDecoded = await otherFunctions.decodeJson(requestInstance.callback_data)
 
+  const buttonPushed = jsonDecoded.label
+
+  const statusMsg = await replyInstance.simpleSendNewMessage(`${buttonPushed}. Выполняется.`,null)
   let msg;
   try{
-  msg = await MdjMethods.executeCustom({
-  msgId:jsonDecoded.id,
-  customId:jsonDecoded.custom,
-  content:jsonDecoded.content,
-  flags:jsonDecoded.flags
-  });
+    msg = await MdjMethods.executeCustom({
+    msgId:jsonDecoded.id,
+    customId:jsonDecoded.custom,
+    content:jsonDecoded.content,
+    flags:jsonDecoded.flags
+    });
   } catch(err){
     err.code = "MDJ_ERR"
     err.user_message = err.message
@@ -1021,6 +1031,11 @@ async function mdj_custom_handler(requestInstance,replyInstance){
     imageBuffer:imageBuffer
 });
 
+return {
+  imageBuffer:imageBuffer,
+  replymsg:msg,
+  buttonPushed:buttonPushed
+}
 };
 
 function helpHandler() {

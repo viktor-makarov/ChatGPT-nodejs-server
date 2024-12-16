@@ -268,10 +268,12 @@ class Dialogue extends EventEmitter {
 
         const currentRole = "system"
 
+        const msdId = requestInstance.msgId ? requestInstance.msgId : requestInstance.callbackId
+        const msgTS = requestInstance.msgTS ? requestInstance.msgTS : requestInstance.callback_msgTS
         let systemObj = {
-            sourceid: requestInstance.msgId,
-            createdAtSourceTS: requestInstance.msgTS,
-            createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
+            sourceid: msdId,
+            createdAtSourceTS: msgTS,
+            createdAtSourceDT_UTC: new Date(msgTS * 1000),
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,

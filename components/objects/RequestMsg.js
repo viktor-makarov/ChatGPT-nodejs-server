@@ -16,6 +16,7 @@ class RequestMsg{
 #callback_dataRaw;
 #callback_event;
 #callback_data;
+#callback_msgTS;
 #user;
 #chatId;
 #msgId;
@@ -47,13 +48,14 @@ constructor(obj) {
     this.#user = obj.userInstance
     this.#botInstance = obj.botInstance
     if(obj.requestMsg.data){
-        this.#inputType = "call_back"
+
         this.#callbackId = obj.requestMsg.id;
         this.#callback_dataRaw = obj.requestMsg.data
 
         this.#refMsgId = obj.requestMsg.message.message_id
         
         this.#refRawMsg = obj.requestMsg.message
+        this.#callback_msgTS = obj.requestMsg.message.date;
         this.#text = obj.requestMsg.message.text;
 
         const callback_data_obj = JSON.parse(this.#callback_dataRaw)
@@ -351,6 +353,9 @@ get chatId(){
 
 get callback_dataRaw(){
     return this.#callback_dataRaw
+}
+get callback_msgTS(){
+    return this.#callback_msgTS
 }
 
 get callback_event(){

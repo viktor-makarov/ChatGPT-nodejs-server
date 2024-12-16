@@ -398,7 +398,7 @@ async generateMdjButtons(msg,reply_markup){
 
   const sorted_buttons = appsettings.mdj_options.sorted_buttons
   const exclude_buttons = appsettings.mdj_options.exclude_buttons;
-
+  
   let buttons = msg.options.filter(button => !exclude_buttons.includes(button.label));
   buttons.sort((a, b) => sorted_buttons.indexOf(a.label) - sorted_buttons.indexOf(b.label));
   

@@ -324,7 +324,6 @@ function router(botInstance) {
             
             const unfoldedFileSysMsg = `<b>Uploaded file info:</b>\n${JSON.stringify(contentObject.unfolded_text,null,4)}`;
 
-
             const callback_data = {e:"f_f_up",d:hash_unfolded}
             
             const fold_button = {
@@ -350,7 +349,6 @@ function router(botInstance) {
             }
           }
             break;
-
           case "f_f_up":
               const hash_folded = requestMsg.callback_data
                const contentFoldObject = await otherFunctions.decodeJson(hash_folded)
@@ -380,7 +378,6 @@ function router(botInstance) {
               }
   
           break;
-
           case "settings":
             try{
             const response_s = await telegramCmdHandler.settingsOptionsHandler(
@@ -421,7 +418,15 @@ function router(botInstance) {
           break;
           case "mdjbtn":
           
-          await telegramCmdHandler.mdj_custom_handler(requestMsg,replyMsg)
+          const resultMdj = await telegramCmdHandler.mdj_custom_handler(requestMsg,replyMsg)
+
+          const buttons = resultMdj.replymsg.options
+          const btnsDescription = telegramCmdHandler.generateButtonDescription(buttons)
+          const choosenButton = resultMdj.buttonPushed
+          const choosenBtnsDescription = telegramCmdHandler.generateButtonDescription([{label:choosenButton}])         
+          const text = `User has pushed the button ${JSON.stringify(choosenBtnsDescription)} and has the following further options ${JSON.stringify(btnsDescription)}`
+          await dialogue.commitSystemToDialogue(text,requestMsg)
+          
           break;
           default:
               responses = [{text:msqTemplates.unknown_callback}]
