@@ -364,6 +364,12 @@ class Dialogue extends EventEmitter {
 
         const text = `User provided the following file\n${JSON.stringify(obj, null, 4)}`
 
+        let content = [{type:"text",text:text}]
+
+        if(requestInstance.fileType ==="image"){
+            content.push({type:"image_url",image_url: {url:url}})
+        }
+
         let fileSystemObj = {
             sourceid: requestInstance.msgId,
             createdAtSourceTS: requestInstance.msgTS,
@@ -379,18 +385,8 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 0,
-            content: [
-                {type:"text",text:text},
-                {type:"image_url",image_url: {url:url}}
-            ]
-          }
-
-        const prohibitedExtentions = appsettings.file_options.prohibited_extentions
-
-        if(prohibitedExtentions.includes(requestInstance.fileExtention)){
-            await this.sendUnsuccessFileMsg(fileSystemObj)
-            return
-        }
+            content: content
+          }       
 
         const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
         fileSystemObj._id = savedSystem.upserted[0]._id
@@ -516,7 +512,7 @@ class Dialogue extends EventEmitter {
 
         await this.triggerToolCalls(completionObject)
 
-        console.log("COMPLETION MESSAGE")
+        console.log("COMPLETION MESSAGE COMMIT")
         this.emit('CompletionCommited', {completionObject:completionObject})
         this.#regenerateCompletionFlag = false
     }

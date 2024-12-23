@@ -236,9 +236,27 @@ class FunctionCallNew{
             
             const url = this.#argumentsJson.file_url
             const mine_type = this.#argumentsJson.file_mime_type
-            
+
+            let extractedObject;
+            let numberOfTokens;
+            try{
+                extractedObject = await func.extractTextLambda(url,mine_type)
+                
+                if(extractedObject.success ===1){
+                    numberOfTokens = await func.countTokensLambda(extractedObject.text,this.#user.currentModel)
+                } else {
+                    return {success:0, error: extractedObject.error, instructions:"Inform the user about the error details"}
+                }
+                console.log("numberOfTokens",numberOfTokens)
+                console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)    
+                if(numberOfTokens >this.#tokensLimitPerCall){
+                    return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the file content is too big to fit into the dialogue", instructions:"Inform the user about the error details"}
+                }
+            } catch(err){
+                return {success:0,error:`${err.message} ${err.stack}`,instructions:"Inform the user about the error details in simple and understandable for ordinary users words."}
+            }
                         
-            return {success:1,result:"Данная функция еще не реализована"}
+            return {success:1,content_token_count:numberOfTokens, result:extractedObject.text}
                 
                 } catch(err){
                     err.place_in_code = err.place_in_code || "extract_text_from_file";
@@ -292,7 +310,6 @@ class FunctionCallNew{
         } 
     
         const url = this.#argumentsJson.url
-            
         const myUrlResource = new UrlResource(url)
     
         let replyBody;
@@ -311,7 +328,7 @@ class FunctionCallNew{
             return {success:0,error:`${err.message} ${err.stack}`,instructions:"Inform the user about the error details in simple and understandable for ordinary users words."}
         }
         
-        return {success:1, content_token_count:numberOfTokens, instructions:"(1) Explicitly inform the user if in you completion you use info from the url content and give relevant references (2) your should use urls from the content to browse futher if it is needed for the request",result:replyBody}
+        return {success:1, content_token_count:numberOfTokens, instructions:"(1) Explicitly inform the user if in you completion you use info from the url content and give relevant references (2) your should use urls from the content to browse further if it is needed for the request",result:replyBody}
     
             } catch(err){
                 err.place_in_code = err.place_in_code || "fetchUrlContentRouter";

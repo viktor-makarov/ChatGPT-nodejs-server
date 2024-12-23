@@ -57,9 +57,17 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
       } else if(requestMsgInstance.fileType === "image" || requestMsgInstance.fileType === "document"){
         
         await requestMsgInstance.getFileLinkFromTgm()
+
+        if(requestMsgInstance.uploadFileError){
+          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg,requestMsgInstance);
+          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html")
+          break;
+        }
+        
         const uploadResult = await uploadFileToS3Handler(requestMsgInstance)
         const url = uploadResult.Location
         await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
+        
         break;
       }  else {
           responses.push({text:msqTemplates.file_handler_is_not_realized})
@@ -138,7 +146,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       requestMsgInstance.user.isRegistered =true
     }
 
-  }  else if(cmpName==="resetchat"){
+  }  else if(cmpName==="resetchat" || cmpName==="Перезапустить диалог"){
 
     await dialogueInstance.getDialogueFromDB()
     const completionMsIds = dialogueInstance.getCompletionsLastMsgIds() 
@@ -156,31 +164,58 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   } else if(cmpName==="help"){
 
     if(isAdmin){
-      const response = helpHandler();
+      let response = helpHandler();
+      response.buttons = {reply_markup: {
+        remove_keyboard: true,
+      }}
       responses.push(response)
     } else {
-      responses.push({ text: msqTemplates.help })
+      responses.push({ text: msqTemplates.help,buttons:{reply_markup: {
+        remove_keyboard: true,
+      }}})
     }
 
   } else if(cmpName==="faq"){
-    const response = faqHandler();
+    let response = faqHandler();
+    response.buttons = {reply_markup: {
+      remove_keyboard: true,
+    }}
     responses.push(response)
 
   } else if(cmpName==="settings"){
-    const response = await settingsOptionsHandler(requestMsgInstance);
+    let response = await settingsOptionsHandler(requestMsgInstance);
     responses.push(response)
 
   } else if(cmpName==="info"){
-    const response = {text:requestMsgInstance.infoHandler().mainText};
+    let response = {text:requestMsgInstance.infoHandler().mainText};
+    response.buttons = {reply_markup: {
+      remove_keyboard: true,
+    }}
     responses.push(response)
   } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="voicetotext" || cmpName==="texttospeech"){
 
     await dialogueInstance.getDialogueFromDB() //чтобы посчитать потраченные токены в диалоге
-    const response = await changeRegimeHandlerPromise({
+    let response = await changeRegimeHandlerPromise({
       newRegime:cmpName,
       requestMsgInstance:requestMsgInstance,
       dialogueInstance:dialogueInstance
     });
+
+    if(cmpName==="chat"){
+      response.buttons = {
+        reply_markup: {
+          keyboard: [['Перезапустить диалог']],
+          resize_keyboard: true,
+        }
+      }
+    } else {
+      response.buttons = {
+        reply_markup: {
+          remove_keyboard: true,
+        }
+      }
+    }
+
     responses.push(response)
 
   } else if(cmpName==="imagine"){
@@ -199,16 +234,23 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   } else if(cmpName==="reports"){
     if (!isAdmin) {
-      responses.push({text:msqTemplates.reports_no_permission,buttons:{reply_markup: {} }})
+      responses.push({text:msqTemplates.reports_no_permission,buttons:{reply_markup: {
+        remove_keyboard: true,
+      }}})
     } else {
-      const response = await reportsOptionsHandler(requestMsgInstance);
+      let response = await reportsOptionsHandler(requestMsgInstance);
+      response.buttons = {reply_markup: {
+        remove_keyboard: true,
+      }}
       responses.push(response)
     }
   } else if(cmpName==="donate"){
-    responses.push({ text: msqTemplates.donate,parse_mode:"HTML"})
+    responses.push({ text: msqTemplates.donate,parse_mode:"HTML",buttons:{reply_markup: {
+      remove_keyboard: true,
+    }}})
   }  else if(cmpName==="create_free_account"){
     if (!isAdmin) {
-      responses.push({text:msqTemplates.no_admin_permissions,buttons:{reply_markup: {} }})
+      responses.push({text:msqTemplates.no_admin_permissions})
     } else {
       const response = await createNewFreeAccount();
       responses.push(response)
@@ -388,9 +430,7 @@ async function adminHandler(requestMsgInstance) {
 
 async function uploadFileToS3Handler(requestMsgInstance){
 
-
 const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
-
 const filename = requestMsgInstance.user.userid + "_" + requestMsgInstance.msgId + "." + requestMsgInstance.fileExtention;
 
 const uploadResult  = await aws.uploadFileToS3(downloadStream,filename)
@@ -638,11 +678,18 @@ async function resetdialogHandler(requestMsgInstance) {
     const deleteS3Results = await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) 
     const deletedFiles = deleteS3Results.Deleted
 
+    const buttons = {
+      reply_markup: {
+        keyboard: [['Перезапустить диалог']],
+        resize_keyboard: true,
+      }
+    }
+
    if(deletedFiles){
 
-    return { text: msqTemplates.dialogresetsuccessfully_extended.replace("[files]",deletedFiles.length) };
+    return { text: msqTemplates.dialogresetsuccessfully_extended.replace("[files]",deletedFiles.length)};
    } else {
-    return { text: msqTemplates.dialogresetsuccessfully };
+    return { text: msqTemplates.dialogresetsuccessfully};
    }
 }
 

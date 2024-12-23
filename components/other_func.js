@@ -303,7 +303,7 @@ async function countTokensLambda(text,model){
   const requestObj = {"text":text,"model":model}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2_countTokens",requestObj)
+  const result = await aws.lambda_invoke("R2D2-prod-countToken",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -317,6 +317,32 @@ async function countTokensLambda(text,model){
       throw err
   } else if (resultJSON.errorMessage){
     const err = new Error("countTokensLambda: " + resultJSON.errorMessage)
+    throw err
+  } else {
+    const err = new Error('unspecified error in aws.lambda_invoke function')
+    throw err
+  }
+}
+
+async function extractTextLambda(url,mine_type){
+
+  const requestObj = {"file_url":url,"file_mime_type":mine_type}
+  const start = performance.now();
+
+  const result = await aws.lambda_invoke("R2D2-prod-extractTextFromFile",requestObj)
+  
+  const endTime = performance.now();
+  const executionTime = endTime - start;
+  console.log(`extractTextFromFile execution time: ${executionTime.toFixed(2)} ms`);
+  const resultJSON = JSON.parse(result)
+
+  if(resultJSON.statusCode === 200){
+    return resultJSON.body
+  } else if (resultJSON.statusCode){
+      const err = new Error("extractTextLambda: " + resultJSON.body)
+      throw err
+  } else if (resultJSON.errorMessage){
+    const err = new Error("extractTextLambda: " + resultJSON.errorMessage)
     throw err
   } else {
     const err = new Error('unspecified error in aws.lambda_invoke function')
@@ -758,5 +784,6 @@ module.exports = {
   encodeJson,
   decodeJson,
   startFileDownload,
-  extractSystemRolesFromEnd
+  extractSystemRolesFromEnd,
+  extractTextLambda
 };

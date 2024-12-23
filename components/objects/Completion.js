@@ -53,7 +53,6 @@ class Completion extends Transform {
     #toolCallsInstance;
     #tool_calls=[];
 
-
     #actualModel;
     #sendWithDelay;
 
@@ -182,7 +181,6 @@ class Completion extends Transform {
 
       this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
       this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
-      
       
       const result =  {
         telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
@@ -483,6 +481,7 @@ class Completion extends Transform {
     completionStausUpdate(){
       if (this.#completionFinishReason == "length" || this.#completionFinishReason == "stop") {
         this.#completion_ended = true;
+        console.log(new Date(),"Completion finished")
         this.#replyMsg.completion_ended = true;
       }
     }

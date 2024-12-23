@@ -51,7 +51,7 @@ function router(botInstance) {
   botInstance.on("message", async (msg) => {
     //Слушаем сообщения пользователей
     try {
-      
+   
       const user = new User(msg.from)
       await user.getUserProfileFromDB()
 

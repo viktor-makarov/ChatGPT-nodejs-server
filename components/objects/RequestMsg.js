@@ -24,10 +24,13 @@ class RequestMsg{
 #isForwarded;
 
 #commandName;
-
+#kbdCmds = ["Перезапустить диалог"]
 #fromId;
 #inputType;
 
+#uploadFileError;
+#unsuccessfullFileUploadUserMsg;
+#unsuccessfullFileUploadSystemMsg;
 #fileType;
 #fileName;
 #fileCaption;
@@ -44,7 +47,7 @@ class RequestMsg{
 
 constructor(obj) {
  //   console.log(obj.requestMsg)
-
+ 
     this.#user = obj.userInstance
     this.#botInstance = obj.botInstance
     if(obj.requestMsg.data){
@@ -263,12 +266,30 @@ textToSpeechConstraintsCheck(){
 }
 
 async getFileLinkFromTgm(){
+    
+    try{
     this.#fileLink = await this.#botInstance.getFileLink(this.#fileId)
+    } catch(err){
+        this.#uploadFileError = err.message
+        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
+        this.#unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${this.#fileName}", but failed with the following error: ${this.#uploadFileError}`
+        return null
+    }
     this.#fileName = this.#fileName ? this.#fileName : this.extractFileNameFromURL(this.#fileLink)
     this.#fileExtention = this.extractFileExtention(this.#fileName)
     this.#fileMimeType = this.#fileMimeType ? this.#fileMimeType : mime.lookup(this.#fileName)
+    
+    const prohibitedExtentions = appsettings.file_options.prohibited_extentions
+
+    if(prohibitedExtentions.includes(this.#fileExtention)){
+        this.#uploadFileError = `Files with extentions ${prohibitedExtentions.join(", ")} are not allowed to upload to the dialogue}`
+        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы с расширением <code>${prohibitedExtentions.join(", ")}</code> не обрабатываются.`
+        this.#unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${this.#fileName}", but failed with the following error: ${this.#uploadFileError}`
+    }
+
     return this.#fileLink
 };
+
 
 
 async audioReadableStreamFromTelegram(){
@@ -305,20 +326,16 @@ print(){
 
 checkIfCommand(message) {
 
-    if (message.text && message.text.startsWith('/')) {
-    return message.text.split(' ')[0].substring(1);
+    if(!message.text){
+        return null;
+    } else if (message.text.startsWith('/')) {
+        return message.text.split(' ')[0].substring(1);
+    } else if (this.#kbdCmds.includes(message.text)) {
+        return message.text 
     }
     return null;
   }
 
-isCommand(){
-
-    if(/^\//i.test(this.#text)){
-        return true
-    } else {
-        return false
-    }
-};
 
 get fileMimeType(){
     return this.#fileMimeType
@@ -326,6 +343,18 @@ get fileMimeType(){
 
 get fileType(){
     return this.#fileType
+}
+
+get uploadFileError(){
+    return this.#uploadFileError
+}
+
+get unsuccessfullFileUploadUserMsg(){
+    return this.#unsuccessfullFileUploadUserMsg
+}
+
+get unsuccessfullFileUploadSystemMsg(){
+    return this.#unsuccessfullFileUploadSystemMsg
 }
 
 get botInstance(){

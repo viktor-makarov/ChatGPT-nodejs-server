@@ -2,6 +2,9 @@ FROM node:20.5.1-alpine
 
 ENV NODE_ENV=production
 
+#INSTALL NECESSARY PACKAGES
+RUN apk add --no-cache ttf-dejavu
+
 # Working directory for the app
 WORKDIR /chatbot
 

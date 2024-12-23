@@ -1,6 +1,7 @@
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
+const { Deadline } = require("aws-sdk");
 
 class ReplyMsg extends EventEmitter {
 
@@ -468,6 +469,9 @@ return reply_markup
 
 async deliverCompletionToTelegram(completionInstance){
 
+        if(this.#completion_ended){
+          console.log(new Date(),"deliverCompletionToTelegram invoked")
+        }
         this.setInProgress()
         
             let oneMsgText;
@@ -497,15 +501,14 @@ async deliverCompletionToTelegram(completionInstance){
                   oneMsgText = resultObj.html
                   completionInstance.completionLatexFormulas = resultObj.latex_formulas
 
-                }
-
-                if(options.parse_mode==="Markdown"){
+                } else if (options.parse_mode==="Markdown"){
                     oneMsgText = this.wireStingForMarkdown(oneMsgText)
                 }
 
                 const lastMsgPart = this.#completion_ended && !msgExceedsThreshold
 
                 if (lastMsgPart) {
+                  
                 //Если отправялем последнюю часть сообщения
                   let reply_markup = this.copyValue(this.#completionReplyMarkupTemplate)
                   if(completionInstance.completionCurrentVersionNumber>1){
@@ -522,7 +525,8 @@ async deliverCompletionToTelegram(completionInstance){
                   reply_markup.inline_keyboard.push([this.#completionRedaloudButtons])
                   
                   options.reply_markup = JSON.stringify(reply_markup);
-
+                  
+                  
                   completionInstance.telegramMsgBtns = true;
                   }
 
