@@ -300,7 +300,7 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "extract_text_from_file",
-                description: "Use this function extract text from documents or images provided my user.",
+                description: `Use this function to extract text from documents or images provided my user. The list of mine types for which this function can be used is as followes: ${appsettings.file_options.allowed_mime_types.join(', ')}`,
                 parameters: {
                     type: "object",
                     properties: {
@@ -310,7 +310,7 @@ async generateAvailableTools(userClass){
                         },
                         file_mime_type: {
                             type: "string",
-                            description: `A mime tupe of the file to extract text from. Allowed mime_types ${appsettings.file_options.allowed_mime_types.join(', ')}`
+                            description: `The mime type of the file.`
                         },
                     },
                     required: ["file_url","file_mime_type"]

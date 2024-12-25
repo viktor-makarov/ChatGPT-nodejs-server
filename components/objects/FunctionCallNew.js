@@ -233,9 +233,14 @@ class FunctionCallNew{
             } catch (err){
                 return {success:0,error: err.message + "" + err.stack}
             }
+
             
             const url = this.#argumentsJson.file_url
             const mine_type = this.#argumentsJson.file_mime_type
+
+            if(!appsettings.file_options.allowed_mime_types.includes(mine_type)){
+                return {success:0,error: `this function can not be used for mime type ${mine_type}`}
+            }
 
             let extractedObject;
             let numberOfTokens;
