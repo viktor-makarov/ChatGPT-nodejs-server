@@ -46,7 +46,7 @@ class FunctionCallNew{
             else if(this.#functionName==="get_users_activity"){this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
             else if(this.#functionName==="get_chatbot_errors") {this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("errors_log")}
             else if(this.#functionName==="get_knowledge_base_item") {this.#functionResult = await this.get_knowledge_base_item()} 
-            else if(this.#functionName==="extract_text_from_file") {this.#functionResult = await this.extract_text_from_file()}    
+            else if(this.#functionName==="extract_text_from_file") {this.#functionResult = await this.extract_text_from_file_router()}    
             else {this.#functionName = {error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}}
 
             return this.#functionResult
@@ -212,59 +212,80 @@ class FunctionCallNew{
                     throw err;
                 }
             };
-        async extract_text_from_file(){
+
+        async extract_text_from_file(url,mine_type,index){
+
+            try{
+
+                const extractedObject = await func.extractTextFromFile(url,mine_type)
+
+                if(extractedObject.success===1){
+                    return {success:1,index:index,resource_url:url,resource_mine_type:mine_type,text:extractedObject.text}
+                } else {
+                    return {success:0,index:index,resource_url:url,resource_mine_type:mine_type, error:extractedObject.error}
+                }
+                
+                
+            } catch(err){
+                console.log(err)
+                return {success:0,index:index,resource_url:url,resource_mine_type:mine_type, error:`${err.message} ${err.stack}`}
+            }
+
+        }
+
+
+        async extract_text_from_file_router(){
 
             try{
                 
-            let result;
             const argFieldValidationResult = this.argumentsFieldValidation()
             if(argFieldValidationResult.success===0){
                 return argFieldValidationResult
             }
-            
+            console.log("this.#argumentsText",this.#argumentsText)
             try{
                 this.convertArgumentsToJSON()
             } catch (err){
                 return {success:0,error: err.message + "" + err.stack}
-            }   
-
+            }
+           
+           
+            
             try{
                 this.validateRequiredFields()
             } catch (err){
                 return {success:0,error: err.message + "" + err.stack}
             }
 
+            const extractFunctions = this.#argumentsJson.resources.map((resource,index) => this.extract_text_from_file(resource.file_url,resource.file_mime_type,index))
+
+            let results = await Promise.all(extractFunctions)
+
+            results.sort((a, b) => a.index - b.index);
+
+            console.log("results",results)
+
+
+            for (const result of results){
+                if(result.success === 0){
+                    return {success:0,resource_index:result.index,resource_url:result.resource_url,resource_mine_type:result.resource_mine_type,error: error + "" + err.stack,instructions:"Fix the error in the respective resource and re-call the entire function."}
+                }
+            };
+
+            const concatenatedText = results.map(obj => obj.text).join(' ');
             
-            const url = this.#argumentsJson.file_url
-            const mine_type = this.#argumentsJson.file_mime_type
-
-            if(!appsettings.file_options.allowed_mime_types.includes(mine_type)){
-                return {success:0,error: `this function can not be used for mime type ${mine_type}`}
-            }
-
-            let extractedObject;
-            let numberOfTokens;
-            try{
-                extractedObject = await func.extractTextLambda(url,mine_type)
-                
-                if(extractedObject.success ===1){
-                    numberOfTokens = await func.countTokensLambda(extractedObject.text,this.#user.currentModel)
-                } else {
-                    return {success:0, error: extractedObject.error, instructions:"Inform the user about the error details"}
-                }
-                console.log("numberOfTokens",numberOfTokens)
-                console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)    
-                if(numberOfTokens >this.#tokensLimitPerCall){
-                    return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the file content is too big to fit into the dialogue", instructions:"Inform the user about the error details"}
-                }
-            } catch(err){
-                return {success:0,error:`${err.message} ${err.stack}`,instructions:"Inform the user about the error details in simple and understandable for ordinary users words."}
+            const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
+            
+            console.log("numberOfTokens",numberOfTokens)
+            console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)    
+            if(numberOfTokens >this.#tokensLimitPerCall){
+                return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the file content is too big to fit into the dialogue", instructions:"Inform the user about the error details"}
             }
                         
-            return {success:1,content_token_count:numberOfTokens, result:extractedObject.text}
+            return {success:1,content_token_count:numberOfTokens, result:concatenatedText}
                 
                 } catch(err){
-                    err.place_in_code = err.place_in_code || "extract_text_from_file";
+                    err.place_in_code = err.place_in_code || "extract_text_from_file_router";
                     throw err;
                 }
             };
@@ -407,28 +428,81 @@ class FunctionCallNew{
 
     }
 
+    escapeJSONString(str) {
+        return str.replace(/[\\"\u0000-\u001F\u007F-\u009F]/g, function(character) {
+          // JSON safe escape sequences
+          switch (character) {
+            case '\\': return '\\\\';
+            case '"': return '\\"';
+            case '\b': return '\\b';
+            case '\f': return '\\f';
+            case '\n': return '\\n';
+            case '\r': return '\\r';
+            case '\t': return '\\t';
+            default:
+              // Encode any non-printable characters in hex
+              return '\\u' + ('0000' + character.charCodeAt(0).toString(16)).slice(-4);
+          }
+        });
+      }
 
 
     convertArgumentsToJSON(){
         try{
         this.#argumentsJson=JSON.parse(this.#argumentsText)
         } catch(err){
-            throw new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+
+            try{
+                this.#argumentsText = this.escapeJSONString(this.#argumentsText)
+                console.log("this.#argumentsText",this.#argumentsText)
+                this.#argumentsJson=JSON.parse(this.#argumentsText)
+            } catch(err){
+                throw new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+            }
+
         }
     }
 
+    convertResourcesParamToJSON(){
+
+
+        try{
+            this.#argumentsJson.resources = JSON.parse(this.#argumentsJson.resources)
+        } catch(err){
+            throw new Error(`Received 'resources' object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+        }
+
+    }
+
     validateRequiredFields(){
-        if(!this.#argumentsJson.file_mime_type){
-            throw new Error(`file_mime_type parameter is missing. Provide the value for the agrument.`)
+
+        const resources = this.#argumentsJson.resources
+
+        if(!resources){
+            throw new Error(`'resources' parameter is missing. Provide the value for the agrument.`)
         }
 
-        if(!appsettings.file_options.allowed_mime_types.includes(this.#argumentsJson.file_mime_type)){
-            throw new Error(`file_mime_type ${this.#argumentsJson.file_mime_type} is not supported for extraction.`)
+        if(!Array.isArray(this.#argumentsJson.resources)){
+            throw new Error(`'resources' parameter should be an array`)
         }
 
-        if(!this.#argumentsJson.file_url){
-            throw new Error(`file_mime_type parameter is missing. Provide the value for the agrument.`)
+        let index = 0;
+        for (const resource of this.#argumentsJson.resources){
+            const file_url = resource.file_url
+            const file_mime_type = resource.file_mime_type
+            
+            if(!file_url){
+                throw new Error(`In resource undex index ${index} file_url parameter is missing. Provide the value for the agrument.`)
+            }
+
+            if(!appsettings.file_options.allowed_mime_types.includes(file_mime_type)){
+                throw new Error(`In resource undex index ${index} file_mime_type ${file_mime_type} is not supported for extraction.`)
+            }    
+
+            index = index + 1
         }
+
+        
     }
     
 };

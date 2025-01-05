@@ -11,13 +11,15 @@ const aws = require("./aws_func.js")
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
   let responses =[];
 
-  switch(requestMsgInstance.user.currentRegime) {
-    case "voicetotext":
+  const current_regime = requestMsgInstance.user.currentRegime
+
+  if(current_regime === "voicetotext"){
         if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
+          console.log("audio received")
           const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
           if(checkResult.success===0){
             responses.push(checkResult.response)
-            break;
+            return
           }
           const result = await replyMsgInstance.sendAudioListenMsg()
           const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
@@ -27,20 +29,18 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
             chat_id:replyMsgInstance.chatId,
             message_id:result.message_id
           })
-          break;
         } else {
           responses.push({text:msqTemplates.file_type_cannot_be_converted_to_text})
         }
-      break;
-    case "texttospeech":
+      } else if(current_regime ==="texttospeech"){
       responses.push({text:msqTemplates.file_is_not_handled_in_the_regime})
-      break;
-    case "chat":
+
+      } else if (current_regime === "chat" || current_regime === "translator" || current_regime === "texteditor"){
       if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
         const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
         if(checkResult.success===0){
           responses.push(checkResult.responce)
-          break;
+          return;
         }
         const result = await replyMsgInstance.sendAudioListenMsg()
         const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
@@ -53,7 +53,6 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         await dialogueInstance.getDialogueFromDB()
         await dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
 
-        break;
       } else if(requestMsgInstance.fileType === "image" || requestMsgInstance.fileType === "document"){
         
         await requestMsgInstance.getFileLinkFromTgm()
@@ -61,19 +60,16 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         if(requestMsgInstance.uploadFileError){
           await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg,requestMsgInstance);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html")
-          break;
+          return;
         }
         
         const uploadResult = await uploadFileToS3Handler(requestMsgInstance)
         const url = uploadResult.Location
         await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
         
-        break;
-      }  else {
+      }  }  else {
           responses.push({text:msqTemplates.file_handler_is_not_realized})
       }
-    break;
-}
 
   return responses
 }
@@ -155,7 +151,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     await replyMsgInstance.deleteToolsButtons(toolsMsgIds)
     const response = await resetdialogHandler(requestMsgInstance);
     responses.push(response)
-    //await dialogueInstance.commitSystemToDialogue(msqTemplates.system_start_dialogue,requestMsgInstance)
+    await dialogueInstance.commitSystemToDialogue(msqTemplates.system_start_dialogue,requestMsgInstance)
 
   } else if(cmpName==="unregister"){
     const response = await unregisterHandler(requestMsgInstance);

@@ -7,7 +7,7 @@ const aws = require("./aws_func.js")
 const unicodeit = require('unicodeit');
 const mjAPI = require('mathjax-node');
 const mongo = require("./mongo");
-
+const google = require("./google_func");
 
 function extractSystemRolesFromEnd(documents) {
   const result = [];
@@ -37,6 +37,16 @@ async function startFileDownload(url){
   });
 
 return response
+}
+
+async function fileDownload(url){
+  const response = await axios({
+    url,
+    method: 'GET',
+    responseType: 'arraybuffer'
+  });
+
+return response.data
 }
 
 mjAPI.start();
@@ -303,7 +313,7 @@ async function countTokensLambda(text,model){
   const requestObj = {"text":text,"model":model}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2-prod-countToken",requestObj)
+  const result = await aws.lambda_invoke("R2D2-countTokens",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -324,25 +334,107 @@ async function countTokensLambda(text,model){
   }
 }
 
-async function extractTextLambda(url,mine_type){
+async function extractTextFromFile(url,mine_type){
 
-  const requestObj = {"file_url":url,"file_mime_type":mine_type}
+
+  try{
+    if(mine_type==="image/jpeg"){
+    const text =  await google.ocr_document(url,mine_type)
+      return {success:1,text:text}
+    } else if (mine_type === "application/pdf") {
+      const result = await extractTextLambdaPDFFile(url)
+      if(result.text.length>10){
+        return {success:1,text:result.text}
+      } else {
+        const text =  await google.ocr_document(url,mine_type)
+        return {success:1,text:text}  
+      }
+    } else if (mine_type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+    
+      const result = await extractTextLambdaExcelFile(url)
+      return {success:1,text:result.text}
+    } else {
+      const result = await extractTextLambdaOtherFiles(url,mine_type)
+      return {success:1,text:result.text}
+    }
+  } catch(err){
+    return {success:0,error:err}
+  }
+}
+
+async function extractTextLambdaPDFFile(url){
+
+  const requestObj = {"file_url":url}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2-prod-extractTextFromFile",requestObj)
+  const result = await aws.lambda_invoke("R2D2-extractTextFromPDF",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
-  console.log(`extractTextFromFile execution time: ${executionTime.toFixed(2)} ms`);
+  console.log(`extractTextLambdaPDFFile execution time: ${executionTime.toFixed(2)} ms`);
   const resultJSON = JSON.parse(result)
 
   if(resultJSON.statusCode === 200){
     return resultJSON.body
   } else if (resultJSON.statusCode){
-      const err = new Error("extractTextLambda: " + resultJSON.body)
+      const err = new Error("extractTextLambdaPDFFile: " + resultJSON.body)
       throw err
   } else if (resultJSON.errorMessage){
-    const err = new Error("extractTextLambda: " + resultJSON.errorMessage)
+    const err = new Error("extractTextLambdaPDFFile: " + resultJSON.errorMessage)
+    throw err
+  } else {
+    const err = new Error('unspecified error in aws.lambda_invoke function')
+    throw err
+  }
+}
+
+async function extractTextLambdaExcelFile(url){
+
+  const requestObj = {"file_url":url}
+  const start = performance.now();
+
+  const result = await aws.lambda_invoke("R2D2-extractTextFromExcelFile",requestObj)
+  
+  const endTime = performance.now();
+  const executionTime = endTime - start;
+  console.log(`extractTextLambdaExcelFile execution time: ${executionTime.toFixed(2)} ms`);
+  const resultJSON = JSON.parse(result)
+
+  if(resultJSON.statusCode === 200){
+    return resultJSON.body
+  } else if (resultJSON.statusCode){
+      const err = new Error("extractTextLambdaExcelFile: " + resultJSON.body)
+      throw err
+  } else if (resultJSON.errorMessage){
+    const err = new Error("extractTextLambdaExcelFile: " + resultJSON.errorMessage)
+    throw err
+  } else {
+    const err = new Error('unspecified error in aws.lambda_invoke function')
+    throw err
+  }
+}
+
+
+
+async function extractTextLambdaOtherFiles(url,mine_type){
+
+  const requestObj = {"file_url":url,"file_mime_type":mine_type}
+  const start = performance.now();
+
+  const result = await aws.lambda_invoke("R2D2-extractTextFromOtherFiles",requestObj)
+  
+  const endTime = performance.now();
+  const executionTime = endTime - start;
+  console.log(`extractTextLambdaOtherFiles execution time: ${executionTime.toFixed(2)} ms`);
+  const resultJSON = JSON.parse(result)
+
+  if(resultJSON.statusCode === 200){
+    return resultJSON.body
+  } else if (resultJSON.statusCode){
+      const err = new Error("extractTextLambdaOtherFiles: " + resultJSON.body)
+      throw err
+  } else if (resultJSON.errorMessage){
+    const err = new Error("extractTextLambdaOtherFiles: " + resultJSON.errorMessage)
     throw err
   } else {
     const err = new Error('unspecified error in aws.lambda_invoke function')
@@ -785,5 +877,6 @@ module.exports = {
   decodeJson,
   startFileDownload,
   extractSystemRolesFromEnd,
-  extractTextLambda
+  fileDownload,
+  extractTextFromFile
 };

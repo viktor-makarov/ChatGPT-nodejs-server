@@ -266,7 +266,11 @@ class Dialogue extends EventEmitter {
 
     async commitSystemToDialogue(text,requestInstance){
 
-        const currentRole = "system"
+
+        let currentRole = "system"
+        if(["o1-mini","o1-preview"].includes(requestInstance.user.currentModel)){
+            currentRole = "developer"
+        }
 
         const msdId = requestInstance.msgId ? requestInstance.msgId : requestInstance.callbackId
         const msgTS = requestInstance.msgTS ? requestInstance.msgTS : requestInstance.callback_msgTS

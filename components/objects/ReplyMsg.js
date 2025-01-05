@@ -434,7 +434,6 @@ async generateMdjButtons(msg,reply_markup){
 
 generateVersionButtons(completionCurrentVersionNumber,versionsCount,reply_markup){
 
-
   let version_row_buttons =[]
   for (let i = 1; i <= versionsCount; i++){
     
@@ -447,7 +446,7 @@ generateVersionButtons(completionCurrentVersionNumber,versionsCount,reply_markup
       callback_data:JSON.stringify({e:"choose_ver",d:i})
     })
 
-    if(i === versionsCount || i % 8 === 0){
+    if(i === versionsCount || i % 2 === 0){
       reply_markup.inline_keyboard.push(version_row_buttons)
       version_row_buttons = [];
     }
@@ -458,7 +457,7 @@ return reply_markup
 
 generateFormulasButton(reply_markup){
 
-  const buttonName = "Покажи формулы в математическом виде"
+  const buttonName = "Формулы в математическом виде"
       reply_markup.inline_keyboard.push([{
         text: buttonName,
         callback_data:JSON.stringify({e:"latex_formula"})

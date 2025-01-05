@@ -300,20 +300,17 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "extract_text_from_file",
-                description: `Use this function to extract text from documents or images provided my user. The list of mine types for which this function can be used is as followes: ${appsettings.file_options.allowed_mime_types.join(', ')}`,
+                description: `Use this function to extract text from documents or images provided my user represented by file_url and file_mime_type. The list of mine types for which this function can be used is as follows: ${appsettings.file_options.allowed_mime_types.join(', ')}. Text extracted from the resources array is added to the output text in the order resources occur in the array. `,
                 parameters: {
                     type: "object",
                     properties: {
-                        file_url: {
-                            type: "string",
-                            description: `A url of the file to extract text from.`
-                        },
-                        file_mime_type: {
-                            type: "string",
-                            description: `The mime type of the file.`
-                        },
+                        resources:{
+                            type: "array",
+                            items: {type: "string"},
+                            description: `List of resources represented by 'file_url'and file_mime_type in a form of JSON object. Example: {"file_url":"https://r2d2storagedev.s3.eu-north-1.amazonaws.com/incoming_files/test_text2.txt","file_mime_type":"text/plain"`
+                        }
                     },
-                    required: ["file_url","file_mime_type"]
+                    required: ["resources"]
                 }
             },
             friendly_name: "Чтение файла",
