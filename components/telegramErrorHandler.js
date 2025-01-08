@@ -1,7 +1,13 @@
 const mongo = require("./mongo");
 const msqTemplates = require("../config/telegramMsgTemplates");
+const otherFunctions = require("./other_func");
 
-async function main(botInstance,chat_id,err,place_in_code,user_message){
+async function main(obj){
+
+  const replyMsgInstance = obj.replyMsgInstance
+  let err = obj.error_object
+  let user_message = obj.user_message
+  let place_in_code = obj.place_in_code
 
 try{
 
@@ -48,14 +54,16 @@ try{
     }
 
 //Fist we send error to user if needs be
+let user_msg_text,user_msg_result;
 if(err.user_message){
-if(botInstance&&chat_id){
-    await botInstance.sendMessage(chat_id, err.user_message || msqTemplates.error_strange)
+if(replyMsgInstance){
+    user_msg_text = "❗️" + " " + (err.user_message || msqTemplates.error_strange)
+    user_msg_result = await replyMsgInstance.simpleSendNewMessage(user_msg_text,null,"html")
     } else {
-        var err = new Error("You forgot to input botInstanсe or chat_id into error handling function 'main', so message to user cannot be sent.")
-        err.code = "INT_ERR2"
-        err.user_message = msqTemplates.INT_ERR
-        throw err
+        var err_local = new Error("You forgot to input replyMsgInstance into error handling function 'main', so message to user cannot be sent.")
+        err_local.code = "INT_ERR2"
+        err_local.user_message = msqTemplates.INT_ERR
+        throw err_local
     }
 }
 
@@ -64,13 +72,39 @@ var doc = new Object();
 doc._id = "error was not logged to mongodb."
 
 if(err.mongodblog){
-    doc = await mongo.insert_error_logPromise(err, err.message)
-    if(botInstance&&chat_id){
-        await botInstance.sendMessage(chat_id, "Инфо для администратора. Код ошибки: "+err.code + ". Запись в логе: " + doc._id + ". https://t.me/Truvoruwka")
+    let errorJSON  = createErrorObject(err);
+    doc = await mongo.insert_error_logPromise(errorJSON)
+    errorJSON._id = doc._id
+    if(replyMsgInstance){
+                if(replyMsgInstance.user.isAdmin){
+                    let unfolded_text = JSON.stringify(errorJSON,null,4)
+                    unfolded_text = otherFunctions.wireHtml(unfolded_text)
+                    unfolded_text = msgShortener(unfolded_text)
+                    
+                    let infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:errorJSON,unfolded_header:"Error details",folded_text:user_msg_text})
+                    const update_msg_options = {
+                        chat_id:replyMsgInstance.chatId,
+                        message_id:user_msg_result.message_id,
+                        parse_mode: "HTML",
+                        disable_web_page_preview: true,
+                        reply_markup:{
+                            one_time_keyboard: true,
+                            inline_keyboard: [[{
+                                text: "Показать подробности",
+                                callback_data: JSON.stringify({e:"un_f_up",d:infoForUserEncoded}),
+                                }],],
+                          }
+                    }
+                    await replyMsgInstance.simpleMessageUpdate(user_msg_text,update_msg_options)
+
+                } else {
+                    const msg_text = "Инфо для администратора. Код ошибки: _id="+err.code + ". Запись в логе: " + doc._id + ". https://t.me/Truvoruwka"
+                    await replyMsgInstance.simpleSendNewMessage(msg_text,null,"html")
+                }
         } else {
-            var err = new Error("You forgot to input botInstans, chat_id into error handling function 'main', so message to user cannot be sent.")
-            err.code = "INT_ERR2"
-            throw err
+            var err_local = new Error("You forgot to input replyMsgInstance into error handling function 'main', so message to user cannot be sent.")
+            err_local.code = "INT_ERR2"
+            throw err_local
         }
 }
 
@@ -86,6 +120,36 @@ if(err.consolelog){
 
 }
 
+}
+
+function createErrorObject(error){
+
+    const errorObject = {
+        error: {
+          code: error.code,
+          original_code: error.original_code,
+          message: otherFunctions.wireHtml(error.message),
+          message_from_response:otherFunctions.wireHtml(error.message_from_response),
+          stack: otherFunctions.wireHtml(error.stack),
+          details:otherFunctions.wireHtml(error.details),
+          place_in_code: otherFunctions.wireHtml(error.place_in_code),
+          user_message: otherFunctions.wireHtml(error.user_message),
+        },
+        comment: otherFunctions.wireHtml(error.message),
+      }
+
+    return errorObject
+}
+
+function msgShortener(text){
+    let new_msg = text;
+    const overheadSymbolsCount = 100;
+    const limit = (appsettings.telegram_options.big_outgoing_message_threshold - overheadSymbolsCount)
+    if (text.length > limit){
+        new_msg = text.slice(0, limit) + "... (текст сокращен)"
+
+      }
+    return new_msg
 }
 
 module.exports = {

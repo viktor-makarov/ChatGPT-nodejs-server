@@ -1,5 +1,4 @@
 const telegramCmdHandler = require("./components/telegramCmdHandler.js");
-const telegramFunctionHandler = require("./components/telegramFunctionHandler.js");
 const openAIApiHandler = require("./components/openAI_API_Handler.js");
 const modelSettings = require("./config/telegramModelsSettings");
 const telegramErrorHandler = require("./components/telegramErrorHandler.js");
@@ -20,9 +19,16 @@ async function UpdateGlobalVariables() {
     err.consolelog = true;
     err.place_in_code = err.place_in_code || arguments.callee.name;
     console.log("UpdateGlobalVariables", err);
-    // telegramErrorHandler.main(null,null,err,err.place_in_code,null)
+    /* telegramErrorHandler.main(
+    {
+      replyMsgInstance:null,
+      error_object:err,
+      place_in_code:arguments.callee.name,
+      user_message:null
+    })*/
   }
 }
+
 
 async function GetModelsFromAPI() {
   try {
@@ -34,7 +40,13 @@ async function GetModelsFromAPI() {
   } catch (err) {
     err.consolelog = true;
     console.log("GetModelsFromAPI", err);
-    // telegramErrorHandler.main(null,null,err,arguments.callee.name,err.user_message)
+    /* telegramErrorHandler.main(
+     {
+      replyMsgInstance:null,
+      error_object:err,
+      place_in_code:arguments.callee.name,
+      user_message:err.user_message
+    })*/
   }
 }
 async function setBotParameters(botInstance) {
@@ -43,26 +55,35 @@ async function setBotParameters(botInstance) {
   } catch (err) {
     err.consolelog = true;
     console.log("setBotParameters", err);
-    //telegramErrorHandler.main(null,null,err,arguments.callee.name,null)
+   /* telegramErrorHandler.main(
+     {
+      replyMsgInstance:null,
+      error_object:err,
+      place_in_code:arguments.callee.name,
+      user_message:null
+    })*/
   }
 }
 function router(botInstance) {
 
   botInstance.on("message", async (msg) => {
+
+    let user,requestMsg,replyMsg;
+    
     //Слушаем сообщения пользователей
     try {
    
-      const user = new User(msg.from)
+      user = new User(msg.from)
       await user.getUserProfileFromDB()
 
-      const requestMsg = new RequestMsg({
+      requestMsg = new RequestMsg({
         requestMsg:msg,
         userInstance:user,
         botInstance:botInstance
       })
       
 
-      const replyMsg = new ReplyMsg({
+      replyMsg = new ReplyMsg({
         botInstance:botInstance,
         chatId:msg.chat.id,
         userInstance:user
@@ -88,14 +109,12 @@ function router(botInstance) {
         dialogueInstance:dialogue
       })
       
-
       dialogue.on('callCompletion', () => callCompletion({
         requestMsgInstance:requestMsg, 
         replyMsgInstance:replyMsg,
         dialogueInstance:dialogue,
         toolCallsInstance:toolCalls
       }))
-
 
       dialogue.on('triggerToolCall', () => triggerToolCall({
         toolCallsInstance:toolCalls
@@ -120,7 +139,6 @@ function router(botInstance) {
           default:
               responses = [{text:msqTemplates.unknown_msg_type}]
       };
-    
 
     for (const response of responses){
       await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode);
@@ -134,27 +152,30 @@ function router(botInstance) {
       }
       err.place_in_code = err.place_in_code || arguments.callee.name;
       telegramErrorHandler.main(
-        botInstance,
-        msg.chat.id,
-        err,
-        err.place_in_code,
-        err.user_message
+        {
+          replyMsgInstance:replyMsg,
+          error_object:err,
+          place_in_code:err.place_in_code,
+          user_message:err.user_message
+        }
       );
     }
   });
 
   botInstance.on("callback_query", async (callback_msg) => {
 
+    let user,requestMsg,replyMsg;
+    
     try {
-      const user = new User(callback_msg.from)
+      user = new User(callback_msg.from)
 
       await user.getUserProfileFromDB()
 
-      const requestMsg = new RequestMsg({
+      requestMsg = new RequestMsg({
         requestMsg:callback_msg,
         userInstance:user
       })
-      const replyMsg = new ReplyMsg({
+      replyMsg = new ReplyMsg({
         botInstance:botInstance,
         chatId:callback_msg.message.chat.id,
         userInstance:user
@@ -320,9 +341,12 @@ function router(botInstance) {
           case "un_f_up":
           
             const hash_unfolded = requestMsg.callback_data
+            
             const contentObject = await otherFunctions.decodeJson(hash_unfolded)
             
-            const unfoldedFileSysMsg = `<b>Uploaded file info:</b>\n${JSON.stringify(contentObject.unfolded_text,null,4)}`;
+            let unfoldedFileSysMsg = `<b>${contentObject.unfolded_header}:</b>\n${JSON.stringify(contentObject.unfolded_text,null,4)}`;
+
+            unfoldedFileSysMsg = msgShortener(unfoldedFileSysMsg)
 
             const callback_data = {e:"f_f_up",d:hash_unfolded}
             
@@ -337,12 +361,12 @@ function router(botInstance) {
             };
 
             try{
-            await replyMsg.simpleMessageUpdate(unfoldedFileSysMsg, {
-              chat_id: callback_msg.message.chat.id,
-              message_id: callback_msg.message.message_id,
-              parse_mode:"HTML",
-              reply_markup: reply_markup
-            })
+              await replyMsg.simpleMessageUpdate(unfoldedFileSysMsg, {
+                chat_id: callback_msg.message.chat.id,
+                message_id: callback_msg.message.message_id,
+                parse_mode:"HTML",
+                reply_markup: reply_markup
+              })
           } catch(err){
             if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
               throw err
@@ -432,7 +456,6 @@ function router(botInstance) {
               responses = [{text:msqTemplates.unknown_callback}]
         }
 
-
       for (const response of responses){
         await replyMsg.sendToNewMessageWithCheck(response.text,response?.buttons?.reply_markup,response?.parse_mode);
       }
@@ -443,11 +466,12 @@ function router(botInstance) {
       }
       err.place_in_code = err.place_in_code || arguments.callee.name;
       telegramErrorHandler.main(
-        botInstance,
-        callback_msg.message.chat.id,
-        err,
-        err.place_in_code,
-        err.user_message
+        {
+          replyMsgInstance:replyMsg,
+          error_object:err,
+          place_in_code:err.place_in_code,
+          user_message:err.user_message
+        }
       );
     }
   });
@@ -476,6 +500,17 @@ async function triggerToolCall(obj){
   const toolCallsInstance = obj.toolCallsInstance
 
   await toolCallsInstance.router()
+}
+
+function msgShortener(text){
+  let new_msg = text;
+  const overheadSymbolsCount = 100;
+  const limit = (appsettings.telegram_options.big_outgoing_message_threshold - overheadSymbolsCount)
+  if (text.length > limit){
+      new_msg = text.slice(0, limit) + "... (текст сокращен)"
+
+    }
+  return new_msg
 }
 
 module.exports = {

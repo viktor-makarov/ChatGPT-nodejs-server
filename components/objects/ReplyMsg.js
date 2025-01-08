@@ -75,6 +75,10 @@ set completion_ended(value){
     this.#completion_ended =  value
 }
 
+get user(){
+  return this.#user;
+}
+
 get botInstance(){
     return this.#botInstance
 }
@@ -469,7 +473,7 @@ return reply_markup
 async deliverCompletionToTelegram(completionInstance){
 
         if(this.#completion_ended){
-          console.log(new Date(),"deliverCompletionToTelegram invoked")
+          console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 2.")
         }
         this.setInProgress()
         

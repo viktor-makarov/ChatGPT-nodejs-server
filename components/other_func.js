@@ -33,7 +33,8 @@ async function startFileDownload(url){
   const response = await axios({
     url,
     method: 'GET',
-    responseType: 'stream'
+    responseType: 'stream',
+    timeout: 5000
   });
 
 return response
@@ -43,7 +44,8 @@ async function fileDownload(url){
   const response = await axios({
     url,
     method: 'GET',
-    responseType: 'arraybuffer'
+    responseType: 'arraybuffer',
+    timeout: 5000
   });
 
 return response.data
@@ -300,7 +302,8 @@ function convertMarkdownToLimitedHtml(text){
 
 function wireHtml(text){
 
-  const wiredText = text
+  let wiredText = text ? text: "";
+  wiredText = wiredText
   .replace(/</g,"&lt;")
   .replace(/>/g,"&gt;")
   .replace(/&/g,"&amp;")
@@ -336,11 +339,12 @@ async function countTokensLambda(text,model){
 
 async function extractTextFromFile(url,mine_type){
 
-
   try{
     if(mine_type==="image/jpeg"){
     const text =  await google.ocr_document(url,mine_type)
+    console.log(text)
       return {success:1,text:text}
+
     } else if (mine_type === "application/pdf") {
       const result = await extractTextLambdaPDFFile(url)
       if(result.text.length>10){
@@ -358,7 +362,7 @@ async function extractTextFromFile(url,mine_type){
       return {success:1,text:result.text}
     }
   } catch(err){
-    return {success:0,error:err}
+    return {success:0,error:err.message}
   }
 }
 
@@ -377,10 +381,10 @@ async function extractTextLambdaPDFFile(url){
   if(resultJSON.statusCode === 200){
     return resultJSON.body
   } else if (resultJSON.statusCode){
-      const err = new Error("extractTextLambdaPDFFile: " + resultJSON.body)
-      throw err
+    const err = new Error("extractTextLambdaPDFFile: " + resultJSON.body)
+    throw err
   } else if (resultJSON.errorMessage){
-    const err = new Error("extractTextLambdaPDFFile: " + resultJSON.errorMessage)
+    const err = new Error("extractTextLambdaPDFFile: " + resultJSON.errorType + " " + resultJSON.errorMessage)
     throw err
   } else {
     const err = new Error('unspecified error in aws.lambda_invoke function')
@@ -414,8 +418,6 @@ async function extractTextLambdaExcelFile(url){
   }
 }
 
-
-
 async function extractTextLambdaOtherFiles(url,mine_type){
 
   const requestObj = {"file_url":url,"file_mime_type":mine_type}
@@ -446,7 +448,6 @@ function valueToSHA1(value){
   const hash = cryptofy.createHash('md5');
   return hash.update(value).digest('hex');
 }
-
 
 function reorderArrayForTools(array) {
   // Create a map of index by their id
@@ -483,7 +484,6 @@ function reorderArrayForTools(array) {
 
   return arrayCopy;
 }
-
 
 function countTokensProportion(text) {
   //Converts string to tokens and counts their number

@@ -349,12 +349,26 @@ get uploadFileError(){
     return this.#uploadFileError
 }
 
+set uploadFileError(value){
+    this.#uploadFileError = value
+}
+
+
+
 get unsuccessfullFileUploadUserMsg(){
     return this.#unsuccessfullFileUploadUserMsg
 }
 
+set unsuccessfullFileUploadUserMsg(value){
+    this.#unsuccessfullFileUploadUserMsg = value
+}
+
 get unsuccessfullFileUploadSystemMsg(){
     return this.#unsuccessfullFileUploadSystemMsg
+}
+
+set unsuccessfullFileUploadSystemMsg(value){
+    this.#unsuccessfullFileUploadSystemMsg = value
 }
 
 get botInstance(){

@@ -229,7 +229,7 @@ async generateAvailableTools(userClass){
                 properties: {}
             }
         },
-        friendly_name:"Тек. дата и время",
+        friendly_name:"Дата и время",
         try_limit:3
     }
         );
@@ -238,7 +238,7 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "run_javasctipt_code",
-                description: "You can use this function to execute a javascript code. Use It any time you need to do calculations to ensure their accuraсy.",
+                description: "You can use this function to execute a javascript code. Use this every time you need to do calculations to ensure their accuraсy.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -250,7 +250,7 @@ async generateAvailableTools(userClass){
                     required: ["javascript_code"]
                 }
             },
-            friendly_name:"Вычисления JS",
+            friendly_name:"Вычисления JavaScript",
             try_limit:3      
         }
     );
@@ -260,19 +260,19 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
             name: "fetch_url_content",
-            description: "Use this function to fetch content from a url.",
+            description: "Use this function to fetch content from a url. Returns html.",
             parameters: {
                 type: "object",
                 properties: {
                     url: {
                     type: "string",
-                        description: `A single url as a string to fetch content from`
+                        description: `A single url as a string to fetch content from.`
                     }
                 },
             required: ["url"]
             }
         },
-        friendly_name: "Прочитать гиперссылку",
+        friendly_name: "Чтение гиперссылки",
         try_limit: 3 }
         );
         
@@ -280,13 +280,13 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "create_midjourney_image",
-                description: "Use this function to create, modify or compile an image. If you are given a midjourney text prompt - you must use it exactly as is, otherwise generate your own text prompt from the user's request considering the context of the dialogue.",
+                description: "Use this function to create, modify or compile an image with Midjourney service. If you are given a midjourney text prompt - you must use it exactly AS IS, otherwise generate your own text prompt from the user's request considering the context of the dialogue.",
                 parameters: {
                     type: "object",
                     properties: {
                         midjourney_query: {
                             type: "string",
-                            description: `A prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. Maximum length of the text prompt is 150 words. By default use model --v 6.1`
+                            description: `A prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. Maximum length of the text prompt is 150 words.`
                         },
                     },
                     required: ["midjourney_query"]
@@ -300,7 +300,7 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "extract_text_from_file",
-                description: `Use this function to extract text from documents or images provided my user represented by file_url and file_mime_type. The list of mine types for which this function can be used is as follows: ${appsettings.file_options.allowed_mime_types.join(', ')}. Text extracted from the resources array is added to the output text in the order resources occur in the array. `,
+                description: `Use this function to extract text from documents or images provided by user. The list of mine types for which this function can be used is as follows: ${appsettings.file_options.allowed_mime_types.join(', ')}. Text extracted from the resources array is added to the output text in the order resources occur in the array. `,
                 parameters: {
                     type: "object",
                     properties: {
@@ -313,7 +313,7 @@ async generateAvailableTools(userClass){
                     required: ["resources"]
                 }
             },
-            friendly_name: "Чтение файла",
+            friendly_name: "Чтение текстового документа",
             try_limit: 3 }
             );
 
@@ -359,9 +359,10 @@ async generateAvailableTools(userClass){
                 required: ["aggregate_pipeline"]
             }
         },
-        friendly_name: "Активность пользователей",
+        friendly_name: "Статистика использования R2D2",
         try_limit: 3
         })
+
         
         functionList.push(
             {type:"function",
@@ -381,7 +382,6 @@ async generateAvailableTools(userClass){
         friendly_name: "Cистемные ошибки R2D2",
         try_limit: 3})
         };
-        
         
         //Завершаем. Если ни одной функции нет, то передаем null
         if (functionList.length===0){

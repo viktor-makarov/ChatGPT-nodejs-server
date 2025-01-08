@@ -308,13 +308,12 @@ class Completion extends Transform {
         }
     
         err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
-        telegramErrorHandler.main(
-          this.#replyMsg.botInstance,
-          this.#replyMsg.chatId,
-          err,
-          err.place_in_code,
-          err.user_message
-        );
+        telegramErrorHandler.main({
+          replyMsgInstance:this.#replyMsg,
+          error_object:err,
+          place_in_code:err.place_in_code,
+          user_message:err.user_message
+        });
       }
     }
 
@@ -481,7 +480,7 @@ class Completion extends Transform {
     completionStausUpdate(){
       if (this.#completionFinishReason == "length" || this.#completionFinishReason == "stop") {
         this.#completion_ended = true;
-        console.log(new Date(),"Completion finished")
+        console.log(new Date(),"Completion finished. Test part 1")
         this.#replyMsg.completion_ended = true;
       }
     }

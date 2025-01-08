@@ -22,13 +22,12 @@ async function getModels() {
     console.log("err",err)
     err.consolelog = true;
     err.place_in_code = err.place_in_code || arguments.callee.name;
-    telegramErrorHandler.main(
-      null,
-      null,
-      err,
-      err.place_in_code,
-      err.user_message
-    );
+    telegramErrorHandler.main({
+        replyMsgInstance:null,
+        error_object:err,
+        place_in_code:err.place_in_code,
+        user_message:err.user_message
+      });
   }
 };
 

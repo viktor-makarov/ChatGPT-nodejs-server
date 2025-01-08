@@ -335,7 +335,7 @@ class Dialogue extends EventEmitter {
             infoForUser["fileCaption"] = fileSystemObj.fileCaption
         }
         
-        const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:infoForUser,folded_text:MsgText})
+        const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:infoForUser,unfolded_header:"Uploaded file info",folded_text:MsgText})
         
         const callback_data = {e:"un_f_up",d:infoForUserEncoded}
 

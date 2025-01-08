@@ -3,7 +3,6 @@ const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v
 const axios = require("axios");
 
 
-
 async function ocr_document(url, mimeType){
   const start = performance.now();
     const location = process.env.GOOGLE_DOCUMENTAI_LOCATION

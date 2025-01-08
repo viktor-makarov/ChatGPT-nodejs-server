@@ -17,10 +17,7 @@ class FunctionCallNew{
     #functionResult="";
     #argumentsText;
     #argumentsJson;
-    #imageSizeArray = ["1024x1024","1792x1024","1024x1792"]
-    #imageSizeDefault = "1024x1024"
-    #imageStyleArray = ["vivid","natural"]
-    #imageStyleDefault = "vivid"
+
    
     constructor(obj) {
         this.#functionCall = obj.functionCall;
@@ -228,11 +225,10 @@ class FunctionCallNew{
                 
             } catch(err){
                 console.log(err)
-                return {success:0,index:index,resource_url:url,resource_mine_type:mine_type, error:`${err.message} ${err.stack}`}
+                return {success:0,index:index,resource_url:url,resource_mine_type:mine_type, error:`${err.message}\n ${err.stack}`}
             }
 
         }
-
 
         async extract_text_from_file_router(){
 
@@ -242,15 +238,13 @@ class FunctionCallNew{
             if(argFieldValidationResult.success===0){
                 return argFieldValidationResult
             }
-            console.log("this.#argumentsText",this.#argumentsText)
-            try{
+
+            try {
                 this.convertArgumentsToJSON()
             } catch (err){
                 return {success:0,error: err.message + "" + err.stack}
             }
            
-           
-            
             try{
                 this.validateRequiredFields()
             } catch (err){
@@ -263,12 +257,9 @@ class FunctionCallNew{
 
             results.sort((a, b) => a.index - b.index);
 
-            console.log("results",results)
-
-
             for (const result of results){
                 if(result.success === 0){
-                    return {success:0,resource_index:result.index,resource_url:result.resource_url,resource_mine_type:result.resource_mine_type,error: error + "" + err.stack,instructions:"Fix the error in the respective resource and re-call the entire function."}
+                    return {success:0,resource_index:result.index,resource_url:result.resource_url,resource_mine_type:result.resource_mine_type,error: result.error,instructions:"Fix the error in the respective resource and re-call the entire function."}
                 }
             };
 
@@ -399,12 +390,12 @@ class FunctionCallNew{
              const functionResult = {
                     success:1,
                     result:"The image has been generated and successfully sent to the user with several options to handle the image.",
-                    buttonsDescription: btnsDescription
+                    buttonsDescription: btnsDescription,
+                    instructions:"Ensure you don't show one and the same buttons description multiple times"
                 };
                 return functionResult
             };
   
-    
     argumentsFieldValidation(){
 
         if(this.#argumentsText === "" || this.#argumentsText === null || this.#argumentsText === undefined){
@@ -454,12 +445,10 @@ class FunctionCallNew{
 
             try{
                 this.#argumentsText = this.escapeJSONString(this.#argumentsText)
-                console.log("this.#argumentsText",this.#argumentsText)
                 this.#argumentsJson=JSON.parse(this.#argumentsText)
             } catch(err){
                 throw new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
             }
-
         }
     }
 
@@ -492,7 +481,7 @@ class FunctionCallNew{
             const file_mime_type = resource.file_mime_type
             
             if(!file_url){
-                throw new Error(`In resource undex index ${index} file_url parameter is missing. Provide the value for the agrument.`)
+                throw new Error(`In resource undex index ${index} file_url parameter is missing. Provide the value for the agrument and retry`)
             }
 
             if(!appsettings.file_options.allowed_mime_types.includes(file_mime_type)){

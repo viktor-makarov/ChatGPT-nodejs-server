@@ -159,21 +159,9 @@ async function insert_details_logPromise(object,place_in_code) {
 
 
 
-async function insert_error_logPromise(error, comment) {
+async function insert_error_logPromise(errorJSON) {
   try {
-    const newLog = new error_log_collection({
-      error: {
-        code: error.code,
-        original_code: error.original_code,
-        message: error.message,
-        message_from_response:error.message_from_response,
-        stack: error.stack,
-        details:error.details,
-        place_in_code: error.place_in_code,
-        user_message: error.user_message,
-      },
-      comment: comment,
-    });
+    const newLog = new error_log_collection(errorJSON);
     return await newLog.save();
   } catch (err) {
     err.code = "MONGO_ERR";

@@ -63,7 +63,18 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
           return;
         }
         
-        const uploadResult = await uploadFileToS3Handler(requestMsgInstance)
+        let uploadResult;
+        try{
+        uploadResult = await uploadFileToS3Handler(requestMsgInstance)
+        } catch(err){
+          requestMsgInstance.uploadFileError = err.message
+          requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
+          requestMsgInstance.unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${requestMsgInstance.fileName}", but failed with the following error: ${requestMsgInstance.uploadFileError}`
+          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg,requestMsgInstance);
+          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html")
+          return;
+        }
+        
         const url = uploadResult.Location
         await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
         
