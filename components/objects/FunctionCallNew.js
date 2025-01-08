@@ -270,7 +270,7 @@ class FunctionCallNew{
             console.log("numberOfTokens",numberOfTokens)
             console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)    
             if(numberOfTokens >this.#tokensLimitPerCall){
-                return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the file content is too big to fit into the dialogue", instructions:"Inform the user about the error details"}
+                return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the file content is too big to fit into the dialogue", instructions:"Inform the user that file size exeeds dialog limits and therefore can not be downloaded."}
             }
                         
             return {success:1,content_token_count:numberOfTokens, result:concatenatedText}

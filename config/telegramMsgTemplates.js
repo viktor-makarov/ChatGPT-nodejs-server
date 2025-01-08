@@ -89,5 +89,6 @@ module.exports = {
     "unknown_msg_type":"Данный тип сообщения не обрабатывается.",
     "unknown_callback":"Получен неизвестный call_back. Он не будет обработан.",
     "translator_prompt":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian.",
+    "texteditor_prompt":"You are a professional text editor. \n-You should start your reply with a phrase 'Как редактор я предлагаю следующую версию полученного текста:'. \n (1) Rewrite the sentences in a way that makes them sound more natural and idiomatic. (2) Also, please point out any grammar, spelling, and wording mistakes and explain how you fixed them. Be sure to use Markdown tags to emphasize certain words or phrases. \n-Avoid using the word 'rephrase' in your response, as it may confuse users.\n-Do not change the language in which the user is speaking.",
     "system_start_dialogue":"Use the following step-by-step instructions to respond to user inputs.\n  Step 1 - Use instruction from knowledge base with 'get_knowledge_base_item' function if appropriate \n Step 2 - Perform the user's task."
 };

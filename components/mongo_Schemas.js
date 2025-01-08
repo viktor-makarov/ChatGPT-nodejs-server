@@ -25,6 +25,10 @@ const ProfileSheema = new Schema(
         temperature: { type: Number, default: 1 },
         model: { type: String, default: modelSettings.translator.default_model },
       },
+      texteditor: {
+        temperature: { type: Number, default: 1 },
+        model: { type: String, default: modelSettings.texteditor.default_model },
+      },
       texttospeech: {
         voice: { type: String, default: modelSettings.texttospeech.voice},
         model: {

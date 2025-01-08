@@ -115,6 +115,12 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
 
     break;
+    case "texteditor":
+      await resetTexteditorDialogHandler(requestMsgInstance)
+      await dialogueInstance.commitSystemToDialogue(msqTemplates.texteditor_prompt,requestMsgInstance)
+      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+
+    break;
     }
 
   return responses
@@ -199,7 +205,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       remove_keyboard: true,
     }}
     responses.push(response)
-  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="voicetotext" || cmpName==="texttospeech"){
+  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor" || cmpName==="voicetotext" || cmpName==="texttospeech"){
 
     await dialogueInstance.getDialogueFromDB() //чтобы посчитать потраченные токены в диалоге
     let response = await changeRegimeHandlerPromise({
@@ -599,7 +605,7 @@ async function changeRegimeHandlerPromise(obj){
             ),
           };
         }
-      } else if (obj.newRegime == "translator") {
+      } else if (obj.newRegime == "translator" || obj.newRegime == "texteditor") {
         return {
           text: modelSettings[obj.newRegime].welcome_msg
           .replace(
@@ -676,6 +682,12 @@ async function createNewFreeAccount(){
 
 async function resetTranslatorDialogHandler(requestMsgInstance) {
   await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "translator");
+
+  return;
+}
+
+async function resetTexteditorDialogHandler(requestMsgInstance) {
+  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "texteditor");
 
   return;
 }
@@ -1121,6 +1133,5 @@ module.exports = {
   formFoldedSysMsg,
   mdj_custom_handler,
   mdj_create_handler,
-  resetTranslatorDialogHandler,
   generateButtonDescription
 };
