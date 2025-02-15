@@ -1,6 +1,5 @@
 const telegramCmdHandler = require("./components/telegramCmdHandler.js");
 const openAIApiHandler = require("./components/openAI_API_Handler.js");
-const modelSettings = require("./config/telegramModelsSettings");
 const telegramErrorHandler = require("./components/telegramErrorHandler.js");
 const mongo = require("./components/mongo");
 const msqTemplates = require("./config/telegramMsgTemplates.js");
@@ -14,7 +13,6 @@ const ToolCalls  = require("./components/objects/ToolCalls.js");
 async function UpdateGlobalVariables() {
   try {
     await mongo.setDefaultVauesForNonExiting(); //Должно быть перед get_all_registeredPromise
-   
   } catch (err) {
     err.consolelog = true;
     err.place_in_code = err.place_in_code || arguments.callee.name;
@@ -52,6 +50,7 @@ async function GetModelsFromAPI() {
 async function setBotParameters(botInstance) {
   try {
     await botInstance.setMyCommands(appsettings.telegram_options.commands);
+    await botInstance.setMyDescription(msqTemplates.bot_description);
   } catch (err) {
     err.consolelog = true;
     console.log("setBotParameters", err);
@@ -80,9 +79,8 @@ function router(botInstance) {
         requestMsg:msg,
         userInstance:user,
         botInstance:botInstance
-      })
+      });
       
-
       replyMsg = new ReplyMsg({
         botInstance:botInstance,
         chatId:msg.chat.id,
@@ -90,9 +88,10 @@ function router(botInstance) {
       });
 
       const authResult = requestMsg.authenticateRequest()
+
       if(!authResult.passed){
         for (const response of authResult.response){
-          await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,null);
+          await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response.parse_mode);
         }
         return
       }
@@ -123,7 +122,7 @@ function router(botInstance) {
       if (process.env.PROD_RUN != "true") {
         requestMsg.print()
       }
-
+      
       let responses;
 
         switch(requestMsg.inputType) {
@@ -167,6 +166,7 @@ function router(botInstance) {
     let user,requestMsg,replyMsg;
     
     try {
+
       user = new User(callback_msg.from)
 
       await user.getUserProfileFromDB()
@@ -184,7 +184,7 @@ function router(botInstance) {
       const authResult = requestMsg.authenticateRequest()
       if(!authResult.passed){
         for (const response of authResult.response){
-          await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,null);
+          await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response.parse_mode);
         }
         return
       }
@@ -230,6 +230,11 @@ function router(botInstance) {
 
             responses.push(response_i)
             user.hasReadInfo = true
+
+            break;
+          case "pdf_download":
+          
+            await telegramCmdHandler.pdfdownloadHandler(replyMsg);
 
             break;
           case "regenerate":

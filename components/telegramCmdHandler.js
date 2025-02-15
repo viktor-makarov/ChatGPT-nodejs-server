@@ -76,6 +76,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         }
         
         const url = uploadResult.Location
+        
         await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
         
       }  }  else {
@@ -146,8 +147,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
         responses.push({ text: msqTemplates.blank_registration })
         break;
         case "valid":
-          responses.push({text:requestMsgInstance.infoHandler().mainText})
-          responses.push({text:requestMsgInstance.infoHandler().acceptText,buttons:requestMsgInstance.infoHandler()?.buttons})
+          responses.push({text:requestMsgInstance.guideHandler().mainText})
+          responses.push({text:requestMsgInstance.guideHandler().acceptText,buttons:requestMsgInstance.guideHandler()?.buttons})
         break;
         case "invalid":
           responses.push({ text: msqTemplates.incorrect_code })
@@ -176,37 +177,20 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   } else if(cmpName==="help"){
 
-    if(isAdmin){
-      let response = helpHandler();
-      response.buttons = {reply_markup: {
-        remove_keyboard: true,
-      }}
-      responses.push(response)
-    } else {
-      responses.push({ text: msqTemplates.help,buttons:{reply_markup: {
-        remove_keyboard: true,
-      }}})
+    let response = {
+      text:requestMsgInstance.guideHandler().text,
+      buttons:requestMsgInstance.guideHandler()?.buttons,
+      parse_mode:requestMsgInstance.guideHandler()?.parse_mode
     }
-
-  } else if(cmpName==="faq"){
-    let response = faqHandler();
-    response.buttons = {reply_markup: {
-      remove_keyboard: true,
-    }}
     responses.push(response)
-
+    
   } else if(cmpName==="settings"){
     let response = await settingsOptionsHandler(requestMsgInstance);
     responses.push(response)
 
-  } else if(cmpName==="info"){
-    let response = {text:requestMsgInstance.infoHandler().mainText};
-    response.buttons = {reply_markup: {
-      remove_keyboard: true,
-    }}
-    responses.push(response)
   } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor" || cmpName==="voicetotext" || cmpName==="texttospeech"){
-
+   
+    requestMsgInstance.user.currentRegime = cmpName
     await dialogueInstance.getDialogueFromDB() //чтобы посчитать потраченные токены в диалоге
     let response = await changeRegimeHandlerPromise({
       newRegime:cmpName,
@@ -268,8 +252,15 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       const response = await createNewFreeAccount();
       responses.push(response)
     }
+  } else if(cmpName==="killserver"){
+    if (isAdmin) {
+      console.log(new Date(),"Получена команда killserver")
+      setTimeout(() => {process.exit(0)}, 3000);
+      responses.push({text:msqTemplates.killserver_success})
+    } else {
+      responses.push({text:msqTemplates.killserver_not_admin})
+    }
   } else if(cmpName==="sendtome"){
-
     if(isAdmin){
       const response = sendtomeHandler(requestMsgInstance);
       responses.push(response)
@@ -407,6 +398,16 @@ async function infoacceptHandler(requestMsgInstance) {
     const result = await mongo.insert_read_sectionPromise(requestMsgInstance); // Вставляем новую секцию в базу данных
     return { text: msqTemplates.welcome };
 }
+
+async function pdfdownloadHandler(replyMsgInstance){
+  
+  const downloadedFile = await otherFunctions.fileDownload(appsettings.other_options.pdf_guide_url)
+  const fileName = "Manual";
+  
+  await replyMsgInstance.sendDocumentAsBinary(downloadedFile,fileName)
+  
+};
+
 
 async function adminHandler(requestMsgInstance) {
  try{
@@ -569,13 +570,12 @@ async function sendtoallHandler(requestMsgInstance) {
 }
 
 async function changeRegimeHandlerPromise(obj){
-  obj.requestMsgInstance.user.currentRegime = obj.newRegime
-
+  
    await mongo.updateCurrentRegimeSetting(obj.requestMsgInstance);
 
       if (obj.newRegime == "chat") {
         const previous_dialogue_tokens = obj.dialogueInstance.allDialogueTokens
-        
+             
         if (previous_dialogue_tokens > 0) {
           return {
             text: modelSettings[obj.newRegime].incomplete_msg
@@ -1104,16 +1104,8 @@ return {
 }
 };
 
-function helpHandler() {
-      return { text: msqTemplates.help + msqTemplates.help_advanced };
-}
-
-function faqHandler() {
-  return { text: msqTemplates.faq };
-}
 
 module.exports = {
-  helpHandler,
   noMessageText,
   unregisterHandler,
   infoacceptHandler,
@@ -1122,7 +1114,6 @@ module.exports = {
   sendtoallHandler,
   sendtomeHandler,
   adminHandler,
-  faqHandler,
   settingsOptionsHandler,
   reportsOptionsHandler,
   unregisterAllNotUpToDate,
@@ -1133,5 +1124,6 @@ module.exports = {
   formFoldedSysMsg,
   mdj_custom_handler,
   mdj_create_handler,
-  generateButtonDescription
+  generateButtonDescription,
+  pdfdownloadHandler
 };

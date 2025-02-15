@@ -350,22 +350,20 @@ class Completion extends Transform {
       };
     }
 
-
-
     async end(chunk, encoding, callback){
-
-
+      
       //Complete processing of chunks
       if (this.#chunkBuffer.length > 0) {
         const chunksToProcess = this.#chunkBuffer;
         this.#chunkBuffer = [];
         await this.processChunksBatch(chunksToProcess); //здесь выполнение должно быть именно синхронное
+        console.log(new Date(),"end: part inside this.#chunkBuffer.length > 0.Test part 2.")
       }
+      console.log(new Date(),"end: part outside this.#chunkBuffer.length > 0. Test part 2.")
 
       this.checkIfCompletionIsEmpty()
 
       await this.#dialogue.commitCompletionDialogue(this.currentCompletionObj,this.#tokenUsage)
-      
       
       this.#decoder.end()
       this.#chunkStringBuffer="";
@@ -381,11 +379,11 @@ class Completion extends Transform {
         const batchString = this.#decoder.write(concatenatedBatch)
         
         const jsonChunks = await this.batchStringToJson(batchString);
-    
+
         await this.extractData(jsonChunks)
-        if(!this.#replyMsg.sendingInProgress){
+        //if(!this.#replyMsg.sendingInProgress){
         this.#replyMsg.deliverCompletionToTelegramThrottled(this)
-        }
+        //}
         this.#isProcessingChunk = false;
     }
 

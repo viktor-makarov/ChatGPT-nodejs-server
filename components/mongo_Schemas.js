@@ -225,6 +225,7 @@ const TelegramDialogSheema = new Schema(
     fileName:{ type: String },
     fileUrl:{ type: String },
     fileCaption:{ type: String },
+    fileMimeType:{ type: String },
     fileAIDescription: { type: String },
     name: { type: String },
     content: Schema.Types.Mixed,

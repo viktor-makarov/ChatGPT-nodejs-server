@@ -300,20 +300,33 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "extract_text_from_file",
-                description: `Use this function to extract text from documents or images provided by user. The list of mine types for which this function can be used is as follows: ${appsettings.file_options.allowed_mime_types.join(', ')}. Text extracted from the resources array is added to the output text in the order resources occur in the array. `,
+                description: `Use this function to extract text from documents or images provided by user. The list of file mine types for which this function can be used is as follows: ${appsettings.file_options.allowed_mime_types.join(', ')}. Text extracted from the resources array is added to the output text in the order resources occur in the parameter. `,
                 parameters: {
                     type: "object",
                     properties: {
                         resources:{
-                            type: "array",
-                            items: {type: "string"},
-                            description: `List of resources represented by 'file_url'and file_mime_type in a form of JSON object. Example: {"file_url":"https://r2d2storagedev.s3.eu-north-1.amazonaws.com/incoming_files/test_text2.txt","file_mime_type":"text/plain"`
+                            type: "string",
+                            description: `Fileids for extraction separated by commas. Example: 3356,4567,4567"`
                         }
                     },
                     required: ["resources"]
                 }
             },
             friendly_name: "Чтение текстового документа",
+            try_limit: 3 }
+            );
+
+        functionList.push(
+            {type:"function",
+            function:{
+                name: "get_user_guide",
+                description: `Use this function when you are asked about functionality of the R2D2 bot.`,
+                parameters: {
+                    type: "object",
+                    properties: {}
+                }
+            },
+            friendly_name: "Чтение инструкции",
             try_limit: 3 }
             );
 

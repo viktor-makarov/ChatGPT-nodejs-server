@@ -210,6 +210,10 @@ authenticateRequest(){
         return {passed:true}
     }
 
+    if(callback_event && callback_event === "pdf_download"){
+        return {passed:true}
+    }
+
     if(!isRegistered){
         return {passed:false,response:[{text:msqTemplates.no_profile_yet}]}
     }
@@ -220,28 +224,42 @@ authenticateRequest(){
 
     if(!userHasReadInfo){
         return {passed:false,response:[
-            {text:this.infoHandler().mainText},
-            {text:this.infoHandler().acceptText,buttons:this.infoHandler()?.buttons}
+            {text:this.guideHandler().text,buttons:this.guideHandler()?.buttons,parse_mode:this.guideHandler()?.parse_mode},
+            {text:this.acceptHandler().text,buttons:this.acceptHandler()?.buttons}
         ]}
     };
-    
     return {passed:true}
-
 }
 
-infoHandler() {
+guideHandler() {
 
-    const callback_data = {e:"info_accepted"}
-    return { 
-      mainText: msqTemplates.info,
-      acceptText: msqTemplates.info_accept,
+    const callback_data = {e:"pdf_download"}
+    return {
+      text: msqTemplates.info,
+      parse_mode:"html",
       buttons:{
       reply_markup: {
         inline_keyboard: [
-          [{ text: "Подтверждаю", callback_data: JSON.stringify(callback_data) }],
+          [{ text: "Скачать PDF", callback_data: JSON.stringify(callback_data) }],
         ],
       },
-    }};
+    }
+    };
+}
+
+acceptHandler(){
+    const callback_data = {e:"info_accepted"}
+    return {
+      text: msqTemplates.info_accept,
+      buttons:{
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "Подтверждаю", callback_data: JSON.stringify(callback_data) }],
+          ],
+        },
+      },
+    };
+
   }
   
 regenerateCheckRegimeCoinsideness(){

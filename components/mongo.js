@@ -362,6 +362,23 @@ async function getToolCallFriendlyName(msgId){
   }
 }
 
+
+async function getUploadedFilesBySourceId(sourceid_list){
+  try {
+
+    const filter = { "sourceid": { $in: sourceid_list}}
+
+    return await dialog_collection.find(
+      filter
+      ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,_id:0}
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+}
+
 async function upsertPrompt(promptObj){
   try {
 
@@ -447,6 +464,7 @@ const upsertProfilePromise = async (msg) => {
       username: msg.from.username,
       language_code: msg.from.language_code,
     };
+
     return await telegram_profile_collection.updateOne(
       { id: msg.from.id },
       newProfile,
@@ -462,7 +480,7 @@ const upsertProfilePromise = async (msg) => {
 
 async function registerUser(requestMsgInstance,token) {
   try {
-
+ 
     return await telegram_profile_collection.findOneAndUpdate(
       { token: token },
       {
@@ -487,6 +505,7 @@ async function registerUser(requestMsgInstance,token) {
 async function insert_blank_profile(newToken){
 
   try {
+
     const newBlankProfile = new telegram_profile_collection({
       token:newToken,
       plan: "free",
@@ -513,6 +532,7 @@ const insert_profilePromise = async (msg) => {
       username: msg.from.username,
       language_code: msg.from.language_code,
     });
+
     return await newProfile.save();
   } catch (err) {
     if (err.code === 11000) {
@@ -636,6 +656,7 @@ async function insert_permissions_migrationPromise(msg) {
 
 async function insert_adminRolePromise(requestMsgInstance) {
   try {
+
     return await telegram_profile_collection.findOneAndUpdate(
       { id: requestMsgInstance.user.userid},
       {
@@ -653,7 +674,6 @@ async function insert_adminRolePromise(requestMsgInstance) {
 
 async function insert_read_sectionPromise(requestMsgInstance) {
   try {
- 
 
     return await telegram_profile_collection.findOneAndUpdate(
       { id: requestMsgInstance.user.userid },
@@ -705,13 +725,13 @@ const setDefaultVauesForNonExiting = async () => {
         { upsert: true }
       );
 
-      let plainItam = item.toObject();
-      delete plainItam._id;
+      let plainItem = item.toObject();
+      delete plainItem._id;
 
       //потом вставляем значения из удаленного профиля
       await telegram_profile_collection.updateOne(
-        { id: plainItam.id },
-        { $set: plainItam }
+        { id: plainItem.id },
+        { $set: plainItem }
       );
     }
   } catch (err) {
@@ -938,6 +958,7 @@ const getCompletionById = async (sourceid, regime) => {
 
 async function getUserProfileByid(userid){
   try{
+
     return await telegram_profile_collection
       .find({ id: userid })
       .lean();
@@ -950,6 +971,7 @@ async function getUserProfileByid(userid){
 
 async function getUserProfileByToken(token){
   try{
+
     return await telegram_profile_collection
       .find({ token: token })
       .lean();
@@ -963,6 +985,7 @@ async function getUserProfileByToken(token){
 
 async function UpdateSettingPromise(requestMsgInstance, pathString, value){
   try {
+
     const res = await telegram_profile_collection.updateOne(
       { id: requestMsgInstance.user.userid },
       { $set: { [pathString]: value } }
@@ -979,6 +1002,7 @@ async function UpdateSettingPromise(requestMsgInstance, pathString, value){
 
 async function updateCurrentRegimeSetting(requestMsgInstance){
   try {
+
       const result = await telegram_profile_collection.updateOne(
           { id: requestMsgInstance.user.userid }, 
           { $set: { "settings.current_regime": requestMsgInstance.user.currentRegime} }
@@ -1012,7 +1036,7 @@ async function get_all_profiles(){
 
 async function get_all_registeredPromise() {
   try {
-
+  
     const doc = await telegram_profile_collection
       .find({ "permissions.registered": true })
       .lean();
@@ -1030,6 +1054,7 @@ const get_all_adminPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
+ 
       telegram_profile_collection
         .find({ "permissions.admin": true }, function (err, doc) {
           if (err) {
@@ -1052,7 +1077,7 @@ const get_all_readPromise = () => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
-
+  
       telegram_profile_collection
         .find({ "permissions.readInfo": true }, function (err, doc) {
           if (err) {
@@ -1122,6 +1147,7 @@ const delete_profile_by_id_arrayPromise = (profileIdArray) => {
   const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
+
       telegram_profile_collection.deleteMany(
         { id: { $in: profileIdArray } },
         (err, res) => {
@@ -1193,5 +1219,6 @@ module.exports = {
   getJsonBy,
   updateManyEntriesInDbById,
   getKwgItemBy,
-  getKwgItemsForUser
+  getKwgItemsForUser,
+  getUploadedFilesBySourceId
 };

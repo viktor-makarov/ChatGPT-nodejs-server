@@ -32,8 +32,9 @@ if(process.env.WEBHOOK_ENABLED){
 global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, options);
 
 if(process.env.WEBHOOK_ENABLED){
-global.bot.setWebHook(`${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`,{ip_address:process.env.IP_ADDRESS})
+global.bot.setWebHook(`${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`)
 }
+
 
 console.log("TelegramBot options",options)
 

@@ -35,8 +35,9 @@ class FunctionCallNew{
 
             this.#functionName = this.#functionCall.function.name
             this.#argumentsText = this.#functionCall?.function?.arguments
-
+            
             if(this.#functionName==="get_current_datetime"){this.#functionResult = this.get_current_datetime()} 
+            else if(this.#functionName==="get_user_guide"){this.#functionResult = await this.get_user_guide()} 
             else if(this.#functionName==="run_javasctipt_code"){this.#functionResult = await this.runJavascriptCode()}
             else if(this.#functionName==="fetch_url_content"){this.#functionResult = await this.fetchUrlContentRouter()}
             else if(this.#functionName==="create_midjourney_image"){this.#functionResult = await this.CreateMdjImageRouter()} 
@@ -90,6 +91,20 @@ class FunctionCallNew{
 
     }
 
+    async get_user_guide(){
+
+        const url = appsettings.other_options.pdf_guide_url
+
+        const extractedObject = await func.extractTextFromFile(url,"application/pdf")
+
+        if(extractedObject.success===1){
+            return {success:1,resource_url:url,text:extractedObject.text}
+        } else {
+            return {success:0,resource_url:url,error:extractedObject.error}
+        }
+
+}
+    
     async get_data_from_mongoDB_by_pipepine(table_name){
 
         let pipeline = [];
@@ -139,8 +154,6 @@ class FunctionCallNew{
         }
     
         };
-
-
     async runJavascriptCode(){
 
         try{
@@ -177,8 +190,7 @@ class FunctionCallNew{
                 throw err;
             }
         };
-
-        async get_knowledge_base_item(){
+    async get_knowledge_base_item(){
 
             try{
                 
@@ -208,9 +220,8 @@ class FunctionCallNew{
                     err.place_in_code = err.place_in_code || "get_knowledge_base_item";
                     throw err;
                 }
-            };
-
-        async extract_text_from_file(url,mine_type,index){
+        };
+    async extract_text_from_file(url,mine_type,index){
 
             try{
 
@@ -230,7 +241,21 @@ class FunctionCallNew{
 
         }
 
-        async extract_text_from_file_router(){
+
+    getArrayFromParam(param){
+
+        if(Array.isArray(param)){
+
+            return param
+        }
+
+        const stringTrimed = param.trim()
+        const stringSplit = stringTrimed.split(",")
+
+        return stringSplit
+    }
+
+    async extract_text_from_file_router(){
 
             try{
                 
@@ -251,8 +276,16 @@ class FunctionCallNew{
                 return {success:0,error: err.message + "" + err.stack}
             }
 
-            const extractFunctions = this.#argumentsJson.resources.map((resource,index) => this.extract_text_from_file(resource.file_url,resource.file_mime_type,index))
+            const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
 
+            const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
+     
+            resources.sort((a, b) => {
+                return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
+              });
+
+            const extractFunctions = resources.map((resource,index) => this.extract_text_from_file(resource.fileUrl,resource.fileMimeType,index))
+              
             let results = await Promise.all(extractFunctions)
 
             results.sort((a, b) => a.index - b.index);
@@ -416,7 +449,6 @@ class FunctionCallNew{
         }
 
         return {success:1}
-
     }
 
     escapeJSONString(str) {
@@ -437,7 +469,6 @@ class FunctionCallNew{
         });
       }
 
-
     convertArgumentsToJSON(){
         try{
         this.#argumentsJson=JSON.parse(this.#argumentsText)
@@ -453,7 +484,6 @@ class FunctionCallNew{
     }
 
     convertResourcesParamToJSON(){
-
 
         try{
             this.#argumentsJson.resources = JSON.parse(this.#argumentsJson.resources)
@@ -472,25 +502,13 @@ class FunctionCallNew{
         }
 
         if(!Array.isArray(this.#argumentsJson.resources)){
-            throw new Error(`'resources' parameter should be an array`)
+            const regex = /^(\d+)(,\d+)*$/;
+
+        const paramIsValid = regex.test(this.#argumentsJson.resources);
+        if(!paramIsValid){
+            throw new Error(`'resources' parameter is invalid. It must look like this: 3456,3456,12345`)
         }
-
-        let index = 0;
-        for (const resource of this.#argumentsJson.resources){
-            const file_url = resource.file_url
-            const file_mime_type = resource.file_mime_type
-            
-            if(!file_url){
-                throw new Error(`In resource undex index ${index} file_url parameter is missing. Provide the value for the agrument and retry`)
-            }
-
-            if(!appsettings.file_options.allowed_mime_types.includes(file_mime_type)){
-                throw new Error(`In resource undex index ${index} file_mime_type ${file_mime_type} is not supported for extraction.`)
-            }    
-
-            index = index + 1
         }
-
         
     }
     

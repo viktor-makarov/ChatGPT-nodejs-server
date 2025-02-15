@@ -28,7 +28,6 @@ function extractSystemRolesFromEnd(documents) {
   return result;
 }
 
-
 async function startFileDownload(url){
   const response = await axios({
     url,
@@ -47,7 +46,6 @@ async function fileDownload(url){
     responseType: 'arraybuffer',
     timeout: 5000
   });
-
 return response.data
 }
 

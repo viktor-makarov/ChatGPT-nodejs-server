@@ -199,6 +199,10 @@ class Dialogue extends EventEmitter {
         return this.#dialogueFull;
     };
 
+    get userInstance(){
+        return this.#user
+    }
+
     get tokensWoLastCompletion(){
         return this.#tokensWoLastCompletion
     }
@@ -323,8 +327,9 @@ class Dialogue extends EventEmitter {
     async  sendSuccessFileMsg(fileSystemObj){
 
         const MsgText = `✅ Файл <code>${fileSystemObj.fileName}</code> добавлен в наш диалог.`
-
+        
         let infoForUser = {
+            fileId:fileSystemObj.sourceid,
             fileName:`<code>${fileSystemObj.fileName}</code>`,
             fileUrl:`<code>${fileSystemObj.fileUrl}</code>`,
             fileExtention: fileSystemObj.fileExtention,
@@ -361,6 +366,7 @@ class Dialogue extends EventEmitter {
 
         const currentRole = "user"
         const obj = {
+            fileid:requestInstance.msgId,
             filename:requestInstance.fileName,
             download_url:url,
             fileDescription:requestInstance.fileCaption
@@ -390,7 +396,9 @@ class Dialogue extends EventEmitter {
             role: currentRole,
             roleid: 0,
             content: content
-          }       
+          }      
+          
+        
 
         const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
         fileSystemObj._id = savedSystem.upserted[0]._id

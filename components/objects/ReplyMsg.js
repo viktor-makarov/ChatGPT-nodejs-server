@@ -127,7 +127,7 @@ async sendTelegramWaitMsg(seconds){
 };
 
 async sendTextToSpeachWaiterMsg(seconds){
-  const text = msqTemplates.audio_dowload_progess
+  const text = msqTemplates.texttospeech_progress
   return await this.sendToNewMessage(text)
 };
 
@@ -285,6 +285,21 @@ async sendToNewMessage(text,reply_markup,parse_mode){
 
         return result
 };
+
+async sendDocumentByUrl(url) {
+  await bot.sendDocument(this.#chatId, url);
+}
+
+async sendDocumentAsBinary(file,fileName) {
+
+  if(fileName) {
+    await bot.sendDocument(this.#chatId, file, {}, { filename: fileName });
+  } else {
+    await bot.sendDocument(this.#chatId, file);
+  }
+
+
+}
 
 async sendChoosenVersion(text,formulas,version,versionsCount){
 
@@ -473,7 +488,7 @@ return reply_markup
 async deliverCompletionToTelegram(completionInstance){
 
         if(this.#completion_ended){
-          console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 2.")
+          console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 3.")
         }
         this.setInProgress()
         
@@ -487,7 +502,7 @@ async deliverCompletionToTelegram(completionInstance){
                     oneMsgText = this.#textToSend.slice(0,this.#msgThreshold) + "..."
                     this.#sentTextIndex += this.#msgThreshold
                     this.calcualteTextToSend()
-
+                  
                 } else {
                     oneMsgText = this.#textToSend
                 }
