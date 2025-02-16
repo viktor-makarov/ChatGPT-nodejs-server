@@ -219,7 +219,7 @@ function router(botInstance) {
       }))
 
       let responses =[];
-
+      
       await replyMsg.answerCallbackQuery(requestMsg.callbackId);
         switch(requestMsg.callback_event) {
           case "info_accepted":

@@ -147,8 +147,12 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
         responses.push({ text: msqTemplates.blank_registration })
         break;
         case "valid":
-          responses.push({text:requestMsgInstance.guideHandler().mainText})
-          responses.push({text:requestMsgInstance.guideHandler().acceptText,buttons:requestMsgInstance.guideHandler()?.buttons})
+          responses.push({
+            text:requestMsgInstance.guideHandler().text,
+            buttons:requestMsgInstance.guideHandler().buttons,
+            parse_mode:requestMsgInstance.guideHandler()?.parse_mode
+          })
+          responses.push({text:requestMsgInstance.acceptHandler().text,buttons:requestMsgInstance.acceptHandler()?.buttons})
         break;
         case "invalid":
           responses.push({ text: msqTemplates.incorrect_code })
