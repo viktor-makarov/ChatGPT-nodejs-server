@@ -100,6 +100,8 @@ function router(botInstance) {
         replyMsgInstance:replyMsg,
         userInstance:user
       })
+
+      await dialogue.getMetaFromDB()
       
       const toolCalls = new ToolCalls({
         replyMsgInstance:replyMsg,
@@ -193,6 +195,8 @@ function router(botInstance) {
         replyMsgInstance:replyMsg,
         userInstance:user
       })
+
+      await dialogue.getMetaFromDB()
 
       const toolCalls = new ToolCalls({
         replyMsgInstance:replyMsg,
@@ -450,7 +454,10 @@ function router(botInstance) {
           const resultMdj = await telegramCmdHandler.mdj_custom_handler(requestMsg,replyMsg)
 
           const buttons = resultMdj.replymsg.options
-          const btnsDescription = telegramCmdHandler.generateButtonDescription(buttons)
+          const labels = buttons.map(button => button.label)
+          const buttonsShownBefore = dialogue.metaGetMdjButtonsShown
+          const btnsDescription = telegramCmdHandler.generateButtonDescription(labels,buttonsShownBefore)
+          await dialogue.metaSetMdjButtonsShown(labels)
           const choosenButton = resultMdj.buttonPushed
           const choosenBtnsDescription = telegramCmdHandler.generateButtonDescription([{label:choosenButton}])         
           const text = `User has pushed the button ${JSON.stringify(choosenBtnsDescription)} and has the following further options ${JSON.stringify(btnsDescription)}`

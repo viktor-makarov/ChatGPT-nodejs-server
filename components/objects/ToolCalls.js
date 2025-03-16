@@ -89,7 +89,7 @@ async router(){
 
         const toolConfig = this.toolConfigByFunctionName(toolCall?.function?.name)
         const systemMsgId = await this.preCommitToolCall(toolCall,toolConfig)
-       
+        
         let toolCallResult = {
             tool_call_id:toolCall.id,
             tool_call_type:toolCall.type,
@@ -103,12 +103,14 @@ async router(){
             const functionCall = new FunctionCallNew({
                 functionCall:toolCall,
                 replyMsgInstance:this.#replyMsg,
+                dialogueInstance:this.#dialogue,
                 userInstance:this.#user,
-                systemMsgId:systemMsgId,
+                functionConfig:toolConfig,
                 tokensLimitPerCall:tokensLimitPerCall
             });
 
             let outcome = await functionCall.router()
+
             this.countUnsuccessfullFunctionCalls(toolCallResult.function_name,outcome)
             const limitIsExceeded = this.limitOfUnsuccessFullExceeded(toolCallResult.function_name)
             if(limitIsExceeded){
@@ -133,14 +135,18 @@ async router(){
             tool_function:toolCallResult.function_name,
             tool_reply:toolCallResult,
             call_duration:toolCallResult.duration,
-            call_number:`${index}/${toolCallsPromiseList.length}`
+            call_number:`${index}/${toolCallsPromiseList.length}`,
+            success:toolCallResult.success
         })
+
+        await this.updateFinalMsg(this.#replyMsg.chatId,toolCallResult)
 
         return toolCallResult
     })
 
+        await this.#dialogue.metaSetFunctionInProgressStatus(true)
         const results = await Promise.all(toolCallsPromiseList)
-
+        
         await this.#dialogue.commitToolCallResults({
             userInstance:this.#user,
             replyMsgInstance:this.#replyMsg,
@@ -148,6 +154,7 @@ async router(){
             results:results
         });
 
+        await this.#dialogue.metaSetFunctionInProgressStatus(false)
         this.#toolCalls =[];
 };
 
@@ -230,10 +237,11 @@ async generateAvailableTools(userClass){
             }
         },
         friendly_name:"Дата и время",
+        timeout_ms:15000,
         try_limit:3
     }
         );
-        
+      /*  
         functionList.push(
             {type:"function",
             function:{
@@ -244,16 +252,39 @@ async generateAvailableTools(userClass){
                     properties: {
                         javascript_code: {
                             type: "string",
-                            description: "Text of javascript code. You code should output results to the console. Add console in the end."
+                            description: "Text of javascript code. In the code you must output results to the console."
                         }
                     },
                     required: ["javascript_code"]
                 }
             },
             friendly_name:"Вычисления JavaScript",
+            timeout_ms:30000,
             try_limit:3      
         }
-    );
+    );*/
+
+    functionList.push(
+        {type:"function",
+        function:{
+            name: "run_python_code",
+            description: "You can use this function to execute a python code. Use this every time you need to do calculations to ensure their accuraсy.",
+            parameters: {
+                type: "object",
+                properties: {
+                    python_code: {
+                        type: "string",
+                        description: "Text of python code. In the code you must print the results to the console. Use syntax compatible with python 3.12. But you can use oly the following additional modules pandas, openpyxl, regex, PyPDF2 and python-docx."
+                    }
+                },
+                required: ["python_code"]
+            }
+        },
+        friendly_name:"Вычисления Python",
+        timeout_ms:30000,
+        try_limit:3      
+    }
+);
         
         
         functionList.push(
@@ -273,6 +304,7 @@ async generateAvailableTools(userClass){
             }
         },
         friendly_name: "Чтение гиперссылки",
+        timeout_ms:30000,
         try_limit: 3 }
         );
         
@@ -293,6 +325,14 @@ async generateAvailableTools(userClass){
                 }
             },
             friendly_name: "Генерация изображения",
+            timeout_ms:180000,
+            long_wait_notes: [
+                {time_ms:30000,comment:"надо ждать 1"},
+                {time_ms:60000,comment:"надо ждать 2"},
+                {time_ms:90000,comment:"надо ждать 3"},
+                {time_ms:120000,comment:"надо ждать 4"},
+                {time_ms:150000,comment:"надо ждать 5"}
+            ],
             try_limit: 3 }
             );
 
@@ -313,6 +353,7 @@ async generateAvailableTools(userClass){
                 }
             },
             friendly_name: "Чтение текстового документа",
+            timeout_ms:60000,
             try_limit: 3 }
             );
 
@@ -327,6 +368,7 @@ async generateAvailableTools(userClass){
                 }
             },
             friendly_name: "Чтение инструкции",
+            timeout_ms:30000,
             try_limit: 3 }
             );
 
@@ -348,6 +390,7 @@ async generateAvailableTools(userClass){
                 }
             },
             friendly_name: "Запрос в базу знаний",
+            timeout_ms:30000,
             try_limit: 3 }
             );
         
@@ -373,6 +416,29 @@ async generateAvailableTools(userClass){
             }
         },
         friendly_name: "Статистика использования R2D2",
+        timeout_ms:30000,
+        try_limit: 3
+        })
+
+
+        functionList.push(
+            {type:"function",
+            function:{
+            name: "get_functions_usage",
+            description: `Use this function to report on this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongo.mongooseVersion()}. One document represents one user's call of a function`,
+            parameters: {
+                type: "object",
+                properties: {
+                    aggregate_pipeline: {
+                        type: "string",
+                        description: `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${JSON.stringify(scheemas.FunctionUsageLogSheema.obj)}. You should limit result of function with maximum of 100 rows. You can use get_current_datetime function to get current date and time if needs be.`
+                    }
+                },
+                required: ["aggregate_pipeline"]
+            }
+        },
+        friendly_name: "Статистика вызова функций R2D2",
+        timeout_ms:30000,
         try_limit: 3
         })
 
@@ -393,6 +459,7 @@ async generateAvailableTools(userClass){
                 required: ["aggregate_pipeline"]
             }},
         friendly_name: "Cистемные ошибки R2D2",
+        timeout_ms:30000,
         try_limit: 3})
         };
         

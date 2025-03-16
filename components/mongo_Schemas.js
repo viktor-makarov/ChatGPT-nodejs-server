@@ -205,6 +205,7 @@ const FunctionUsageLogSheema = new Schema(
     call_duration: {type: Number},
     call_number: {type: String},
     regime: { type: String,description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
+    success:{type:Boolean ,description: "Indicates if the function was successfull."}
   },
   { collection: appsettings.mongodb_names.coll_functions_log }
 );
@@ -252,6 +253,17 @@ TelegramDialogSheema.index({ regime: -1 });
 TelegramDialogSheema.index({ userid: -1 });
 
 
+const TelegramDialogMetaSheema = new Schema(
+  {
+
+    userid: { type: Number, index: true },
+    function_calls: {type: Object},
+    
+  },
+  { collection: appsettings.mongodb_names.col_dialogue_meta }
+);
+TelegramDialogMetaSheema.index({ userid: -1 });
+
 module.exports = {
   ProfileSheema,
   LogsSheema,
@@ -263,5 +275,6 @@ module.exports = {
   FunctionUsageLogSheema,
   MdjImages,
   HashStorage,
-  KnowledgeBaseSheema
+  KnowledgeBaseSheema,
+  TelegramDialogMetaSheema
 };

@@ -10,7 +10,7 @@ const aws = require("./aws_func.js")
 
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
   let responses =[];
-
+  
   const current_regime = requestMsgInstance.user.currentRegime
 
   if(current_regime === "voicetotext"){
@@ -174,9 +174,12 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     const response = await resetdialogHandler(requestMsgInstance);
     responses.push(response)
     await dialogueInstance.commitSystemToDialogue(msqTemplates.system_start_dialogue,requestMsgInstance)
+    await dialogueInstance.deleteMeta()
+    await dialogueInstance.createMeta()
 
   } else if(cmpName==="unregister"){
     const response = await unregisterHandler(requestMsgInstance);
+    await dialogueInstance.deleteMeta()
     responses.push(response)
 
   } else if(cmpName==="help"){
@@ -273,7 +276,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     }
   } else if(cmpName==="sendtoall"){
     if(isAdmin){
-      const response = sendtoallHandler(requestMsgInstance);
+      const response = await sendtoallHandler(requestMsgInstance,replyMsgInstance);
       responses.push(response)
     } else {
       responses.push({ text: msqTemplates.no_admin_permissions })
@@ -317,19 +320,18 @@ function formFoldedSysMsg(toolCallFriendlyNameObj,msg_id){
   return {text:text,reply_markup:reply_markup}
 }
 
-function generateButtonDescription(buttonsInput){
+function generateButtonDescription(buttonLabels,buttonsShownBefore){
 
   let description ={};
-  let buttons = buttonsInput;
-  const descriotionSource = appsettings.mdj_options.buttons_description
+  let lables = buttonLabels;
+  const descriptionSource = appsettings.mdj_options.buttons_description
   const exclude_buttons = appsettings.mdj_options.exclude_buttons;
-  buttons = buttons.filter(button => !exclude_buttons.includes(button.label));
+  lables = lables.filter(label => !exclude_buttons.includes(label));
+  lables = lables.filter(label => !buttonsShownBefore.includes(label));
 
-  for (const button of buttons){
-    const btnLabel = button.label;
-    description[btnLabel] = descriotionSource[btnLabel]
+  for (const label of lables){
+    description[label] = descriptionSource[label]
   }
-
   return description
 }
 
@@ -531,7 +533,7 @@ async function unregisterAllNotUpToDate(requestMsgInstance) {
       return { text: msqTemplates.unregisteredAllResultMsg.replace("[number]",resultDeleted.deletedCount.toString()) };
 }
 
-async function sendtoallHandler(requestMsgInstance) {
+async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
   try {
 
       const pattern = /\[(.*?)\]/gm; // Regular expression pattern to match strings inside []
@@ -541,19 +543,29 @@ async function sendtoallHandler(requestMsgInstance) {
         const substrings = matches.map((match) => match.slice(1, -1)); // Extracting substring between []
         let text_to_send = substrings.join(" ");
         const profile_list = await mongo.get_all_profiles();
-        profile_list.forEach(async (item) => {
+        let i = 0;
+        let ii = 0;
+        for (const item of profile_list){
             if (item.id_chat) {
-              await botInstance.sendMessage(
-                item.id_chat,
-                text_to_send + "\n\n Сообщение от Администратора.",
-                {parse_mode:"HTML"}
-              );
+
+                try{
+                await replyMsgInstance.botInstance.sendMessage(
+                  item.id_chat,
+                  text_to_send + "\n\n Сообщение от Администратора.",
+                  {parse_mode:"html"}
+                );
+              i = i + 1;
+              } 
+                catch(err){
+                  console.log(`Ошибка отправки пользователю ${item.id_chat}`)
+                ii = ii + 1;
+                }
             }
-        });
+      };
         return {
           text:
             msqTemplates.sendtoall_success +
-            ` ${profile_list.length} пользователям.`
+            ` ${i} пользователям. ${ii} отправить не удалось.`
         };
       } else {
         err = new Error(
@@ -681,7 +693,7 @@ async function createNewFreeAccount(){
 
   const result = await mongo.insert_blank_profile(newToken)
   const accountToken = result.token
-  return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/r2d2_test_chatbot?start=${accountToken}`}
+  return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/${process.env.TELEGRTAM_BOT_NAME}?start=${accountToken}`}
 }
 
 async function resetTranslatorDialogHandler(requestMsgInstance) {
@@ -1021,7 +1033,7 @@ async function tokenValidation(requestMsgInstance) {
     }
 }
 
-async function mdj_create_handler(replyInstance,prompt){
+async function mdj_create_handler(prompt){
 
   const info = await MdjMethods.executeInfo()
   console.log(info)
@@ -1036,23 +1048,7 @@ try{
 }
 
   const imageBuffer = await otherFunctions.getImageByUrl(msg.uri)
-
-  let reply_markup = {
-    one_time_keyboard: true,
-    inline_keyboard: []
-  };
-
-  reply_markup = await replyInstance.generateMdjButtons(msg,reply_markup);
   
-  const msgResult = await replyInstance.simpleSendNewImage({
-    caption:prompt,
-    reply_markup:reply_markup,
-    contentType:"image/jpeg",
-    fileName:`mdj_imagine_${msg.id}.jpeg`,
-    imageBuffer:imageBuffer
-  });
-
-
   return {
     imageBuffer:imageBuffer,
     replymsg:msg

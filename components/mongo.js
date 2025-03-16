@@ -10,11 +10,59 @@ const reg_log_collection = global.mongoConnection.model(global.appsettings.mongo
 const token_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_tokens_log,scheemas.TokensLogSheema);
 const function_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_functions_log,scheemas.FunctionUsageLogSheema);
 const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
+const dialog_meta_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_dialogue_meta,scheemas.TelegramDialogMetaSheema);
+
 const telegram_profile_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_profiles,scheemas.ProfileSheema);
 const telegram_model_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_models,scheemas.ModelsSheema);
 const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
 const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_names.coll_hash_storage,scheemas.HashStorage);
 const knowledge_base_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_knowledge_base,scheemas.KnowledgeBaseSheema);
+
+
+async function createDialogueMeta(object){
+  try {
+    const newDialogieMetaObject = new dialog_meta_collection(object);
+    return await newDialogieMetaObject.save();
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = arguments.callee.name;
+      throw err;
+  }
+}
+
+async function deleteDialogueMeta(userid){
+  try {
+    return await dialog_meta_collection.deleteOne({ userid: userid });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+}
+
+async function updateDialogueMeta(userid,object){
+  try {
+    return await dialog_meta_collection.updateOne(
+      { userid: userid },
+      object,
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+}
+
+async function readDialogueMeta(userid){
+  try {
+    return  await dialog_meta_collection.findOne({ userid: userid },{ _id: 0,__v:0})
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
 
 async function getKwgItemBy(id){
   try {
@@ -216,7 +264,8 @@ async function insertFunctionUsagePromise(obj){
       tool_function:obj.tool_function,
       tool_reply:obj.tool_reply,
       call_duration:obj.call_duration,
-      call_number:obj.call_number
+      call_number:obj.call_number,
+      success:obj.success
     });
 
     return await newFunctionUsage.save();
@@ -242,6 +291,16 @@ const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
 const queryLogsErrorByAggPipeline = async (agg_pipeline) => {
   try {
     return await error_log_collection.aggregate(agg_pipeline)
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
+const functionsUsageByAggPipeline = async (agg_pipeline) => {
+  try {
+    return await function_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
     err.place_in_code = arguments.callee.name;
@@ -555,33 +614,7 @@ const updateOnePromise = async (model, filter, update, options) => {
   }
 };
 
-const getDialogueByUserIdPromise = (userid, regime) => {
-  const func_name = arguments.callee.name;
-  return new Promise(async (resolve, reject) => {
-    try {
-      dialog_collection
-        .find(
-          { userid: userid, regime: regime },
-          { _id: 0, role: 1, name: 1, content: 1, tool_calls: 1,tool_reply: 1, tokens: 1 }
-        )
-        .lean()
-      //  .sort({ createdAtSourceTS: "asc", roleid: "asc" })
-      .sort({ _id: "asc"})
-        .exec((err, res) => {
-          if (err) {
-            err.code = "MONGO_ERR";
-            err.place_in_code = func_name;
-            reject(err);
-          } else {
-            resolve(res);
-          }
-        });
-    } catch (err) {
-      err.place_in_code = func_name;
-      reject(err);
-    }
-  });
-};
+
 
 const getDialogueByUserId = async (userid, regime) => {
 
@@ -1220,5 +1253,10 @@ module.exports = {
   updateManyEntriesInDbById,
   getKwgItemBy,
   getKwgItemsForUser,
-  getUploadedFilesBySourceId
+  getUploadedFilesBySourceId,
+  functionsUsageByAggPipeline,
+  createDialogueMeta,
+  deleteDialogueMeta,
+  updateDialogueMeta,
+  readDialogueMeta
 };

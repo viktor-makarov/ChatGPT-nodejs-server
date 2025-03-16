@@ -17,12 +17,11 @@ global.mongoConnection = await mongoClient.connectToMongo()
 const TelegramBot = require('node-telegram-bot-api');
 const telegramRouter = require("../routerTelegram")
 
-
 let options = {
     polling:true
 };
 
-if(process.env.WEBHOOK_ENABLED){
+if(process.env.WEBHOOK_ENABLED==="true"){
     options["webHook"] = {
         port: process.env.WEBHOOK_PORT
     }
@@ -31,13 +30,29 @@ if(process.env.WEBHOOK_ENABLED){
 
 global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, options);
 
-if(process.env.WEBHOOK_ENABLED){
-global.bot.setWebHook(`${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`)
+if(process.env.WEBHOOK_ENABLED==="true"){
+const webHookUrl = `${process.env.URL}/bot${process.env.TELEGRAM_BOT_TOKEN}`
+
+global.bot.setWebHook(webHookUrl)
+.then((result) => {
+    console.log("setWebHook result:",result)
+
+    global.bot.getWebHookInfo()
+    .then((info) => console.log("getWebHookInfo:",info))
+    .catch((err)=>console.log("getWebHook Error:",err))
+    
+    const hasOpenWebHook = global.bot.hasOpenWebHook()
+    console.log("hasOpenWebHook",hasOpenWebHook)
+    })
+
+    global.bot.getMe()
+    .then((result) => console.log("getMe result:",result))
+    .catch((err)=>console.log("getMe Error:",err))
+
+.catch((err) => console.log("setWebHook err:",err))
 }
 
-
-console.log("TelegramBot options",options)
-
+console.log("TelegramBot options:",options);
 
 telegramRouter.setBotParameters(global.bot) //задаем параметры бота
 telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные

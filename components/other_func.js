@@ -390,6 +390,32 @@ async function extractTextLambdaPDFFile(url){
   }
 }
 
+async function executePythonCode(codeToExecute){
+
+  const requestObj = {"code":codeToExecute}
+  const start = performance.now();
+
+  const result = await aws.lambda_invoke("R2D2-executePythonCode",requestObj)
+  
+  const endTime = performance.now();
+  const executionTime = endTime - start;
+  console.log(`executePythonCode execution time: ${executionTime.toFixed(2)} ms`);
+  const resultJSON = JSON.parse(result)
+   
+  if(resultJSON.statusCode === 200){
+    return resultJSON.body.result
+  } else if (resultJSON.statusCode){
+    const err = new Error("executePythonCode: " + resultJSON.body)
+    throw err
+  } else if (resultJSON.errorMessage){
+    const err = new Error("executePythonCode: " + resultJSON.errorType + " " + resultJSON.errorMessage)
+    throw err
+  } else {
+    const err = new Error('unspecified error in aws.lambda_invoke function')
+    throw err
+  }
+}
+
 async function extractTextLambdaExcelFile(url){
 
   const requestObj = {"file_url":url}
@@ -876,5 +902,6 @@ module.exports = {
   startFileDownload,
   extractSystemRolesFromEnd,
   fileDownload,
-  extractTextFromFile
+  extractTextFromFile,
+  executePythonCode
 };

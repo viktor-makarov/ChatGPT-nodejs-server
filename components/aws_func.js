@@ -13,9 +13,9 @@ async function lambda_invoke(funcName, payload){
   
     const { Payload, LogResult } = await client.send(command);
     const result = Buffer.from(Payload).toString();
-
     const logs = Buffer.from(LogResult, "base64").toString();
 
+   
     return result;
   };
   /** snippet-end:[javascript.v3.lambda.actions.Invoke] */

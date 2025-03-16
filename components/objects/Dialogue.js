@@ -7,8 +7,11 @@ class Dialogue extends EventEmitter {
 
     //instances
     #user;
+    #userid;
     #replyMsg;
     #toolCallsInstance;
+    #metaObject
+    #defaultMetaObject = {userid:this.#userid,function_calls:{inProgress:false,runs:{},mdjButtonsShown:[]}};
 
     #dialogueForRequest = [];
     #dialogueFull = [];
@@ -30,6 +33,7 @@ class Dialogue extends EventEmitter {
     constructor(obj) {
         super();
         this.#user = obj.userInstance;
+        this.#userid = this.#user.userid;
         this.#replyMsg = obj.replyMsgInstance;
         this.#toolCallsInstance = obj.toolCallsInstance
       };
@@ -93,6 +97,7 @@ class Dialogue extends EventEmitter {
 
     async getDialogueFromDB(){
 
+        console.time('getDialogueFromDB');
         const messagesFromDb = await mongo.getDialogueByUserId(this.#user.userid,this.#user.currentRegime)
         
         this.#dialogueFull = await messagesFromDb.map(document => ({
@@ -114,10 +119,11 @@ class Dialogue extends EventEmitter {
             fileAIDescription:document.fileAIDescription
           }));
 
+        console.time('generateDialogueForRequest');
         this.#dialogueForRequest = this.generateDialogueForRequest(this.#dialogueFull)
+        console.timeEnd('generateDialogueForRequest');
 
-        //  console.log("messagesFromDb",messagesFromDb)
-      
+        console.timeEnd('getDialogueFromDB');
         return this.#dialogueForRequest
     };
 
@@ -215,7 +221,68 @@ class Dialogue extends EventEmitter {
         this.#regenerateCompletionFlag =  value;
     }
 
+    async getMetaFromDB(){
+        this.#metaObject =  await mongo.readDialogueMeta(this.#userid)
+        return this.#metaObject
+    }
 
+    async deleteMeta(){
+        await mongo.deleteDialogueMeta(this.#userid)
+        this.#metaObject =  this.#defaultMetaObject
+    }
+
+    async createMeta(){
+        
+        this.#metaObject =  this.#defaultMetaObject
+        this.#metaObject.userid = this.#userid
+        await mongo.createDialogueMeta(this.#metaObject)
+    }
+
+    async metaIncrementFunction(functionName){
+
+        if(this.#metaObject.function_calls.runs[functionName]>0){
+            this.#metaObject.function_calls.runs[functionName] += 1;
+        } else {
+            this.#metaObject.function_calls.runs[functionName] = 1;
+        }
+
+        await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+        return this.#metaObject.function_calls.runs[functionName]
+    }
+
+    metaGetNumberOfFunctionRuns(functionName){
+        if(this.#metaObject.function_calls.runs[functionName]>0){
+            return this.#metaObject.function_calls.runs[functionName]
+        } else {
+            return 0
+        }
+    }
+
+    get metaGetMdjButtonsShown(){
+        return this.#metaObject.function_calls.mdjButtonsShown
+    }
+
+    async metaSetMdjButtonsShown(mdjButtonsArray){
+        let buttonsAdded = 0;
+        mdjButtonsArray.forEach(value => {
+            if (!this.#metaObject.function_calls.mdjButtonsShown.includes(value)) {
+                this.#metaObject.function_calls.mdjButtonsShown.push(value);
+                buttonsAdded +=1
+            }
+          });
+        
+        if(buttonsAdded>0){
+            await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+        };
+        return buttonsAdded
+    }
+
+    async metaSetFunctionInProgressStatus(value){
+        console.log(this.#metaObject)
+        this.#metaObject.function_calls.inProgress = value;
+        await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+    }
+    
     async updateInputMsgTokenUsage(msgToUpdate){
         await mongo.updateInputMsgTokenUsage(msgToUpdate._id,msgToUpdate.tokens)
     }
@@ -487,7 +554,7 @@ class Dialogue extends EventEmitter {
         this.#previousMsg = this.#currentMsg;
         this.#currentMsg = toolObject;
 
-        await toolCallsInstance.updateFinalMsg(replyMsgInstance.chatId,result)
+       // await toolCallsInstance.updateFinalMsg(replyMsgInstance.chatId,result)
     } 
 
         console.log("TOOL MESSAGE")

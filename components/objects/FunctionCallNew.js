@@ -4,52 +4,96 @@ const mongo = require("../mongo");
 const func = require("../other_func.js");
 const telegramCmdHandler = require("../telegramCmdHandler.js")
 
+
+
 class FunctionCallNew{
 
     #replyMsg;
-    #user; 
+    #dialogue
+    #user;
+    #other_functions
 
     #tokensLimitPerCall;
 
     #functionCall;
     #functionName;
-    #systemMsgId;
     #functionResult="";
     #argumentsText;
     #argumentsJson;
-
+    #timeout_ms;
+    #isCanceled;
+    #isInProgress;
+    #functionConfig;
    
     constructor(obj) {
         this.#functionCall = obj.functionCall;
+        this.#functionConfig = obj.functionConfig;
         this.#replyMsg = obj.replyMsgInstance;
-        this.#systemMsgId = obj.systemMsgId;
+        this.#dialogue = obj.dialogueInstance;
         this.#user = obj.userInstance;
         this.#tokensLimitPerCall = obj.tokensLimitPerCall
+        this.#other_functions = require("../other_func.js");
+        this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
+        this.#isCanceled = false;
+        this.#isInProgress = false;
       };
 
+async router(){
 
-    async router(){
+    const functionOutcome = await this.functionHandler()
 
-        const validationResult = this.validateFunctionCallObject(this.#functionCall)
-        if(validationResult.valid){
+    return functionOutcome;
+}
 
-            this.#functionName = this.#functionCall.function.name
-            this.#argumentsText = this.#functionCall?.function?.arguments
-            
-            if(this.#functionName==="get_current_datetime"){this.#functionResult = this.get_current_datetime()} 
-            else if(this.#functionName==="get_user_guide"){this.#functionResult = await this.get_user_guide()} 
-            else if(this.#functionName==="run_javasctipt_code"){this.#functionResult = await this.runJavascriptCode()}
-            else if(this.#functionName==="fetch_url_content"){this.#functionResult = await this.fetchUrlContentRouter()}
-            else if(this.#functionName==="create_midjourney_image"){this.#functionResult = await this.CreateMdjImageRouter()} 
-            else if(this.#functionName==="get_users_activity"){this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
-            else if(this.#functionName==="get_chatbot_errors") {this.#functionResult = await this.get_data_from_mongoDB_by_pipepine("errors_log")}
-            else if(this.#functionName==="get_knowledge_base_item") {this.#functionResult = await this.get_knowledge_base_item()} 
-            else if(this.#functionName==="extract_text_from_file") {this.#functionResult = await this.extract_text_from_file_router()}    
-            else {this.#functionName = {error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}}
 
-            return this.#functionResult
+async functionHandler(){
+        try{
+            const validationResult = this.validateFunctionCallObject(this.#functionCall)
+            if(validationResult.valid){
+
+                this.#functionName = this.#functionCall.function.name
+                this.#argumentsText = this.#functionCall?.function?.arguments
+
+                let functionPromise;
+                
+                if(this.#functionName==="get_current_datetime"){functionPromise = this.get_current_datetime()} 
+                else if(this.#functionName==="get_user_guide"){functionPromise = this.get_user_guide()} 
+                else if(this.#functionName==="run_javasctipt_code"){functionPromise = this.runJavascriptCode()}
+                else if(this.#functionName==="run_python_code"){functionPromise = this.runPythonCode()}
+                else if(this.#functionName==="fetch_url_content"){functionPromise = this.fetchUrlContentRouter()}
+                else if(this.#functionName==="create_midjourney_image"){functionPromise = this.CreateMdjImageRouter()} 
+                else if(this.#functionName==="get_users_activity"){functionPromise = this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
+                else if(this.#functionName==="get_functions_usage"){functionPromise = this.get_data_from_mongoDB_by_pipepine("functions_log")} 
+                else if(this.#functionName==="get_chatbot_errors") {functionPromise = this.get_data_from_mongoDB_by_pipepine("errors_log")}
+                else if(this.#functionName==="get_knowledge_base_item") {functionPromise = this.get_knowledge_base_item()} 
+                else if(this.#functionName==="extract_text_from_file") {functionPromise = this.extract_text_from_file_router()}    
+                else {
+                    return {success: 0, error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}
+                }
+
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => {
+                        this.#isCanceled = true
+                        this.#isInProgress = false;
+                        reject({ success: 0, error: `Timeout exceeded. The function is allowed ${this.#timeout_ms} seconds.`})
+                    }, this.#timeout_ms)
+                );
+
+                try {
+                    this.#isInProgress = true;
+                    this.#functionResult = await Promise.race([functionPromise, timeoutPromise]);
+                    this.#isInProgress = false;
+                    return this.#functionResult;
+                } catch (error) {
+                    return error;
+                }
+
+            }
+                return {success:0,error:`Call is malformed. ${validationResult.error}`,instructions:"Fix the function and retry. But undertake no more than three attempts to recall the function."}
+        } catch(err){
+            return {success:0,error:err.message,instructions:"Server internal error occured. Try to find other ways to fulfill the user's task."}
         }
-            return {success:0,error:`Call is malformed. ${validationResult.error}`,instructions:"Fix the function and retry. But undertake no more than three attempts to recall the function."}
+
     }
 
     validateFunctionCallObject(callObject){
@@ -85,24 +129,31 @@ class FunctionCallNew{
     
     }
 
-    get_current_datetime(){
+    async get_current_datetime(){
 
+        if(this.#isCanceled){
             return {success:1,result: new Date().toString()}
-
+        } else {
+            return {success:0,error: "Function is canceled by timeout."}
+        }
     }
 
     async get_user_guide(){
 
         const url = appsettings.other_options.pdf_guide_url
 
+
         const extractedObject = await func.extractTextFromFile(url,"application/pdf")
+
+        if(this.#isCanceled){
+            return {success:0,error: "Function is canceled by timeout."}
+        }
 
         if(extractedObject.success===1){
             return {success:1,resource_url:url,text:extractedObject.text}
         } else {
             return {success:0,resource_url:url,error:extractedObject.error}
         }
-
 }
     
     async get_data_from_mongoDB_by_pipepine(table_name){
@@ -131,7 +182,13 @@ class FunctionCallNew{
                 result = await mongo.queryLogsErrorByAggPipeline(pipeline)
             } else if (table_name==="tokens_logs"){
                 result = await mongo.queryTockensLogsByAggPipeline(pipeline)
+            } else if (table_name==="functions_log"){
+                result = await mongo.functionsUsageByAggPipeline(pipeline)
+            } else {
+                return {success:0,error:`There is not handler for mongodb table ${table_name}. Consider modication of the server code`,instructions:"Report the error to the user"}
             }
+
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
     
             const actualTokens = func.countTokensProportion(JSON.stringify(result))
             
@@ -149,8 +206,8 @@ class FunctionCallNew{
             return response
              
         } catch (err){
-    
-            return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message}`,instructions:"Adjust the pipeline provided and retry."}
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+            return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message + "" + err.stack}`,instructions:"Adjust the pipeline provided and retry."}
         }
     
         };
@@ -175,7 +232,10 @@ class FunctionCallNew{
         
         try{
         result = this.runJavaScriptCodeAndCaptureLogAndErrors(codeToExecute)
+        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
         } catch(err) {
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
             return {success:0,error: err.message + "" + err.stack}
         }
 
@@ -190,6 +250,47 @@ class FunctionCallNew{
                 throw err;
             }
         };
+
+
+        async runPythonCode(){
+
+            try{
+                
+            let result;
+            const argFieldValidationResult = this.argumentsFieldValidation()
+            if(argFieldValidationResult.success===0){
+                return argFieldValidationResult
+            }
+            
+            try{
+                this.convertArgumentsToJSON()
+            } catch (err){
+                return {success:0,error: err.message + "" + err.stack}
+            }   
+            
+            const codeToExecute = this.#argumentsJson.python_code
+        
+            
+            try{
+            result = await this.#other_functions.executePythonCode(codeToExecute)
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+            } catch(err) {
+                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+                return {success:0,error: err.message + "" + err.stack}
+            }
+    
+            if (result === ""){
+                return {success:0,error:"No function output.",instructions:"You forgot to add print the results."}
+            }
+            
+            return {success:1,result:result,instructions:"Explain your code to the user in details step by step."}
+                
+                } catch(err){
+                    err.place_in_code = err.place_in_code || "runPythonCode";
+                    throw err;
+                }
+            };
+    
     async get_knowledge_base_item(){
 
             try{
@@ -210,12 +311,17 @@ class FunctionCallNew{
             
             try{
             result = await mongo.getKwgItemBy(kwg_base_id)
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
             } catch(err) {
+                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
                 return {success:0,error: err.message + "" + err.stack}
             }
+            if(result.length > 0){
+                return {success:1,result:result[0].content}
+            } else {
+                return {success:0,error:"Nothing found in the knowledge based by your reguest. Review your request and retry."}
+            }
             
-            return {success:1,result:result[0].content}
-                
                 } catch(err){
                     err.place_in_code = err.place_in_code || "get_knowledge_base_item";
                     throw err;
@@ -299,7 +405,7 @@ class FunctionCallNew{
             const concatenatedText = results.map(obj => obj.text).join(' ');
             
             const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
-            
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
             console.log("numberOfTokens",numberOfTokens)
             console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)    
             if(numberOfTokens >this.#tokensLimitPerCall){
@@ -309,12 +415,14 @@ class FunctionCallNew{
             return {success:1,content_token_count:numberOfTokens, result:concatenatedText}
                 
                 } catch(err){
+                    if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
                     err.place_in_code = err.place_in_code || "extract_text_from_file_router";
                     throw err;
                 }
             };
 
-    runJavaScriptCodeAndCaptureLogAndErrors(code) {
+    async runJavaScriptCodeAndCaptureLogAndErrors(code) {
         // Store the original console.log function
         const originalConsoleLog = console.log;
         // Create an array to hold all outputs (logs and errors)
@@ -324,11 +432,7 @@ class FunctionCallNew{
         console.log = (...args) => {
             outputs.push(args.join(' '));
         };
-    
-        function consoleText(text){
-            console.log(text+"And this is additional text")
-        }
-        
+                    
         try {
             // Run the code
             eval(code);
@@ -344,6 +448,10 @@ class FunctionCallNew{
         // Return all the captured output as a text
         return outputs.join('\n');
         }
+
+    
+
+
     async fetchUrlContentRouter(){
 
         try{
@@ -373,8 +481,9 @@ class FunctionCallNew{
             if(numberOfTokens >this.#tokensLimitPerCall){
                 return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the url content is too big to fit into the dialogue", instructions:"Inform the user about the error details"}
             }
-            
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
         } catch(err){
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
             return {success:0,error:`${err.message} ${err.stack}`,instructions:"Inform the user about the error details in simple and understandable for ordinary users words."}
         }
         
@@ -409,23 +518,49 @@ class FunctionCallNew{
 
             let result;
             try{
-            result = await telegramCmdHandler.mdj_create_handler(this.#replyMsg,prompt)
+            result = await telegramCmdHandler.mdj_create_handler(prompt)
+
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+            
+            let reply_markup = {
+                one_time_keyboard: true,
+                inline_keyboard: []
+              };
+
+            reply_markup = await this.#replyMsg.generateMdjButtons(result.replymsg,reply_markup);
+  
+            const msgResult = await this.#replyMsg.simpleSendNewImage({
+                caption:prompt,
+                reply_markup:reply_markup,
+                contentType:"image/jpeg",
+                fileName:`mdj_imagine_${result.replymsg.id}.jpeg`,
+                imageBuffer:result.imageBuffer
+              });
+        
             } catch(err){
+                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
                 return {
                     success:0,
                     error: err.message + " " + err.stack
                 }
             };
 
+          
             const buttons = result.replymsg.options
-            const btnsDescription = telegramCmdHandler.generateButtonDescription(buttons)
+            const labels = buttons.map(button => button.label)
+            const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
+            
+            const btnsDescription = telegramCmdHandler.generateButtonDescription(labels,buttonsShownBefore)
+            await this.#dialogue.metaSetMdjButtonsShown(labels)
 
+          
              const functionResult = {
                     success:1,
                     result:"The image has been generated and successfully sent to the user with several options to handle the image.",
                     buttonsDescription: btnsDescription,
-                    instructions:"Ensure you don't show one and the same buttons description multiple times"
+                    instructions:"Show buttons description to the user only once."
                 };
+
                 return functionResult
             };
   
