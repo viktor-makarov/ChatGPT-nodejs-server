@@ -82,22 +82,20 @@ availableToolsForCompetion(){
 async router(){
 
     const curentTokenLimit = (this.#overalTokenLimit-this.#dialogue.allDialogueTokens)*this.#tokenFetchLimitPcs;
-
     const tokensLimitPerCall = curentTokenLimit/this.#toolCalls.length
 
     const toolCallsPromiseList =  this.#toolCalls.map(async (toolCall, index) =>  {
 
         const toolConfig = this.toolConfigByFunctionName(toolCall?.function?.name)
-        const systemMsgId = await this.preCommitToolCall(toolCall,toolConfig)
         
         let toolCallResult = {
             tool_call_id:toolCall.id,
             tool_call_type:toolCall.type,
-            tgm_sys_msg_id:systemMsgId,
             function_name:toolCall?.function?.name,
             functionFriendlyName: toolConfig.friendly_name
         };
-        const callExecutionStart = new Date();
+
+        
         if(toolCall.type = "function"){
  
             const functionCall = new FunctionCallNew({
@@ -118,16 +116,16 @@ async router(){
             }
             toolCallResult.content = JSON.stringify(outcome)
             toolCallResult.success = outcome.success
+            toolCallResult.statusMessageId = outcome.statusMessageId
+            toolCallResult.duration = outcome.duration;
                            
         } else {
             const outcome = {success:0,error:"Non-function types cannot be processed for now.",instructions:"Rework into a function"}
             toolCallResult.content = JSON.stringify(outcome)
             toolCallResult.success = outcome.success
         }
+               
         
-        const callExecutionEnd = new Date();
-        const timeTaken = (callExecutionEnd - callExecutionStart) / 1000; // Time difference in seconds
-        toolCallResult.duration = timeTaken.toFixed(2);
         
 
         await mongo.insertFunctionUsagePromise({
@@ -139,6 +137,7 @@ async router(){
             success:toolCallResult.success
         })
 
+        await this.commitToolCallMsg(toolCall,toolCallResult)
         await this.updateFinalMsg(this.#replyMsg.chatId,toolCallResult)
 
         return toolCallResult
@@ -149,8 +148,6 @@ async router(){
         
         await this.#dialogue.commitToolCallResults({
             userInstance:this.#user,
-            replyMsgInstance:this.#replyMsg,
-            toolCallsInstance:this,
             results:results
         });
 
@@ -166,24 +163,14 @@ async addMsgIdToToolCall(toolCallId,systemMsgId){
       })
 }
 
-async preCommitToolCall(toolCall,toolConfig){
+async commitToolCallMsg(toolCall,functionResult){
 
-    //send msg to TGM
-    const MsgText = `${toolConfig.friendly_name}. Выполняется.`
-    const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null)
-    
-    //save msg_id to tool_call in completion
+    if(functionResult.statusMessageId){
     await mongo.updateCompletionInDb({
         filter: {"tool_calls.id":toolCall.id},       
-        updateBody:{ "tool_calls.$.telegramMsgId": result.message_id }
+        updateBody:{ "tool_calls.$.telegramMsgId": functionResult.statusMessageId }
       })
-
-    return result.message_id
-}
-
-async sendInitialMsg(obj){
-    const result = await this.#replyMsg.simpleSendNewMessage(obj.text,obj.reply_markup)
-    return result.message_id
+    }
 }
 
 async updateFinalMsg(chat_id,callResult){
@@ -197,7 +184,7 @@ async updateFinalMsg(chat_id,callResult){
     const text = `${callResult.functionFriendlyName}. ${resultImage}`
 
 
-    const callback_data = {e:"unfold_sysmsg",d:callResult.tgm_sys_msg_id}
+    const callback_data = {e:"unfold_sysmsg",d:callResult.statusMessageId}
 
     const fold_button = {
         text: "Показать подробности",
@@ -211,7 +198,7 @@ async updateFinalMsg(chat_id,callResult){
 
     const result = await this.#replyMsg.simpleMessageUpdate(text,{
         chat_id:chat_id,
-        message_id:callResult.tgm_sys_msg_id,
+        message_id:callResult.statusMessageId,
         reply_markup:reply_markup
     })
     return result.message_id
@@ -327,11 +314,11 @@ async generateAvailableTools(userClass){
             friendly_name: "Генерация изображения",
             timeout_ms:180000,
             long_wait_notes: [
-                {time_ms:30000,comment:"надо ждать 1"},
-                {time_ms:60000,comment:"надо ждать 2"},
-                {time_ms:90000,comment:"надо ждать 3"},
-                {time_ms:120000,comment:"надо ждать 4"},
-                {time_ms:150000,comment:"надо ждать 5"}
+                {time_ms:30000,comment:"Иногда нужно больше времени. Подождем ... ☕️"},
+                {time_ms:60000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
+                {time_ms:90000,comment:"Хм ... 🤔 А вот это уже звоночек ... ",cancel_button:true},
+                {time_ms:120000,comment:"Совсем никуда не годится!😤 Но надо дать еще шанс!",cancel_button:true},
+                {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ...",cancel_button:true}
             ],
             try_limit: 3 }
             );

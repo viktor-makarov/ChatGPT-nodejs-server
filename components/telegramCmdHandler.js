@@ -58,7 +58,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         await requestMsgInstance.getFileLinkFromTgm()
 
         if(requestMsgInstance.uploadFileError){
-          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg,requestMsgInstance);
+          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html")
           return;
         }
@@ -70,7 +70,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
           requestMsgInstance.uploadFileError = err.message
           requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
           requestMsgInstance.unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${requestMsgInstance.fileName}", but failed with the following error: ${requestMsgInstance.uploadFileError}`
-          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg,requestMsgInstance);
+          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html")
           return;
         }
@@ -112,13 +112,13 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
     break;
     case "translator":
       await resetTranslatorDialogHandler(requestMsgInstance)
-      await dialogueInstance.commitSystemToDialogue(msqTemplates.translator_prompt,requestMsgInstance)
+      await dialogueInstance.commitSystemToDialogue(msqTemplates.translator_prompt)
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
 
     break;
     case "texteditor":
       await resetTexteditorDialogHandler(requestMsgInstance)
-      await dialogueInstance.commitSystemToDialogue(msqTemplates.texteditor_prompt,requestMsgInstance)
+      await dialogueInstance.commitSystemToDialogue(msqTemplates.texteditor_prompt)
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
 
     break;
@@ -166,16 +166,21 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   }  else if(cmpName==="resetchat" || cmpName==="Перезапустить диалог"){
 
+    const response = await dialogueInstance.resetDialogue()
+
+    /*
     await dialogueInstance.getDialogueFromDB()
     const completionMsIds = dialogueInstance.getCompletionsLastMsgIds() 
     await replyMsgInstance.deletePreviousRegenerateButtons(completionMsIds)
     const toolsMsgIds = dialogueInstance.getToolsMsgIds()
     await replyMsgInstance.deleteToolsButtons(toolsMsgIds)
     const response = await resetdialogHandler(requestMsgInstance);
-    responses.push(response)
+    
     await dialogueInstance.commitSystemToDialogue(msqTemplates.system_start_dialogue,requestMsgInstance)
     await dialogueInstance.deleteMeta()
     await dialogueInstance.createMeta()
+    */
+    responses.push(response)
 
   } else if(cmpName==="unregister"){
     const response = await unregisterHandler(requestMsgInstance);
@@ -299,9 +304,9 @@ function formFoldedSysMsg(toolCallFriendlyNameObj,msg_id){
   let resultImage;
   if(replySuccess === 1) {
     resultImage = "✅"
-} else {
-    resultImage = "❌"
-}
+  } else {
+      resultImage = "❌"
+  }
 
   let text = `${toolCallFriendlyName}. ${resultImage}`
 
@@ -721,10 +726,9 @@ async function resetdialogHandler(requestMsgInstance) {
     }
 
    if(deletedFiles){
-
-    return { text: msqTemplates.dialogresetsuccessfully_extended.replace("[files]",deletedFiles.length)};
+    return { text: msqTemplates.dialogresetsuccessfully_extended.replace("[files]",deletedFiles.length),buttons:buttons};
    } else {
-    return { text: msqTemplates.dialogresetsuccessfully};
+    return { text: msqTemplates.dialogresetsuccessfully,buttons:buttons};
    }
 }
 

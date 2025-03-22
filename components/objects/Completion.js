@@ -18,7 +18,7 @@ class Completion extends Transform {
 
     #responseReceived;
     #responseErrorRaw
-    #responseErrorMsg;
+    #responseErrorMsg = "";
     #response_status;
     
     #responseHeaders;
@@ -235,21 +235,27 @@ class Completion extends Transform {
       return this.#tool_calls
     }
 
-    async UnSuccessResponseHandle(
-      error
-    ) {
+    async UnSuccessResponseHandle(error) {
       try {
         //  var err = new Error(api_res.statusMessage); //создаем ошибку и наполняем содержанием
         
         let err
         if (this.#response_status === 400 || error.message.includes("400")) {
-          err = new Error(error.message);
-          err.code = "OAI_ERR_400";
-          err.message_from_response = this.#responseErrorMsg
-          err.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-          err.mongodblog = true;
-          err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
-          throw err;
+          if(this.#responseErrorMsg.includes("context_length_exceeded")){
+
+            await this.#replyMsg.sendToNewMessage(msqTemplates.token_limit_exceeded,null,null)
+            const response = await this.#dialogue.resetDialogue()
+            await this.#replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode)
+            
+          } else {
+            err = new Error(error.message);
+            err.code = "OAI_ERR_400";
+            err.message_from_response = this.#responseErrorMsg
+            err.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response ?? "отсутствует");
+            err.mongodblog = true;
+            err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
+            throw err;
+          }
         } else if (this.#response_status === 401 || error.message.includes("401")) {
           err = new Error(error.message);
           err.code = "OAI_ERR_401";
@@ -381,9 +387,7 @@ class Completion extends Transform {
         const jsonChunks = await this.batchStringToJson(batchString);
 
         await this.extractData(jsonChunks)
-        //if(!this.#replyMsg.sendingInProgress){
         this.#replyMsg.deliverCompletionToTelegramThrottled(this)
-        //}
         this.#isProcessingChunk = false;
     }
 

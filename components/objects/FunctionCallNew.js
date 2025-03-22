@@ -40,9 +40,51 @@ class FunctionCallNew{
 
 async router(){
 
+    const statusMessageId = await this.sendStatusMessage()
+    this.triggerLongWaitNotes(statusMessageId)
+
+    const callExecutionStart = new Date();
+
     const functionOutcome = await this.functionHandler()
 
-    return functionOutcome;
+    const duration = ((new Date() - callExecutionStart) / 1000).toFixed(2);
+
+    const ultimateResult = { ...functionOutcome, statusMessageId,duration }
+    
+    return ultimateResult;
+}
+
+async sendStatusMessage(){
+
+    const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.`
+    const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null)
+    return result.message_id
+}
+
+triggerLongWaitNotes(tgmMsgId){
+
+    const long_wait_notes = this.#functionConfig.long_wait_notes
+
+    if(long_wait_notes && long_wait_notes.length >0){
+        for (const note of long_wait_notes){
+            setTimeout(() => {
+                if(this.#isInProgress){
+                const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.\n${note.comment}`
+                this.#replyMsg.simpleMessageUpdate(MsgText,{
+                    chat_id:this.#replyMsg.chatId,
+                    message_id:tgmMsgId
+                })
+            }
+            }, note.time_ms);
+        }
+    }
+};
+
+async finalizeStatusMessage(functionOutcome){
+
+    const resultImage = callResult.success === 1 ? "✅" : "❌";
+    const text = `${this.#functionConfig.friendly_name}. ${resultImage}`
+
 }
 
 

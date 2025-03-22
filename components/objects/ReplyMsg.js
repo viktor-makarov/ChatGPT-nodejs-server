@@ -12,12 +12,12 @@ class ReplyMsg extends EventEmitter {
 #textToSend = "";
 #textToSendLength = 0;
 #textSent = "";
+#waitMsgInProgress = false;
 #sentTextIndex = 0;
 #user;
 #chatId;
 #lastMsgSentId
 #msgIdsForDbCompletion =[];
-#sendingInProgress = false;
 #sendAttempts=0;
 #deliverCompletionToTelegramThrottled;
 #completion_ended = false;
@@ -52,14 +52,14 @@ constructor(obj) {
 set text(value){
   this.#text=value
   this.#textLength = this.#text.length
-  this.calcualteTextToSend()
+  this.calculateTextToSend()
 };
 
 async deliverCompletionToTelegramThrottled(completionInstance){
   await this.#deliverCompletionToTelegramThrottled(completionInstance)
 };
 
-calcualteTextToSend(){
+calculateTextToSend(){
     this.#textToSend=this.#text.slice(this.#sentTextIndex)
     this.#textToSendLength = this.#textToSend.length
 };
@@ -100,9 +100,6 @@ get lastMsgSentId(){
     return this.#lastMsgSentId;
 }
 
-get sendingInProgress(){
-    return this.#sendingInProgress
-}
 
 async sendTypingStatus(){
     await this.#botInstance.sendChatAction(this.#chatId, "typing");
@@ -131,14 +128,6 @@ async sendTextToSpeachWaiterMsg(seconds){
   return await this.sendToNewMessage(text)
 };
 
-setInProgress(){
-    this.#sendingInProgress=true;
-}
-
-releaseInProgress(){
-    this.#sendingInProgress=false;
-    this.#sendAttempts=0;
-}
 
 
 async simpleSendNewImage(obj){
@@ -276,12 +265,9 @@ async deleteToolsButtons(msgIds){
 
 async sendToNewMessage(text,reply_markup,parse_mode){
 
-        this.setInProgress()
-
         const result = await this.simpleSendNewMessage(text,reply_markup,parse_mode)
         this.#lastMsgSentId = result.message_id
         this.#textSent = result.text
-        this.releaseInProgress()
 
         return result
 };
@@ -326,23 +312,19 @@ async sendToNewMessageWithCheck(text,reply_markup){
 
   if(msgExceedsThreshold){
 
-    this.setInProgress() 
     const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,null)
     this.#lastMsgSentId = result.message_id
     this.#textSent = result.text
     results.push(result)
-    this.releaseInProgress()
     
     this.sendToNewMessageWithCheck(text.slice(this.#msgThreshold),reply_markup)
 
   } else {
 
-  this.setInProgress() 
   const result = await this.simpleSendNewMessage(text,reply_markup,null,null)
   this.#lastMsgSentId = result.message_id
   this.#textSent = result.text
   results.push(result)
-  this.releaseInProgress()
 
   }
 
@@ -358,26 +340,24 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
 
   if(msgExceedsThreshold){
 
-    this.setInProgress() 
+
     const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,parse_mode)
     this.#lastMsgSentId = result.message_id
     this.#msgIdsForDbCompletion.push(result.message_id)
     this.#textSent = result.text
     results.push(result)
-    this.releaseInProgress()
     
     this.sendToNewMessageWithCheck(text.slice(this.#msgThreshold),reply_markup)
 
   } else {
 
-  this.setInProgress() 
+
   
   const result = await this.simpleSendNewMessage(text,reply_markup,parse_mode)
   this.#lastMsgSentId = result.message_id
   this.#msgIdsForDbCompletion.push(result.message_id)
   this.#textSent = result.text
   results.push(result)
-  this.releaseInProgress()
 
   }
 
@@ -490,112 +470,120 @@ async deliverCompletionToTelegram(completionInstance){
         if(this.#completion_ended){
           console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 3.")
         }
-        this.setInProgress()
         
             let oneMsgText;
 
             const isValidTextToSend = this.#textToSend && this.#textToSendLength>0 && this.#textToSend != this.#textSent
-            if(isValidTextToSend){
-
-                const msgExceedsThreshold = this.#textToSend.length > this.#msgThreshold
-                if(msgExceedsThreshold){
-                    oneMsgText = this.#textToSend.slice(0,this.#msgThreshold) + "..."
-                    this.#sentTextIndex += this.#msgThreshold
-                    this.calcualteTextToSend()
-                  
-                } else {
-                    oneMsgText = this.#textToSend
-                }
-
-                let options = {
-                    chat_id:this.#chatId,
-                    message_id:this.#lastMsgSentId,
-                    parse_mode: "HTML",
-                    disable_web_page_preview: true,
-                }
-
-                if(options.parse_mode==="HTML"){
-                  const resultObj = otherFunctions.convertMarkdownToLimitedHtml(oneMsgText)
-                  oneMsgText = resultObj.html
-                  completionInstance.completionLatexFormulas = resultObj.latex_formulas
-
-                } else if (options.parse_mode==="Markdown"){
-                    oneMsgText = this.wireStingForMarkdown(oneMsgText)
-                }
-
-                const lastMsgPart = this.#completion_ended && !msgExceedsThreshold
-
-                if (lastMsgPart) {
-                  
-                //Если отправялем последнюю часть сообщения
-                  let reply_markup = this.copyValue(this.#completionReplyMarkupTemplate)
-                  if(completionInstance.completionCurrentVersionNumber>1){
-                    const currentVersionIndex = completionInstance.completionCurrentVersionNumber
-                    const totalVersionsCount = currentVersionIndex
-                    reply_markup = this.generateVersionButtons(currentVersionIndex,totalVersionsCount,reply_markup)
-                  }
-
-                  if(completionInstance.completionLatexFormulas){
-                  reply_markup = this.generateFormulasButton(reply_markup)
-                  }
-                  
-                  reply_markup.inline_keyboard.push([this.#completionRegenerateButtons])
-                  reply_markup.inline_keyboard.push([this.#completionRedaloudButtons])
-                  
-                  options.reply_markup = JSON.stringify(reply_markup);
-                  
-                  
-                  completionInstance.telegramMsgBtns = true;
-                  }
-
-                try{
-                
-                var result;
-                try{
-                result = await this.simpleMessageUpdate(oneMsgText, options)
-                if(lastMsgPart){
-                  this.emit('msgDelivered', {message_id:result.message_id});
-                }
-                } catch(err){
-                    if (err.message.includes("can't parse entities")) {
-                      console.log("parse error occured")  
-                      //   Recovered after MarkdownError
-                        delete options.parse_mode;
-                        result = await this.#botInstance.editMessageText(oneMsgText, options);
-                        if(lastMsgPart){
-                          this.emit('msgDelivered', {message_id:result.message_id});
-                        }
-                      } else {
-                   
-                        err.mongodblog = true;
-                        err.details = err.message
-                        err.place_in_code = err.place_in_code || "sentToExistingMessage_Handler";
-                        throw err
-                      }
-                }
-                this.#textSent = result.text
-                
-                if(msgExceedsThreshold){
-                    await this.sendStatusMsg()
-                    await this.delay(appsettings.telegram_options.debounceMs)
-                    console.log("deliverCompletionToTelegram triggered","this.#textToSend length",this.#textToSend.length )
-                    this.deliverCompletionToTelegram
-                }
-                } catch(err){
-                    const secondsToWait =  this.extractWaitTimeFromError(err)
-                    if(secondsToWait>0){
-                        console.log("this.#sendingInProgress",this.#sendingInProgress)
-                        const waitMsgResult = await this.sendTelegramWaitMsg(secondsToWait)
-                        setTimeout(async () => {
-                            await this.deleteMsgByID(waitMsgResult.message_id)
-                            await this.deliverCompletionToTelegram(completionInstance)
-                        },secondsToWait * 1000)
-                    } else {
-                        throw err;
-                    }
-                }
+            if(!isValidTextToSend){
+              return
             }
-        this.releaseInProgress() 
+
+            if(this.#waitMsgInProgress){
+              return
+            }
+
+            const msgExceedsThreshold = this.#textToSend.length > this.#msgThreshold
+            if(msgExceedsThreshold){
+
+                oneMsgText = this.#textToSend.slice(0,this.#msgThreshold) + "..."
+                this.#sentTextIndex += this.#msgThreshold
+                this.calculateTextToSend()
+
+              
+            } else {
+                oneMsgText = this.#textToSend
+            }
+
+            let options = {
+                chat_id:this.#chatId,
+                message_id:this.#lastMsgSentId,
+                parse_mode: "HTML",
+                disable_web_page_preview: true,
+            }
+
+            if(options.parse_mode==="HTML"){
+              const resultObj = otherFunctions.convertMarkdownToLimitedHtml(oneMsgText)
+              oneMsgText = resultObj.html
+              completionInstance.completionLatexFormulas = resultObj.latex_formulas
+
+            } else if (options.parse_mode==="Markdown"){
+                oneMsgText = this.wireStingForMarkdown(oneMsgText)
+            }
+
+            const lastMsgPart = this.#completion_ended && !msgExceedsThreshold
+
+
+            if (lastMsgPart) {
+              
+            //Если отправялем последнюю часть сообщения
+              let reply_markup = this.copyValue(this.#completionReplyMarkupTemplate)
+              if(completionInstance.completionCurrentVersionNumber>1){
+                const currentVersionIndex = completionInstance.completionCurrentVersionNumber
+                const totalVersionsCount = currentVersionIndex
+                reply_markup = this.generateVersionButtons(currentVersionIndex,totalVersionsCount,reply_markup)
+              }
+
+              if(completionInstance.completionLatexFormulas){
+              reply_markup = this.generateFormulasButton(reply_markup)
+              }
+              
+              reply_markup.inline_keyboard.push([this.#completionRegenerateButtons])
+              reply_markup.inline_keyboard.push([this.#completionRedaloudButtons])
+              
+              options.reply_markup = JSON.stringify(reply_markup);
+              
+              
+              completionInstance.telegramMsgBtns = true;
+              }
+
+            try{
+            
+            var result;
+            try{
+              result = await this.simpleMessageUpdate(oneMsgText, options)
+
+              if(lastMsgPart){
+                this.emit('msgDelivered', {message_id:result.message_id});
+              }
+            } catch(err){
+                if (err.message.includes("can't parse entities")) {
+                    delete options.parse_mode;
+                    result = await this.#botInstance.editMessageText(oneMsgText, options);
+                    if(lastMsgPart){
+                      this.emit('msgDelivered', {message_id:result.message_id});
+                    }
+                  } else {
+                
+                    err.mongodblog = true;
+                    err.details = err.message
+                    err.place_in_code = err.place_in_code || "sentToExistingMessage_Handler";
+                    throw err
+                  }
+            }
+            this.#textSent = result.text
+            
+              if(msgExceedsThreshold){
+                  await this.sendStatusMsg()
+     
+                  await this.delay(appsettings.telegram_options.debounceMs)
+                  this.deliverCompletionToTelegram(completionInstance)
+              }
+            } catch(err){
+                const secondsToWait =  this.extractWaitTimeFromError(err)
+                if(secondsToWait>0){
+                    const waitMsgResult = await this.sendTelegramWaitMsg(secondsToWait)
+  
+                    this.#waitMsgInProgress = true
+                    setTimeout(async () => {
+
+                        await this.deleteMsgByID(waitMsgResult.message_id)
+                        this.#waitMsgInProgress = false
+                        await this.deliverCompletionToTelegram(completionInstance)
+                    },secondsToWait * 1000)
+                } else {
+                    throw err;
+                }
+            } 
 }
 
 async delay(ms) {

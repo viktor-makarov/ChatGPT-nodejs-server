@@ -1,6 +1,8 @@
 const mongo = require("../mongo");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
+const aws = require("../aws_func.js")
+const msqTemplates = require("../../config/telegramMsgTemplates");
 
 
 class Dialogue extends EventEmitter {
@@ -119,9 +121,7 @@ class Dialogue extends EventEmitter {
             fileAIDescription:document.fileAIDescription
           }));
 
-        console.time('generateDialogueForRequest');
         this.#dialogueForRequest = this.generateDialogueForRequest(this.#dialogueFull)
-        console.timeEnd('generateDialogueForRequest');
 
         console.timeEnd('getDialogueFromDB');
         return this.#dialogueForRequest
@@ -221,6 +221,35 @@ class Dialogue extends EventEmitter {
         this.#regenerateCompletionFlag =  value;
     }
 
+
+    async resetDialogue(){
+
+        await this.getDialogueFromDB()
+        const completionMsIds = this.getCompletionsLastMsgIds() 
+        await this.#replyMsg.deletePreviousRegenerateButtons(completionMsIds)
+        const toolsMsgIds = this.getToolsMsgIds()
+        await this.#replyMsg.deleteToolsButtons(toolsMsgIds)
+        await mongo.deleteDialogByUserPromise([this.#userid], "chat");
+        const deleteS3Results = await aws.deleteS3FilesByPefix(this.#userid)
+        const deletedFiles = deleteS3Results.Deleted
+        await this.commitSystemToDialogue(msqTemplates.system_start_dialogue)
+        await this.deleteMeta()
+        await this.createMeta()
+
+        const buttons = {
+            reply_markup: {
+              keyboard: [['Перезапустить диалог']],
+              resize_keyboard: true,
+            }
+        }
+
+        if(deletedFiles){
+            return { text: msqTemplates.dialogresetsuccessfully_extended.replace("[files]",deletedFiles.length),buttons:buttons};
+        } else {
+            return { text: msqTemplates.dialogresetsuccessfully,buttons:buttons};
+        }
+    }
+
     async getMetaFromDB(){
         this.#metaObject =  await mongo.readDialogueMeta(this.#userid)
         return this.#metaObject
@@ -278,7 +307,6 @@ class Dialogue extends EventEmitter {
     }
 
     async metaSetFunctionInProgressStatus(value){
-        console.log(this.#metaObject)
         this.#metaObject.function_calls.inProgress = value;
         await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
     }
@@ -335,20 +363,21 @@ class Dialogue extends EventEmitter {
         this.emit('callCompletion')
     };
 
-    async commitSystemToDialogue(text,requestInstance){
-
+    async commitSystemToDialogue(text){
 
         let currentRole = "system"
-        if(["o1-mini","o1-preview"].includes(requestInstance.user.currentModel)){
+        if(["o1-mini","o1-preview"].includes(this.#userid.currentModel)){
             currentRole = "developer"
         }
 
-        const msdId = requestInstance.msgId ? requestInstance.msgId : requestInstance.callbackId
-        const msgTS = requestInstance.msgTS ? requestInstance.msgTS : requestInstance.callback_msgTS
+        const datetime = new Date();
+
+        const sourceid = otherFunctions.valueToSHA1(datetime.toISOString())
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
         let systemObj = {
-            sourceid: msdId,
-            createdAtSourceTS: msgTS,
-            createdAtSourceDT_UTC: new Date(msgTS * 1000),
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
@@ -465,7 +494,6 @@ class Dialogue extends EventEmitter {
             content: content
           }      
           
-        
 
         const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
         fileSystemObj._id = savedSystem.upserted[0]._id
@@ -501,8 +529,6 @@ class Dialogue extends EventEmitter {
 
         const results = obj.results
         const userInstance = obj.userInstance
-        const replyMsgInstance = obj.replyMsgInstance
-        const toolCallsInstance = obj.toolCallsInstance
 
         for (const result of results){
 
@@ -520,7 +546,7 @@ class Dialogue extends EventEmitter {
                 tool_call_id:result.tool_call_id,
                 functionFriendlyName:result.functionFriendlyName,
             },
-            telegramMsgId:result.tgm_sys_msg_id,
+            telegramMsgId:result.statusMessageId,
             createdAtSourceDT_UTC: new Date(),
             createdAtSourceTS:Math.ceil(Number(new Date())/1000),
             roleid:0,

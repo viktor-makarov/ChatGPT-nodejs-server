@@ -27,7 +27,6 @@ async function UpdateGlobalVariables() {
   }
 }
 
-
 async function GetModelsFromAPI() {
   try {
     const models_array = await openAIApiHandler.getModels(); //обновляем список моделей в базе
@@ -316,7 +315,7 @@ function router(botInstance) {
 
               const unfoldedSysMsg = telegramCmdHandler.formCallsAndRepliesMsg(callsAndReplies,requestMsg.callback_data);
     
-              try{
+            try{
               await replyMsg.simpleMessageUpdate(unfoldedSysMsg.text, {
                 chat_id: callback_msg.message.chat.id,
                 message_id: callback_msg.message.message_id,
@@ -334,7 +333,7 @@ function router(botInstance) {
                 const toolCallFriendlyNameObj = await mongo.getToolCallFriendlyName(requestMsg.callback_data)
                 
                 const foldedSysMsg = telegramCmdHandler.formFoldedSysMsg(toolCallFriendlyNameObj,requestMsg.callback_data)
-                try{
+              try{
                 await replyMsg.simpleMessageUpdate(foldedSysMsg.text, {
                   chat_id: callback_msg.message.chat.id,
                   message_id: callback_msg.message.message_id,
@@ -461,7 +460,7 @@ function router(botInstance) {
           const choosenButton = resultMdj.buttonPushed
           const choosenBtnsDescription = telegramCmdHandler.generateButtonDescription([{label:choosenButton}])         
           const text = `User has pushed the button ${JSON.stringify(choosenBtnsDescription)} and has the following further options ${JSON.stringify(btnsDescription)}`
-          await dialogue.commitSystemToDialogue(text,requestMsg)
+          await dialogue.commitSystemToDialogue(text)
           
           break;
           default:
