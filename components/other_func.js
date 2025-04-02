@@ -271,7 +271,7 @@ function convertMarkdownToLimitedHtml(text){
     convertedText = convertedText.replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>');
     convertedText = convertedText.replace(/\*(.*?)\*/gim, '<i>$1</i>');
     convertedText = convertedText.replace(/\_\_(.*?)\_\_/gim, '<u>$1</u>');
-    convertedText = convertedText.replace(/\_(.*?)\_/gim, '<i>$1</i>');
+    convertedText = convertedText.replace(/(?<=^|\s|[\r\n])\_(.*?)\_(?=$|\s|[\r\n])/gim, '<i>$1</i>');
     convertedText = convertedText.replace(/~~(.*?)~~/gim, '<s>$1</s>');
 
        // Replace emoji syntax
@@ -389,6 +389,8 @@ async function extractTextLambdaPDFFile(url){
     throw err
   }
 }
+
+
 
 async function executePythonCode(codeToExecute){
 
@@ -870,7 +872,30 @@ function jsonToText(obj, indent = '') {
   return text;
 }
 
+
+function formatObjectToText(obj) {
+  let formattedText = "";
+
+  function iterate(obj, depth = 0) {
+      for (const key in obj) {
+          if (obj.hasOwnProperty(key)) {
+            formattedText += `${'  '.repeat(depth)}${key}:\n`;
+              if (typeof obj[key] === 'object' && obj[key] !== null) {
+                  iterate(obj[key], depth + 2);
+              } else {
+                formattedText += ' '.repeat(depth + 2) + String(obj[key]).replace(/\n/g, '\n' + ' '.repeat(depth + 2)) + '\n';
+              }
+          }
+      }
+  }
+
+  iterate(obj);
+  return formattedText;
+}
+
+
 module.exports = {
+  formatObjectToText,
   countTokens,
   wireStingForMarkdown,
   debounceConstructor,

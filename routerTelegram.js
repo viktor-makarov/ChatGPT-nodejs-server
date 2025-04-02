@@ -126,6 +126,14 @@ function router(botInstance) {
       
       let responses;
 
+      const functionInProgress = dialogue.functionInProgress
+
+      if(functionInProgress){
+
+        responses = await telegramCmdHandler.messageBlock(requestMsg)
+
+      } else {
+
         switch(requestMsg.inputType) {
           case "text_command":
             responses = await telegramCmdHandler.textCommandRouter(requestMsg,dialogue,replyMsg,toolCalls)
@@ -139,9 +147,10 @@ function router(botInstance) {
           default:
               responses = [{text:msqTemplates.unknown_msg_type}]
       };
+      };
 
     for (const response of responses){
-      await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode);
+      await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options);
     }
 
       //обрабатываем остальные сообщения, то есть сообщения с текстом.
@@ -235,6 +244,7 @@ function router(botInstance) {
             user.hasReadInfo = true
 
             break;
+
           case "pdf_download":
           
             await telegramCmdHandler.pdfdownloadHandler(replyMsg);
@@ -310,26 +320,6 @@ function router(botInstance) {
             await replyMsg.deleteMsgByID(result.message_id)
 
             break;
-          case "unfold_sysmsg":
-              const callsAndReplies = await mongo.getToolCallsAndReplesById(requestMsg.callback_data)
-
-              const unfoldedSysMsg = telegramCmdHandler.formCallsAndRepliesMsg(callsAndReplies,requestMsg.callback_data);
-    
-            try{
-              await replyMsg.simpleMessageUpdate(unfoldedSysMsg.text, {
-                chat_id: callback_msg.message.chat.id,
-                message_id: callback_msg.message.message_id,
-                parse_mode:"HTML",
-                reply_markup: unfoldedSysMsg?.reply_markup
-              })
-            } catch(err){
-              if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
-                throw err
-              }
-            }
-
-              break;
-          case "fold_sysmsg":
                 const toolCallFriendlyNameObj = await mongo.getToolCallFriendlyName(requestMsg.callback_data)
                 
                 const foldedSysMsg = telegramCmdHandler.formFoldedSysMsg(toolCallFriendlyNameObj,requestMsg.callback_data)
@@ -350,11 +340,9 @@ function router(botInstance) {
           
             const hash_unfolded = requestMsg.callback_data
             
-            const contentObject = await otherFunctions.decodeJson(hash_unfolded)
-            
-            let unfoldedFileSysMsg = `<b>${contentObject.unfolded_header}:</b>\n${JSON.stringify(contentObject.unfolded_text,null,4)}`;
+            const contentObject = await otherFunctions.decodeJson(hash_unfolded)           
 
-            unfoldedFileSysMsg = msgShortener(unfoldedFileSysMsg)
+            const unfoldedFileSysMsg = msgShortener(contentObject.unfolded_text)
 
             const callback_data = {e:"f_f_up",d:hash_unfolded}
             
@@ -388,7 +376,7 @@ function router(botInstance) {
                const callback_data_fold = {e:"un_f_up",d:hash_folded};
             
                const unfold_button = {
-                 text: "Скрыть",
+                 text: "Показать подробности",
                  callback_data: JSON.stringify(callback_data_fold),
                };
    

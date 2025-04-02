@@ -58,7 +58,7 @@ let user_msg_text,user_msg_result;
 if(err.user_message){
 if(replyMsgInstance){
     user_msg_text = "❗️" + " " + (err.user_message || msqTemplates.error_strange)
-    user_msg_result = await replyMsgInstance.simpleSendNewMessage(user_msg_text,null,"html")
+    user_msg_result = await replyMsgInstance.simpleSendNewMessage(user_msg_text,null,"html",null)
     } else {
         var err_local = new Error("You forgot to input replyMsgInstance into error handling function 'main', so message to user cannot be sent.")
         err_local.code = "INT_ERR2"
@@ -80,8 +80,10 @@ if(err.mongodblog){
                     let unfolded_text = JSON.stringify(errorJSON,null,4)
                     unfolded_text = otherFunctions.wireHtml(unfolded_text)
                     unfolded_text = msgShortener(unfolded_text)
+
+                    const unfoldedTextHtml = `<b>Error details:</b>\n${JSON.stringify(errorJSON,null,4)}`
                     
-                    let infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:errorJSON,unfolded_header:"Error details",folded_text:user_msg_text})
+                    let infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:user_msg_text})
                     const update_msg_options = {
                         chat_id:replyMsgInstance.chatId,
                         message_id:user_msg_result.message_id,
@@ -99,7 +101,7 @@ if(err.mongodblog){
 
                 } else {
                     const msg_text = "Инфо для администратора. Код ошибки: _id="+err.code + ". Запись в логе: " + doc._id + ". https://t.me/Truvoruwka"
-                    await replyMsgInstance.simpleSendNewMessage(msg_text,null,"html")
+                    await replyMsgInstance.simpleSendNewMessage(msg_text,null,"html",null)
                 }
         } else {
             var err_local = new Error("You forgot to input replyMsgInstance into error handling function 'main', so message to user cannot be sent.")

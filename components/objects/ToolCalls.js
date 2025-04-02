@@ -2,7 +2,7 @@ const modelConfig = require("../../config/modelConfig");
 const mongo = require("../mongo");
 const scheemas = require("../mongo_Schemas.js");
 
-const FunctionCallNew  = require("./FunctionCallNew.js");
+const FunctionCall  = require("./FunctionCall.js");
 
 class ToolCalls{
 
@@ -98,7 +98,7 @@ async router(){
         
         if(toolCall.type = "function"){
  
-            const functionCall = new FunctionCallNew({
+            const functionCall = new FunctionCall({
                 functionCall:toolCall,
                 replyMsgInstance:this.#replyMsg,
                 dialogueInstance:this.#dialogue,
@@ -138,7 +138,6 @@ async router(){
         })
 
         await this.commitToolCallMsg(toolCall,toolCallResult)
-        await this.updateFinalMsg(this.#replyMsg.chatId,toolCallResult)
 
         return toolCallResult
     })
@@ -173,42 +172,10 @@ async commitToolCallMsg(toolCall,functionResult){
     }
 }
 
-async updateFinalMsg(chat_id,callResult){
-    
-    let resultImage;
-    if(callResult.success === 1) {
-        resultImage = "✅"
-    } else {
-        resultImage = "❌"
-    }
-    const text = `${callResult.functionFriendlyName}. ${resultImage}`
-
-
-    const callback_data = {e:"unfold_sysmsg",d:callResult.statusMessageId}
-
-    const fold_button = {
-        text: "Показать подробности",
-        callback_data: JSON.stringify(callback_data),
-      };
-
-      const reply_markup = {
-        one_time_keyboard: true,
-        inline_keyboard: [[fold_button],],
-      };
-
-    const result = await this.#replyMsg.simpleMessageUpdate(text,{
-        chat_id:chat_id,
-        message_id:callResult.statusMessageId,
-        reply_markup:reply_markup
-    })
-    return result.message_id
-}
-
 
 async generateAvailableTools(userClass){
 
         var functionList = []
-        
         
         if(userClass.currentRegime==="chat"){
         
@@ -291,7 +258,12 @@ async generateAvailableTools(userClass){
             }
         },
         friendly_name: "Чтение гиперссылки",
-        timeout_ms:30000,
+        timeout_ms:45000,
+        long_wait_notes: [
+            {time_ms:10000,comment:"Иногда нужно больше времени. Подождем ... ☕️"},
+            {time_ms:20000,comment:"Хм ... 🤔 А вот это уже звоночек ... ",cancel_button:true},
+            {time_ms:30000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ...",cancel_button:true}
+        ],
         try_limit: 3 }
         );
         
@@ -314,11 +286,11 @@ async generateAvailableTools(userClass){
             friendly_name: "Генерация изображения",
             timeout_ms:180000,
             long_wait_notes: [
-                {time_ms:30000,comment:"Иногда нужно больше времени. Подождем ... ☕️"},
+                {time_ms:30000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
                 {time_ms:60000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
-                {time_ms:90000,comment:"Хм ... 🤔 А вот это уже звоночек ... ",cancel_button:true},
-                {time_ms:120000,comment:"Совсем никуда не годится!😤 Но надо дать еще шанс!",cancel_button:true},
-                {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ...",cancel_button:true}
+                {time_ms:90000,comment:"Хм ... 🤔 А вот это уже звоночек ... "},
+                {time_ms:120000,comment:"Совсем никуда не годится!😤 Но надо дать еще шанс!"},
+                {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
             ],
             try_limit: 3 }
             );

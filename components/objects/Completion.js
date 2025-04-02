@@ -326,11 +326,11 @@ class Completion extends Transform {
     async OverlengthErrorHandle() {
         //Логируем ошибку и отправляем сообщение пользователю
         await this.#replyMsg.simpleSendNewMessage(msqTemplates.overlimit_dialog_msg +
-          ` Размер вашего диалога = ${this.#dialogue.tokensWithCurrentPrompt} токенов. Ограничение данной модели = ${this.#overalltokensLimit} токенов.`) 
+          ` Размер вашего диалога = ${this.#dialogue.tokensWithCurrentPrompt} токенов. Ограничение данной модели = ${this.#overalltokensLimit} токенов.`,null,null,null) 
         
         await mongo.deleteDialogByUserPromise([this.#user.userid], null); //Удаляем диалог
         await aws.deleteS3FilesByPefix(this.#user.userid) 
-        await this.#replyMsg.simpleSendNewMessage(msqTemplates.dialogresetsuccessfully)
+        await this.#replyMsg.simpleSendNewMessage(msqTemplates.dialogresetsuccessfully,null,null,null)
         //Сообщение, что диалог перезапущен
     }
 

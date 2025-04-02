@@ -384,42 +384,8 @@ async function addMsgIdToToolCall(obj){
   }
 };
 
-async function getToolCallsAndReplesById(msgId){
-  try {
 
-    const filter = {
-      $or: [
-        { telegramMsgId: msgId },
-        { "tool_calls.telegramMsgId": msgId }
-      ]
-    }
 
-    return await dialog_collection.find(
-      filter
-      ,{ tool_calls: 1, tool_reply: 1,_id:0}
-    );
-  } catch (err) {
-    err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
-    throw err;
-  }
-}
-
-async function getToolCallFriendlyName(msgId){
-  try {
-
-    const filter = { "telegramMsgId": msgId }
-
-    return await dialog_collection.find(
-      filter
-      ,{tool_reply: 1,_id:0}
-    );
-  } catch (err) {
-    err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
-    throw err;
-  }
-}
 
 
 async function getUploadedFilesBySourceId(sourceid_list){
@@ -1241,8 +1207,6 @@ module.exports = {
   updateCompletionInDb,
   insertToolCallResult,
   addMsgIdToToolCall,
-  getToolCallsAndReplesById,
-  getToolCallFriendlyName,
   insert_blank_profile,
   getUserProfileByToken,
   registerUser,

@@ -120,7 +120,7 @@ async sendTelegramWaitMsg(seconds){
         "[seconds_to_wait]",
         seconds
       );
-       return await this.simpleSendNewMessage(text,null,null)
+       return await this.simpleSendNewMessage(text,null,null,null)
 };
 
 async sendTextToSpeachWaiterMsg(seconds){
@@ -166,9 +166,13 @@ return await this.#botInstance.sendPhoto(
 )
 }
 
-async simpleSendNewMessage(text,reply_markup,parse_mode){
+async simpleSendNewMessage(text,reply_markup,parse_mode,add_options){
 
-let options = {}
+let options = {}  
+if(add_options){
+  options = add_options
+}
+
 if(reply_markup){
   options["reply_markup"] = JSON.stringify(reply_markup)
 }
@@ -236,36 +240,10 @@ async deletePreviousRegenerateButtons(msgIds){
   }
 }
 
-async deleteToolsButtons(msgIds){
-  
-  if(Array.isArray(msgIds) && msgIds.length>0){
-    for (const id of msgIds){
-      let reply_markup = {
-        one_time_keyboard: true,
-        inline_keyboard: [],
-      };
-     // reply_markup.inline_keyboard.push(this.#completionRedaloudButtons)
-     try{
-      await this.#botInstance.editMessageReplyMarkup(
-        reply_markup,
-        {chat_id:this.#chatId,message_id:id}
-    )
-  } catch(err){
 
-    console.log("error deletion tool msg",id)
-  }
-    
+async sendToNewMessage(text,reply_markup,parse_mode,add_options){
 
-    }
-    return msgIds.length
-  } else {
-    return 0
-  }
-}
-
-async sendToNewMessage(text,reply_markup,parse_mode){
-
-        const result = await this.simpleSendNewMessage(text,reply_markup,parse_mode)
+        const result = await this.simpleSendNewMessage(text,reply_markup,parse_mode,add_options)
         this.#lastMsgSentId = result.message_id
         this.#textSent = result.text
 
@@ -312,7 +290,7 @@ async sendToNewMessageWithCheck(text,reply_markup){
 
   if(msgExceedsThreshold){
 
-    const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,null)
+    const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,null,null)
     this.#lastMsgSentId = result.message_id
     this.#textSent = result.text
     results.push(result)
@@ -341,7 +319,7 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
   if(msgExceedsThreshold){
 
 
-    const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,parse_mode)
+    const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,parse_mode,null)
     this.#lastMsgSentId = result.message_id
     this.#msgIdsForDbCompletion.push(result.message_id)
     this.#textSent = result.text
@@ -353,7 +331,7 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
 
 
   
-  const result = await this.simpleSendNewMessage(text,reply_markup,parse_mode)
+  const result = await this.simpleSendNewMessage(text,reply_markup,parse_mode,null)
   this.#lastMsgSentId = result.message_id
   this.#msgIdsForDbCompletion.push(result.message_id)
   this.#textSent = result.text

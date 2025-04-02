@@ -1,12 +1,12 @@
 const UrlResource = require("./UrlResource.js");
 const MdjMethods = require("../midjourneyMethods.js");
-const mongo = require("../mongo");
+const mongo = require("../mongo.js");
 const func = require("../other_func.js");
 const telegramCmdHandler = require("../telegramCmdHandler.js")
 
 
 
-class FunctionCallNew{
+class FunctionCall{
 
     #replyMsg;
     #dialogue
@@ -22,21 +22,20 @@ class FunctionCallNew{
     #argumentsJson;
     #timeout_ms;
     #isCanceled;
-    #isInProgress;
     #functionConfig;
    
-    constructor(obj) {
-        this.#functionCall = obj.functionCall;
-        this.#functionConfig = obj.functionConfig;
-        this.#replyMsg = obj.replyMsgInstance;
-        this.#dialogue = obj.dialogueInstance;
-        this.#user = obj.userInstance;
-        this.#tokensLimitPerCall = obj.tokensLimitPerCall
-        this.#other_functions = require("../other_func.js");
-        this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
-        this.#isCanceled = false;
-        this.#isInProgress = false;
-      };
+constructor(obj) {
+    this.#functionCall = obj.functionCall;
+    this.#functionConfig = obj.functionConfig;
+    this.#replyMsg = obj.replyMsgInstance;
+    this.#dialogue = obj.dialogueInstance;
+    this.#user = obj.userInstance;
+    this.#tokensLimitPerCall = obj.tokensLimitPerCall
+    this.#other_functions = require("../other_func.js");
+    this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
+    this.#isCanceled = false;
+    this.abortController = null;
+};
 
 async router(){
 
@@ -51,13 +50,15 @@ async router(){
 
     const ultimateResult = { ...functionOutcome, statusMessageId,duration }
     
+    await this.finalizeStatusMessage(ultimateResult)
+    
     return ultimateResult;
 }
 
 async sendStatusMessage(){
 
     const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.`
-    const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null)
+    const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null,null,null)
     return result.message_id
 }
 
@@ -67,26 +68,85 @@ triggerLongWaitNotes(tgmMsgId){
 
     if(long_wait_notes && long_wait_notes.length >0){
         for (const note of long_wait_notes){
+
+            let options = {
+                chat_id:this.#replyMsg.chatId,
+                message_id:tgmMsgId,
+            }
+
             setTimeout(() => {
-                if(this.#isInProgress){
+                if(this.#dialogue.functionInProgress){
                 const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.\n${note.comment}`
-                this.#replyMsg.simpleMessageUpdate(MsgText,{
-                    chat_id:this.#replyMsg.chatId,
-                    message_id:tgmMsgId
-                })
+                this.#replyMsg.simpleMessageUpdate(MsgText,options)
             }
             }, note.time_ms);
         }
     }
 };
 
-async finalizeStatusMessage(functionOutcome){
+async finalizeStatusMessage(functionResult){
 
-    const resultImage = callResult.success === 1 ? "✅" : "❌";
-    const text = `${this.#functionConfig.friendly_name}. ${resultImage}`
+    const resultImage = functionResult.success === 1 ? "✅" : "❌";
+    const msgText = `${this.#functionConfig.friendly_name}. ${resultImage}`
 
+    const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
+
+    const infoForUserEncoded = await func.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msgText})
+
+    const callback_data = {e:"un_f_up",d:infoForUserEncoded}
+    
+    const fold_button = {
+        text: "Показать подробности",
+        callback_data: JSON.stringify(callback_data),
+      };
+
+      const reply_markup = {
+        one_time_keyboard: true,
+        inline_keyboard: [[fold_button],],
+      };
+
+      const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:functionResult.statusMessageId,
+        reply_markup:reply_markup
+    })
 }
 
+buildFunctionResultHtml(functionResult){
+    const argsJson = JSON.parse(this.#functionCall?.function?.arguments);
+    const argsText = func.formatObjectToText(argsJson)
+
+    const request = `<pre>${argsText}</pre>`
+
+    const resultText = func.formatObjectToText(functionResult)
+    const reply = `<pre><code class="json">${resultText}</code></pre>`
+
+    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
+
+    return htmlToSend
+}
+
+async functionWraper(){
+
+
+    let targetFunction;
+                
+    if(this.#functionName==="get_current_datetime"){targetFunction = this.get_current_datetime()} 
+    else if(this.#functionName==="get_user_guide"){targetFunction = this.get_user_guide()} 
+    else if(this.#functionName==="run_javasctipt_code"){targetFunction = this.runJavascriptCode()}
+    else if(this.#functionName==="run_python_code"){targetFunction = this.runPythonCode()}
+    else if(this.#functionName==="fetch_url_content"){targetFunction = this.fetchUrlContentRouter()}
+    else if(this.#functionName==="create_midjourney_image"){targetFunction = this.CreateMdjImageRouter()} 
+    else if(this.#functionName==="get_users_activity"){targetFunction = this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
+    else if(this.#functionName==="get_functions_usage"){targetFunction = this.get_data_from_mongoDB_by_pipepine("functions_log")} 
+    else if(this.#functionName==="get_chatbot_errors") {targetFunction = this.get_data_from_mongoDB_by_pipepine("errors_log")}
+    else if(this.#functionName==="get_knowledge_base_item") {targetFunction = this.get_knowledge_base_item()} 
+    else if(this.#functionName==="extract_text_from_file") {targetFunction = this.extract_text_from_file_router()}    
+    else {
+        return {success: 0, error:`Function ${this.#functionName} does not exist`, instructions:"Provide a valid function."}
+    }
+    return targetFunction
+}
 
 async functionHandler(){
         try{
@@ -96,91 +156,74 @@ async functionHandler(){
                 this.#functionName = this.#functionCall.function.name
                 this.#argumentsText = this.#functionCall?.function?.arguments
 
-                let functionPromise;
-                
-                if(this.#functionName==="get_current_datetime"){functionPromise = this.get_current_datetime()} 
-                else if(this.#functionName==="get_user_guide"){functionPromise = this.get_user_guide()} 
-                else if(this.#functionName==="run_javasctipt_code"){functionPromise = this.runJavascriptCode()}
-                else if(this.#functionName==="run_python_code"){functionPromise = this.runPythonCode()}
-                else if(this.#functionName==="fetch_url_content"){functionPromise = this.fetchUrlContentRouter()}
-                else if(this.#functionName==="create_midjourney_image"){functionPromise = this.CreateMdjImageRouter()} 
-                else if(this.#functionName==="get_users_activity"){functionPromise = this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
-                else if(this.#functionName==="get_functions_usage"){functionPromise = this.get_data_from_mongoDB_by_pipepine("functions_log")} 
-                else if(this.#functionName==="get_chatbot_errors") {functionPromise = this.get_data_from_mongoDB_by_pipepine("errors_log")}
-                else if(this.#functionName==="get_knowledge_base_item") {functionPromise = this.get_knowledge_base_item()} 
-                else if(this.#functionName==="extract_text_from_file") {functionPromise = this.extract_text_from_file_router()}    
-                else {
-                    return {success: 0, error:`Function ${this.#functionName} does not exist`,instructions:"Provide a valid function."}
-                }
-
                 const timeoutPromise = new Promise((_, reject) =>
                     setTimeout(() => {
                         this.#isCanceled = true
-                        this.#isInProgress = false;
                         reject({ success: 0, error: `Timeout exceeded. The function is allowed ${this.#timeout_ms} seconds.`})
                     }, this.#timeout_ms)
                 );
 
                 try {
-                    this.#isInProgress = true;
-                    this.#functionResult = await Promise.race([functionPromise, timeoutPromise]);
-                    this.#isInProgress = false;
+                    this.#functionResult = await Promise.race([this.functionWraper(), timeoutPromise]);
                     return this.#functionResult;
                 } catch (error) {
-                    return error;
-                }
 
+                    if(error.success){
+                        return error;
+                    } else {
+                        return {success:0,error:error.message};
+                    }
+                }
             }
                 return {success:0,error:`Call is malformed. ${validationResult.error}`,instructions:"Fix the function and retry. But undertake no more than three attempts to recall the function."}
         } catch(err){
             return {success:0,error:err.message,instructions:"Server internal error occured. Try to find other ways to fulfill the user's task."}
         }
+}
 
-    }
+validateFunctionCallObject(callObject){
+    const requiredFields = ['index', 'id', 'type', 'function'];
+    const missingFields = [];
 
-    validateFunctionCallObject(callObject){
-        const requiredFields = ['index', 'id', 'type', 'function'];
-        const missingFields = [];
-    
-        // Check for top-level fields
-        requiredFields.forEach(field => {
-            if (!callObject.hasOwnProperty(field)) {
-                missingFields.push(field);
+    // Check for top-level fields
+    requiredFields.forEach(field => {
+        if (!callObject.hasOwnProperty(field)) {
+            missingFields.push(field);
+        }
+    });
+
+    // Check for nested 'function' field
+    if (callObject.hasOwnProperty('function')) {
+        const nestedRequiredFields = ['name', 'arguments'];
+        nestedRequiredFields.forEach(field => {
+            if (!callObject['function'].hasOwnProperty(field)) {
+                missingFields.push(`function.${field}`);
             }
         });
+    } else {
+        // If 'function' field is missing, add the nested fields as missing too
+        missingFields.push('function.name', 'function.arguments');
+    }
     
-        // Check for nested 'function' field
-        if (callObject.hasOwnProperty('function')) {
-            const nestedRequiredFields = ['name', 'arguments'];
-            nestedRequiredFields.forEach(field => {
-                if (!callObject['function'].hasOwnProperty(field)) {
-                    missingFields.push(`function.${field}`);
-                }
-            });
-        } else {
-            // If 'function' field is missing, add the nested fields as missing too
-            missingFields.push('function.name', 'function.arguments');
-        }
-        
-        // Return validation result
-        if (missingFields.length === 0) {
-            return { valid: true };
-        } else {
-            return { valid: false, error: `Missing fields: ${missingFields.join(', ')}` };
-        }
-    
+    // Return validation result
+    if (missingFields.length === 0) {
+        return { valid: true };
+    } else {
+        return { valid: false, error: `Missing fields: ${missingFields.join(', ')}` };
     }
 
-    async get_current_datetime(){
+}
 
-        if(this.#isCanceled){
-            return {success:1,result: new Date().toString()}
-        } else {
-            return {success:0,error: "Function is canceled by timeout."}
-        }
+async get_current_datetime(){
+
+    if(this.#isCanceled){
+        return {success:0,error: "Function is canceled by timeout."}
     }
+    return {success:1,result: new Date().toString()}
 
-    async get_user_guide(){
+}
+
+async get_user_guide(){
 
         const url = appsettings.other_options.pdf_guide_url
 
@@ -198,61 +241,61 @@ async functionHandler(){
         }
 }
     
-    async get_data_from_mongoDB_by_pipepine(table_name){
+async get_data_from_mongoDB_by_pipepine(table_name){
 
-        let pipeline = [];
+    let pipeline = [];
 
-        const argFieldValidationResult = this.argumentsFieldValidation()
-        if(argFieldValidationResult.success===0){
-            return argFieldValidationResult
+    const argFieldValidationResult = this.argumentsFieldValidation()
+    if(argFieldValidationResult.success===0){
+        return argFieldValidationResult
+    }
+    try{
+        this.convertArgumentsToJSON()
+    } catch (err){
+        return {success:0,error: err.message + "" + err.stack}
+    } 
+
+    try{
+
+        pipeline =  func.replaceNewDate(this.#argumentsJson.aggregate_pipeline) 
+    } catch(err){
+        return {success:0,error: err.message + "" + err.stack}
+    }
+    try {
+        let result;
+        if(table_name==="errors_log"){
+            result = await mongo.queryLogsErrorByAggPipeline(pipeline)
+        } else if (table_name==="tokens_logs"){
+            result = await mongo.queryTockensLogsByAggPipeline(pipeline)
+        } else if (table_name==="functions_log"){
+            result = await mongo.functionsUsageByAggPipeline(pipeline)
+        } else {
+            return {success:0,error:`There is not handler for mongodb table ${table_name}. Consider modication of the server code`,instructions:"Report the error to the user"}
         }
-        try{
-            this.convertArgumentsToJSON()
-        } catch (err){
-            return {success:0,error: err.message + "" + err.stack}
-        } 
 
-        try{
- 
-            pipeline =  func.replaceNewDate(this.#argumentsJson.aggregate_pipeline) 
-        } catch(err){
-            return {success:0,error: err.message + "" + err.stack}
-        }
-        try {
-            let result;
-            if(table_name==="errors_log"){
-                result = await mongo.queryLogsErrorByAggPipeline(pipeline)
-            } else if (table_name==="tokens_logs"){
-                result = await mongo.queryTockensLogsByAggPipeline(pipeline)
-            } else if (table_name==="functions_log"){
-                result = await mongo.functionsUsageByAggPipeline(pipeline)
-            } else {
-                return {success:0,error:`There is not handler for mongodb table ${table_name}. Consider modication of the server code`,instructions:"Report the error to the user"}
-            }
+        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
 
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
-    
-            const actualTokens = func.countTokensProportion(JSON.stringify(result))
-            
-            if(actualTokens>this.#tokensLimitPerCall){
-                return {success:0,error:`Result of the function exceeds ${this.#tokensLimitPerCall} characters.`,instructions: "Please adjust the query to reduce length of the result."}
-            }
-            let response = {success:1,result:result}
-    
-            //Post validation
-            if(result.length===0){
-                response["hint"]= "Empty result might be caused by two reasons. (1) Incorrect data type used in the query. Make sure you correctly apply the instructions regarding date format given in the function description. (2) You have misspelled the values used in the filters. To check spelling, retrieve a list of unique values of the columns on which filters should be applyed. Take into consideration both points and retry the request. Do not ask the user for an approval to retry."
-                response["warning"] = "But do not undertake more than three attempts to retry the function."
-            };
-    
-            return response
-             
-        } catch (err){
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
-            return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message + "" + err.stack}`,instructions:"Adjust the pipeline provided and retry."}
+        const actualTokens = func.countTokensProportion(JSON.stringify(result))
+        
+        if(actualTokens>this.#tokensLimitPerCall){
+            return {success:0,error:`Result of the function exceeds ${this.#tokensLimitPerCall} characters.`,instructions: "Please adjust the query to reduce length of the result."}
         }
-    
+        let response = {success:1,result:result}
+
+        //Post validation
+        if(result.length===0){
+            response["hint"]= "Empty result might be caused by two reasons. (1) Incorrect data type used in the query. Make sure you correctly apply the instructions regarding date format given in the function description. (2) You have misspelled the values used in the filters. To check spelling, retrieve a list of unique values of the columns on which filters should be applyed. Take into consideration both points and retry the request. Do not ask the user for an approval to retry."
+            response["warning"] = "But do not undertake more than three attempts to retry the function."
         };
+
+        return response
+            
+    } catch (err){
+        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+        return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message + "" + err.stack}`,instructions:"Adjust the pipeline provided and retry."}
+    }
+
+    };
     async runJavascriptCode(){
 
         try{
@@ -491,9 +534,6 @@ async functionHandler(){
         return outputs.join('\n');
         }
 
-    
-
-
     async fetchUrlContentRouter(){
 
         try{
@@ -691,4 +731,4 @@ async functionHandler(){
     
 };
 
-module.exports = FunctionCallNew;
+module.exports = FunctionCall;

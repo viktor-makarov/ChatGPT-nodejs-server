@@ -8,6 +8,13 @@ const openAIApiHandler = require("./openAI_API_Handler.js");
 const MdjMethods = require("./midjourneyMethods.js");
 const aws = require("./aws_func.js")
 
+
+async function messageBlock(requestInstance){
+  let responses =[];
+  responses.push({text:msqTemplates.message_block,add_options:{reply_parameters:{message_id:requestInstance.msgId}}})
+  return responses
+}
+
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
   let responses =[];
   
@@ -32,16 +39,16 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         } else {
           responses.push({text:msqTemplates.file_type_cannot_be_converted_to_text})
         }
-      } else if(current_regime ==="texttospeech"){
+    } else if(current_regime ==="texttospeech"){
       responses.push({text:msqTemplates.file_is_not_handled_in_the_regime})
 
-      } else if (current_regime === "chat" || current_regime === "translator" || current_regime === "texteditor"){
+    } else if (current_regime === "chat" || current_regime === "translator" || current_regime === "texteditor"){
       if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
         const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
         if(checkResult.success===0){
           responses.push(checkResult.responce)
           return;
-        }
+      }
         const result = await replyMsgInstance.sendAudioListenMsg()
         const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
         replyMsgInstance.text = transcript;
@@ -59,7 +66,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
 
         if(requestMsgInstance.uploadFileError){
           await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html")
+          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
           return;
         }
         
@@ -71,7 +78,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
           requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
           requestMsgInstance.unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${requestMsgInstance.fileName}", but failed with the following error: ${requestMsgInstance.uploadFileError}`
           await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html")
+          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
           return;
         }
         
@@ -79,7 +86,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         
         await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
         
-      }  }  else {
+      }} else {
           responses.push({text:msqTemplates.file_handler_is_not_realized})
       }
 
@@ -168,18 +175,6 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     const response = await dialogueInstance.resetDialogue()
 
-    /*
-    await dialogueInstance.getDialogueFromDB()
-    const completionMsIds = dialogueInstance.getCompletionsLastMsgIds() 
-    await replyMsgInstance.deletePreviousRegenerateButtons(completionMsIds)
-    const toolsMsgIds = dialogueInstance.getToolsMsgIds()
-    await replyMsgInstance.deleteToolsButtons(toolsMsgIds)
-    const response = await resetdialogHandler(requestMsgInstance);
-    
-    await dialogueInstance.commitSystemToDialogue(msqTemplates.system_start_dialogue,requestMsgInstance)
-    await dialogueInstance.deleteMeta()
-    await dialogueInstance.createMeta()
-    */
     responses.push(response)
 
   } else if(cmpName==="unregister"){
@@ -292,38 +287,20 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
    return responses
 }
 
+async function handleCancelCommand(call_id){
+
+  console.log("handleCancelCommand",call_id)
+  const func = global.activeFunctions[call_id];
+  if(func){
+    await func.cancelFunction()
+    delete global.activeFunctions[call_id]
+  }
+}
+
 function noMessageText() {
   return msqTemplates.no_text_msg;
 }
 
-function formFoldedSysMsg(toolCallFriendlyNameObj,msg_id){
-
-  const toolCallFriendlyName = toolCallFriendlyNameObj[0].tool_reply.functionFriendlyName
-  const replySuccess = toolCallFriendlyNameObj[0].tool_reply.success
-
-  let resultImage;
-  if(replySuccess === 1) {
-    resultImage = "✅"
-  } else {
-      resultImage = "❌"
-  }
-
-  let text = `${toolCallFriendlyName}. ${resultImage}`
-
-  const callback_data = {e:"unfold_sysmsg",d:msg_id}
-
-  const fold_button = {
-    text: "Показать подробности",
-    callback_data: JSON.stringify(callback_data),
-  };
-
-  const reply_markup = {
-      one_time_keyboard: true,
-      inline_keyboard: [[fold_button],],
-    };
-
-  return {text:text,reply_markup:reply_markup}
-}
 
 function generateButtonDescription(buttonLabels,buttonsShownBefore){
 
@@ -340,70 +317,6 @@ function generateButtonDescription(buttonLabels,buttonsShownBefore){
   return description
 }
 
-function formCallsAndRepliesMsg(callsAndReplies,msg_id){
-
-  let name;
-  let type;
-  let id;
-  let success;
-  let duration;
-  let request;
-  let reply;
-  const overheadSymbolsCount = 100
-  const limit = (appsettings.telegram_options.big_outgoing_message_threshold - overheadSymbolsCount)/2
-
-  for (const msg of callsAndReplies){
-    if(msg.tool_calls){
-      for (const call of msg.tool_calls){
-        if(call.telegramMsgId === msg_id){
-          name = call?.function?.name;
-          id = call?.id;
-          type = call?.type;
-          request = call?.function?.arguments
-          if (request.length > limit){
-            request = request.slice(0, limit) + "... (текст сокращен)"
-
-          }
-          request = otherFunctions.wireHtml(request)
-        }
-      }
-    }
-
-    if(msg.tool_reply){
-
-      name = msg.tool_reply.name
-      id = msg.tool_reply.tool_call_id;
-      const content = JSON.parse(msg.tool_reply.content);
-      success = content.success
-      duration = msg.tool_reply.duration
-      reply = msg.tool_reply.content
-      if (reply.length > limit){
-        reply = reply.slice(0, limit) + "... (текст сокращен)"
-
-      }
-      reply = reply
-      .replace(/</g,"&lt;")
-      .replace(/>/g,"&gt;")
-      .replace(/&/g,"&amp;")
-    }
-  }
-
-  let text = `<b>name: ${name}</b>\nid: ${id}\ntype: ${type}\nduration: ${duration} sec.\nsuccess: ${success}\n\nrequest:\n<pre>${request}</pre>\n\nreply:\n<pre>${reply}</pre>`
-
-  const callback_data = {e:"fold_sysmsg",d:msg_id}
-
-  const fold_button = {
-    text: "Скрыть",
-    callback_data: JSON.stringify(callback_data),
-  };
-
-  const reply_markup = {
-      one_time_keyboard: true,
-      inline_keyboard: [[fold_button],],
-    };
-
-  return {text:text,reply_markup:reply_markup}
-}
 
 async function infoacceptHandler(requestMsgInstance) {
     const result = await mongo.insert_read_sectionPromise(requestMsgInstance); // Вставляем новую секцию в базу данных
@@ -1070,7 +983,7 @@ async function mdj_custom_handler(requestInstance,replyInstance){
 
   const buttonPushed = jsonDecoded.label
 
-  const statusMsg = await replyInstance.simpleSendNewMessage(`${buttonPushed}. Выполняется.`,null)
+  const statusMsg = await replyInstance.simpleSendNewMessage(`${buttonPushed}. Выполняется.`,null,null,null)
   let msg;
   try{
     msg = await MdjMethods.executeCustom({
@@ -1124,10 +1037,10 @@ module.exports = {
   textCommandRouter,
   fileRouter,
   textMsgRouter,
-  formCallsAndRepliesMsg,
-  formFoldedSysMsg,
   mdj_custom_handler,
   mdj_create_handler,
   generateButtonDescription,
-  pdfdownloadHandler
+  pdfdownloadHandler,
+  messageBlock,
+  handleCancelCommand
 };

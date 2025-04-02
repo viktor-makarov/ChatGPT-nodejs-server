@@ -165,19 +165,6 @@ class Dialogue extends EventEmitter {
         return lastTgmMsgIdsFromCompletions
     }
 
-    getToolsMsgIds(){
-
-        let TgmMsgIdsFromTools = [];
-        let dialogueList = this.copyValue(this.#dialogueFull)
-        for (const doc of dialogueList){
- 
-            if(doc.role === 'tool'){
-                TgmMsgIdsFromTools.push(doc.telegramMsgId)
-            }
-        }
-        return TgmMsgIdsFromTools
-    }
-
     getLastCompletionTelegramMsgIds(){
         const lastDocumentInDialogue = this.#dialogueFull[this.#dialogueFull.length-1]
         if(lastDocumentInDialogue.role === "assistant"){
@@ -227,8 +214,6 @@ class Dialogue extends EventEmitter {
         await this.getDialogueFromDB()
         const completionMsIds = this.getCompletionsLastMsgIds() 
         await this.#replyMsg.deletePreviousRegenerateButtons(completionMsIds)
-        const toolsMsgIds = this.getToolsMsgIds()
-        await this.#replyMsg.deleteToolsButtons(toolsMsgIds)
         await mongo.deleteDialogByUserPromise([this.#userid], "chat");
         const deleteS3Results = await aws.deleteS3FilesByPefix(this.#userid)
         const deletedFiles = deleteS3Results.Deleted
@@ -309,6 +294,10 @@ class Dialogue extends EventEmitter {
     async metaSetFunctionInProgressStatus(value){
         this.#metaObject.function_calls.inProgress = value;
         await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+    }
+
+    get functionInProgress(){
+        return this.#metaObject.function_calls.inProgress
     }
     
     async updateInputMsgTokenUsage(msgToUpdate){
@@ -417,7 +406,7 @@ class Dialogue extends EventEmitter {
 
         const MsgText = `❌ Файл <code>${fileSystemObj.fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы с расширением <code>${fileSystemObj.fileExtention}</code> не обрабатываются.`
 
-        const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,null,"html")
+        const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,null,"html",null)
     }
 
     async  sendSuccessFileMsg(fileSystemObj){
@@ -435,8 +424,10 @@ class Dialogue extends EventEmitter {
         if(fileSystemObj.fileCaption){
             infoForUser["fileCaption"] = fileSystemObj.fileCaption
         }
+
+        const unfoldedTextHtml = `<b>Uploaded file info:</b>\n${JSON.stringify(infoForUser,null,4)}`
         
-        const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:infoForUser,unfolded_header:"Uploaded file info",folded_text:MsgText})
+        const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:MsgText})
         
         const callback_data = {e:"un_f_up",d:infoForUserEncoded}
 
@@ -450,7 +441,7 @@ class Dialogue extends EventEmitter {
             inline_keyboard: [[fold_button],],
           };
           
-        const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,reply_markup,"html")
+        const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,reply_markup,"html",null)
         await mongo.updateManyEntriesInDbById({
         filter: {"sourceid": fileSystemObj.sourceid},       
         updateBody:{ "telegramMsgId": resultTGM.message_id }
