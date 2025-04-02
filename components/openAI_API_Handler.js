@@ -1,5 +1,5 @@
 //Подключаем и настраиваем OpenAI
-const OpenAI = require("openai");
+
 const FormData = require("form-data");
 const telegramErrorHandler = require("./telegramErrorHandler.js");
 const msqTemplates = require("../config/telegramMsgTemplates");
@@ -12,11 +12,17 @@ const axios = require("axios");
 
 async function getModels() {
   try {
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
 
-    const models = await openai.models.list()
+
+    const options = {
+      url: `https://${process.env.OAI_URL}/v1/models`,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+    }
+
+    const models = await axios(options)
     return models
   } catch (err) {
     console.log("err",err)

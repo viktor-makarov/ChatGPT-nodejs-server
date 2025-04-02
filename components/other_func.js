@@ -629,7 +629,7 @@ async function cleanTextWithAI(text,index){
   ]
   
   const options ={
-    url: appsettings.functions_options.content_clean_oai_url,
+    url: `https://${process.env.OAI_URL}${appsettings.functions_options.content_clean_oai_url}`,
     method: "POST",
     encoding: "utf8",
     timeout: appsettings.http_options.OAI_request_timeout,

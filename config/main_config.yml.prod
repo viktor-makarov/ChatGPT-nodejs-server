@@ -38,7 +38,7 @@ http_options:
 functions_options:
   fetch_text_limit_pcs: 80
   max_characters_in_result: 6000
-  content_clean_oai_url: https://api.openai.com/v1/chat/completions
+  content_clean_oai_url: /v1/chat/completions
   content_clean_oai_model: gpt-4o
 
 mdj_options:

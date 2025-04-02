@@ -31,7 +31,7 @@ async function GetModelsFromAPI() {
   try {
     const models_array = await openAIApiHandler.getModels(); //обновляем список моделей в базе
     const write_result = await mongo.update_models_listPromise(
-      models_array.body.data
+      models_array.data
     );
     console.log(new Date(), "Models updated", write_result);
   } catch (err) {
