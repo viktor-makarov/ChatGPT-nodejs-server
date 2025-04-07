@@ -1,5 +1,6 @@
 const modelSettings = require("../../config/telegramModelsSettings");
 const msqTemplates = require("../../config/telegramMsgTemplates");
+const otherFunctions = require("../other_func");
 const axios = require("axios");
 const mime = require('mime-types');
 const { Readable } = require("stream");
@@ -290,25 +291,41 @@ async getFileLinkFromTgm(){
     } catch(err){
         this.#uploadFileError = err.message
         this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
-        this.#unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${this.#fileName}", but failed with the following error: ${this.#uploadFileError}`
+        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[uploadFileError]",filler:this.#uploadFileError}]
+        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",this.#user.language_code,placeholders)
         return null
     }
     this.#fileName = this.#fileName ? this.#fileName : this.extractFileNameFromURL(this.#fileLink)
     this.#fileExtention = this.extractFileExtention(this.#fileName)
     this.#fileMimeType = this.#fileMimeType ? this.#fileMimeType : mime.lookup(this.#fileName)
     
+
     const prohibitedExtentions = appsettings.file_options.prohibited_extentions
 
     if(prohibitedExtentions.includes(this.#fileExtention)){
         this.#uploadFileError = `Files with extentions ${prohibitedExtentions.join(", ")} are not allowed to upload to the dialogue}`
         this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы с расширением <code>${prohibitedExtentions.join(", ")}</code> не обрабатываются.`
-        this.#unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${this.#fileName}", but failed with the following error: ${this.#uploadFileError}`
+        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[prohibitedExtentions]",filler:prohibitedExtentions.join(", ")}]
+        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_unsupported_format",this.#user.language_code,placeholders)
     }
 
     return this.#fileLink
 };
 
+extentionNormaliser(filename,mimeType){
 
+    const mimeTypeArray = mimeType.split("/")
+    const mimeSybtype = mimeTypeArray.pop()
+    let fileNameArray = filename.split(".")
+    const fileExtention = fileNameArray.pop()
+    const fileBaseName =  fileNameArray.join(".")
+
+    if(mimeSybtype==="ogg"&&fileExtention==="oga"){
+        return fileBaseName+"."+mimeSybtype
+    } else {
+        return filename
+    }
+}
 
 async audioReadableStreamFromTelegram(){
     const response = await axios({
@@ -319,7 +336,8 @@ async audioReadableStreamFromTelegram(){
     const fileData = Buffer.from(response.data, "binary");  
     var audioReadStream = Readable.from(fileData);
     const fileLinkParts = this.#fileLink.split("/")
-    audioReadStream.path = fileLinkParts[fileLinkParts.length-1];
+    const fileName = this.extentionNormaliser(fileLinkParts[fileLinkParts.length-1],this.#fileMimeType)
+    audioReadStream.path = fileName;
     return audioReadStream
 };
 

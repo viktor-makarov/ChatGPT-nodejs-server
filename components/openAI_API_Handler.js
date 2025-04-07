@@ -13,7 +13,6 @@ const axios = require("axios");
 async function getModels() {
   try {
 
-
     const options = {
       url: `https://${process.env.OAI_URL}/v1/models`,
       headers: {
@@ -23,9 +22,9 @@ async function getModels() {
     }
 
     const models = await axios(options)
-    return models
+    
+    return models.data
   } catch (err) {
-    console.log("err",err)
     err.consolelog = true;
     err.place_in_code = err.place_in_code || arguments.callee.name;
     telegramErrorHandler.main({
@@ -42,7 +41,6 @@ async function VoiceToText(requestMsgInstance) {
 
     await requestMsgInstance.getFileLinkFromTgm()
     const audioReadStream = await requestMsgInstance.audioReadableStreamFromTelegram()
-
     const formData = new FormData();
     formData.append("file", audioReadStream);
     formData.append("model", modelSettings.voicetotext.default_model);
@@ -64,12 +62,14 @@ async function VoiceToText(requestMsgInstance) {
         }
       );
     } catch (err) {
-      err = new Error(err.message);
-      err.code = "OAI_ERR99";
-      err.user_message = msqTemplates.error_api_other_problems;
-      err.mongodblog = true;
-      err.place_in_code = err.place_in_code || arguments.callee.name;
-      throw err;
+
+      let error = new Error(err.message);
+      error.code = "OAI_ERR99";
+      error.message_from_response = JSON.stringify(err?.response?.data?.error)
+      error.user_message = msqTemplates.error_api_other_problems;
+      error.mongodblog = true;
+      error.place_in_code = err.place_in_code || arguments.callee.name;
+      throw error;
     }
 
     var transcript = msqTemplates.empty_message;

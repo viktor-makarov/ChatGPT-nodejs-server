@@ -384,14 +384,10 @@ async function addMsgIdToToolCall(obj){
   }
 };
 
-
-
-
-
 async function getUploadedFilesBySourceId(sourceid_list){
   try {
 
-    const filter = { "sourceid": { $in: sourceid_list}}
+    const filter = { "fileId": { $in: sourceid_list}}
 
     return await dialog_collection.find(
       filter

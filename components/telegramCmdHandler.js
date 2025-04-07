@@ -22,7 +22,6 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
 
   if(current_regime === "voicetotext"){
         if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
-          console.log("audio received")
           const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
           if(checkResult.success===0){
             responses.push(checkResult.response)
@@ -59,35 +58,57 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         })
         await dialogueInstance.getDialogueFromDB()
         await dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
+        dialogueInstance.emit('callCompletion')
 
       } else if(requestMsgInstance.fileType === "image" || requestMsgInstance.fileType === "document"){
         
+        const fileCaption =  requestMsgInstance.fileCaption
+
         await requestMsgInstance.getFileLinkFromTgm()
 
         if(requestMsgInstance.uploadFileError){
-          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
+          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-          return;
+          
+          if(fileCaption){
+            await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+            dialogueInstance.emit('callCompletion')
+          }
+          return ;
         }
-        
+
         let uploadResult;
         try{
         uploadResult = await uploadFileToS3Handler(requestMsgInstance)
         } catch(err){
           requestMsgInstance.uploadFileError = err.message
           requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
-          requestMsgInstance.unsuccessfullFileUploadSystemMsg = `User tried to upload file named "${requestMsgInstance.fileName}", but failed with the following error: ${requestMsgInstance.uploadFileError}`
-          await dialogueInstance.commitSystemToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
+          const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
+          requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
+          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
+          if(fileCaption){
+            await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+            dialogueInstance.emit('callCompletion')
+          }
           return;
         }
-        
+
         const url = uploadResult.Location
         
         await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
+
+        if(requestMsgInstance.fileType === "image"){
+          await dialogueInstance.commitImageToDialogue(url,requestMsgInstance)
+        }
+        
+        if(fileCaption){
+          await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+          dialogueInstance.emit('callCompletion')
+        }
         
       }} else {
-          responses.push({text:msqTemplates.file_handler_is_not_realized})
+          responses.push({text:msqTemplates.file_handler_wrong_regime})
       }
 
   return responses
@@ -115,18 +136,23 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
     case "chat":
       await dialogueInstance.getDialogueFromDB()
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-
+      dialogueInstance.emit('callCompletion')
+    
     break;
     case "translator":
       await resetTranslatorDialogHandler(requestMsgInstance)
-      await dialogueInstance.commitSystemToDialogue(msqTemplates.translator_prompt)
+      const devePrompt = otherFunctions.getLocalizedPhrase("translator_prompt",requestMsgInstance.user.language_code)
+      await dialogueInstance.commitDevPromptToDialogue(devePrompt)
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+      dialogueInstance.emit('callCompletion')
 
     break;
     case "texteditor":
       await resetTexteditorDialogHandler(requestMsgInstance)
-      await dialogueInstance.commitSystemToDialogue(msqTemplates.texteditor_prompt)
+      const devPrompt = otherFunctions.getLocalizedPhrase("texteditor_prompt",requestMsgInstance.user.language_code)
+      await dialogueInstance.commitDevPromptToDialogue(devPrompt)
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+      dialogueInstance.emit('callCompletion')
 
     break;
     }
@@ -210,6 +236,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
         reply_markup: {
           keyboard: [['Перезапустить диалог']],
           resize_keyboard: true,
+          one_time_keyboard: false
         }
       }
     } else {
@@ -309,7 +336,9 @@ function generateButtonDescription(buttonLabels,buttonsShownBefore){
   const descriptionSource = appsettings.mdj_options.buttons_description
   const exclude_buttons = appsettings.mdj_options.exclude_buttons;
   lables = lables.filter(label => !exclude_buttons.includes(label));
+  if(buttonsShownBefore){
   lables = lables.filter(label => !buttonsShownBefore.includes(label));
+  }
 
   for (const label of lables){
     description[label] = descriptionSource[label]
@@ -369,7 +398,7 @@ async function adminHandler(requestMsgInstance) {
 async function uploadFileToS3Handler(requestMsgInstance){
 
 const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
-const filename = requestMsgInstance.user.userid + "_" + requestMsgInstance.msgId + "." + requestMsgInstance.fileExtention;
+const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)) + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
 const uploadResult  = await aws.uploadFileToS3(downloadStream,filename)
 
@@ -599,7 +628,8 @@ async function unregisterHandler(requestMsgInstance) {
     );
 
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
-    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) 
+    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) //to delete tater
+    await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)))
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
@@ -607,7 +637,7 @@ async function unregisterHandler(requestMsgInstance) {
 async function createNewFreeAccount(){
   const date = new Date();
   const dateString = date.toString();
-  const newToken = otherFunctions.valueToSHA1(dateString)
+  const newToken = otherFunctions.valueToMD5(dateString)
 
   const result = await mongo.insert_blank_profile(newToken)
   const accountToken = result.token
@@ -628,13 +658,16 @@ async function resetTexteditorDialogHandler(requestMsgInstance) {
 
 async function resetdialogHandler(requestMsgInstance) {
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "chat");
-    const deleteS3Results = await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) 
+    
+    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) //to delete later
+    const deleteS3Results = await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))) 
     const deletedFiles = deleteS3Results.Deleted
 
     const buttons = {
       reply_markup: {
         keyboard: [['Перезапустить диалог']],
         resize_keyboard: true,
+        one_time_keyboard: false
       }
     }
 

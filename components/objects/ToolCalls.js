@@ -18,7 +18,7 @@ class ToolCalls{
     #functionTimeTakenRounded;
     #tokenFetchLimitPcs;
     #overalTokenLimit;
-    #functionCallUnsuccessfullCounts ={};
+
 
     constructor(obj) {
      this.#replyMsg = obj.replyMsgInstance;
@@ -31,33 +31,11 @@ class ToolCalls{
     
     }
 
-
-
-countUnsuccessfullFunctionCalls(functionName,functionOutcome){
-    if(functionOutcome.success===0){
-
-        if(this.#functionCallUnsuccessfullCounts[functionName]){
-            this.#functionCallUnsuccessfullCounts[functionName].failedAttempts += 1;
-        } else {
-            const toolConfig = this.toolConfigByFunctionName(functionName)
-            this.#functionCallUnsuccessfullCounts[functionName] = {failedAttempts:1,limit:toolConfig.try_limit}
-        }
-    } else if (functionOutcome.success===1){
-        if(this.#functionCallUnsuccessfullCounts[functionName]){
-            this.#functionCallUnsuccessfullCounts[functionName].failedAttempts = 0;
-        }
+toolConfigByFunctionName(functionName){
+        return this.#available_tools.find(doc => doc.function?.name === functionName);
     }
-};
 
-limitOfUnsuccessFullExceeded(functionName){
 
-    const functionStatistics = this.#functionCallUnsuccessfullCounts[functionName];
-    if(functionStatistics && functionStatistics.failedAttempts > functionStatistics.limit){
-        return true
-    } else {
-        return false
-    }
-}
 
 set tool_calls(value){
     this.#toolCalls = value
@@ -67,9 +45,7 @@ get tool_choice(){
     return this.#tool_choice
 }
 
-toolConfigByFunctionName(functionName){
-    return this.#available_tools.find(doc => doc.function?.name === functionName);
-}
+
 
 availableToolsForCompetion(){
     if(this.#available_tools){
@@ -95,7 +71,6 @@ async router(){
             functionFriendlyName: toolConfig.friendly_name
         };
 
-        
         if(toolCall.type = "function"){
  
             const functionCall = new FunctionCall({
@@ -109,14 +84,9 @@ async router(){
 
             let outcome = await functionCall.router()
 
-            this.countUnsuccessfullFunctionCalls(toolCallResult.function_name,outcome)
-            const limitIsExceeded = this.limitOfUnsuccessFullExceeded(toolCallResult.function_name)
-            if(limitIsExceeded){
-                outcome.instructions = "Limit of unsuccessful calls exceeded. Stop sending toll calls and report the problem to the user"
-            }
+   
             toolCallResult.content = JSON.stringify(outcome)
             toolCallResult.success = outcome.success
-            toolCallResult.statusMessageId = outcome.statusMessageId
             toolCallResult.duration = outcome.duration;
                            
         } else {
@@ -126,8 +96,6 @@ async router(){
         }
                
         
-        
-
         await mongo.insertFunctionUsagePromise({
             userInstance:this.#user,
             tool_function:toolCallResult.function_name,
@@ -137,12 +105,10 @@ async router(){
             success:toolCallResult.success
         })
 
-        await this.commitToolCallMsg(toolCall,toolCallResult)
-
         return toolCallResult
     })
 
-        await this.#dialogue.metaSetFunctionInProgressStatus(true)
+        
         const results = await Promise.all(toolCallsPromiseList)
         
         await this.#dialogue.commitToolCallResults({
@@ -150,7 +116,7 @@ async router(){
             results:results
         });
 
-        await this.#dialogue.metaSetFunctionInProgressStatus(false)
+        
         this.#toolCalls =[];
 };
 
@@ -161,17 +127,6 @@ async addMsgIdToToolCall(toolCallId,systemMsgId){
         updateBody:{ "tool_calls.$.telegramMsgId": systemMsgId }
       })
 }
-
-async commitToolCallMsg(toolCall,functionResult){
-
-    if(functionResult.statusMessageId){
-    await mongo.updateCompletionInDb({
-        filter: {"tool_calls.id":toolCall.id},       
-        updateBody:{ "tool_calls.$.telegramMsgId": functionResult.statusMessageId }
-      })
-    }
-}
-
 
 async generateAvailableTools(userClass){
 

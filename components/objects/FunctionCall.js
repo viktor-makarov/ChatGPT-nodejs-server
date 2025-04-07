@@ -26,6 +26,7 @@ class FunctionCall{
    
 constructor(obj) {
     this.#functionCall = obj.functionCall;
+    this.#functionName = this.#functionCall.function.name;
     this.#functionConfig = obj.functionConfig;
     this.#replyMsg = obj.replyMsgInstance;
     this.#dialogue = obj.dialogueInstance;
@@ -39,12 +40,32 @@ constructor(obj) {
 
 async router(){
 
+    let functionOutcome = {success:0,error:"No outcome from the function returned"}
     const statusMessageId = await this.sendStatusMessage()
     this.triggerLongWaitNotes(statusMessageId)
 
     const callExecutionStart = new Date();
+    const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
+    
 
-    const functionOutcome = await this.functionHandler()
+    if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
+        functionOutcome = {success:0, error: `function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`,instructions:"Try to find another solution."}
+    } else {
+        await this.#dialogue.metaSetFunctionInProgressStatus(true)
+        functionOutcome = await this.functionHandler()
+        await this.#dialogue.metaSetFunctionInProgressStatus(false)
+    }
+
+    if(functionOutcome.success && functionOutcome.success === 1 ){
+        if(failedRunsBeforeFunctionRun>0){
+        await this.#dialogue.metaResetFailedFunctionRuns(this.#functionName)
+        }
+    } else {
+        const failedRunsAfterFunctionRun = await this.#dialogue.metaIncrementFailedFunctionRuns(this.#functionName)
+        if(failedRunsAfterFunctionRun === this.#functionConfig.try_limit){
+            functionOutcome.stop_calls = "Limit of unsuccessful calls is reached. Stop sending toll calls on this function, report the problem to the user and try to find another solution."
+        }
+    }
 
     const duration = ((new Date() - callExecutionStart) / 1000).toFixed(2);
 
@@ -128,7 +149,6 @@ buildFunctionResultHtml(functionResult){
 
 async functionWraper(){
 
-
     let targetFunction;
                 
     if(this.#functionName==="get_current_datetime"){targetFunction = this.get_current_datetime()} 
@@ -149,11 +169,12 @@ async functionWraper(){
 }
 
 async functionHandler(){
+    //This function in any case should return a JSON object with success field.
         try{
             const validationResult = this.validateFunctionCallObject(this.#functionCall)
             if(validationResult.valid){
 
-                this.#functionName = this.#functionCall.function.name
+                
                 this.#argumentsText = this.#functionCall?.function?.arguments
 
                 const timeoutPromise = new Promise((_, reject) =>
@@ -215,7 +236,7 @@ validateFunctionCallObject(callObject){
 }
 
 async get_current_datetime(){
-
+    
     if(this.#isCanceled){
         return {success:0,error: "Function is canceled by timeout."}
     }
@@ -470,7 +491,11 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
 
             const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
-     
+
+            if(resources.length===0){
+                return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
+            }
+
             resources.sort((a, b) => {
                 return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
               });
@@ -478,7 +503,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             const extractFunctions = resources.map((resource,index) => this.extract_text_from_file(resource.fileUrl,resource.fileMimeType,index))
               
             let results = await Promise.all(extractFunctions)
-
+            
             results.sort((a, b) => a.index - b.index);
 
             for (const result of results){

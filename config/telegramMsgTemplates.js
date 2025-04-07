@@ -84,15 +84,44 @@ module.exports = {
     "timeout_messages":["Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔","Этот запрос не так прост, как казалось! Придется еще немного подождать!","Кажется, наш сервер пошел пить кофе... Может и Вам выпить чашечку, пока ждете?☕️","Вы все еще здесь? Отлично! Мы продолжаем работу над вашим запросом и ценим Ваше терпение.","К сожалению, запрос не может быть выполнен сейчас, просим прощения и предлагаем попробовать позже."],
     "texttospeech_length_error":"Текст для преобразования в голос не должен превышать [limit] символов. Сократите текст и повторите запрос.",
     "file_handler_is_not_realized":"Данный формат файла пока не обрабатывается.",
+    "file_handler_wrong_regime":"Данный режим не пердполагает обработку файлов.",
     "file_is_not_handled_in_the_regime":"В данном режиме не предусмотрена обработка файлов. Пришлите текс для преобразования в голос.",
     "file_type_cannot_be_converted_to_text":"В данном режиме обрабатываются файлы только следующих форматов: mp3, mpeg, mpga, m4a, wav, or webm.",
     "unknown_command":"Неизвестная команда. Бот не умеет обрабатываеть данную команду.",
     "unknown_msg_type":"Данный тип сообщения не обрабатывается.",
     "unknown_callback":"Получен неизвестный call_back. Он не будет обработан.",
-    "translator_prompt":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian.",
-    "texteditor_prompt":"You are a professional text editor. \n-You should start your reply with a phrase 'Как редактор я предлагаю следующую версию полученного текста:'. \n (1) Rewrite the sentences in a way that makes them sound more natural and idiomatic. (2) Also, please point out any grammar, spelling, and wording mistakes and explain how you fixed them. Be sure to use Markdown tags to emphasize certain words or phrases. \n-Avoid using the word 'rephrase' in your response, as it may confuse users.\n-Do not change the language in which the user is speaking.",
-    "system_start_dialogue":"Use the following step-by-step instructions to respond to user inputs.\n  Step 1 - Use instruction from knowledge base with 'get_knowledge_base_item' function if appropriate \n Step 2 - Perform the user's task.",
+    "translator_prompt":{
+        "en":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian.",
+        "ru":"Вы профессиональный переводчик. Если вам предоставлен текст на русском языке, вы должны перевести его на английский, но если текст не на русском - переведите его на русский."
+        },
+    "texteditor_prompt": {
+        "en":"You are a professional text editor. \n-You should start your reply with a phrase 'Как редактор я предлагаю следующую версию полученного текста:'. \n(1) Rewrite the sentences in a way that makes them sound more natural and idiomatic. (2) Also, please point out any grammar, spelling, and wording mistakes and explain how you fixed them. Be sure to use Markdown tags to emphasize certain words or phrases. \n-Avoid using the word 'rephrase' in your response, as it may confuse users.\n-In your answer use the language in which the user is writing a prompt.",
+        "ru":"Вы являетесь профессиональным редактором текстов. \n-Вы должны начинать свой ответ с фразы 'Как редактор я предлагаю следующую версию полученного текста:'. \n(1) Перепишите предложения так, чтобы они звучали более естественно и идиоматично. (2) Также укажите любые грамматические, орфографические и языковые ошибки и объясните, как вы их исправили. Обязательно используйте теги Markdown, чтобы выделить определенные слова или фразы. \n-Избегайте использования слова 'переформулировать' в вашем ответе, так как это может сбивать пользователей с толку.\n-В ответе используйте язык, на котором написан пользовательский промпт."},
+    "system_start_dialogue": {
+        "en": "Use the following step-by-step instructions to respond to user inputs.\n  Step 1 - Use instruction from knowledge base with 'get_knowledge_base_item' function if appropriate \nStep 2 - Perform the user's task.",
+        "ru": "Используй следующие инструкции для ответа на запросы пользователей.\nШаг 1 - Используйте инструкцию из базы знаний с функцией 'get_knowledge_base_item', если она подходит.\nШаг 2 - Выполните задачу пользователя."
+    },
     "killserver_not_admin":"У вас нет прав администратора, чтобы использовать команду killserver",
     "killserver_success":"Команда принята. Сервер остановится через 3 секунды.",
-    "message_block":"Пожалуйста, дождитесь завершения выполнения функции."
+    "message_block":"Пожалуйста, дождитесь завершения выполнения функции.",
+    "mdjBtns":{
+        "en": "User has pushed the button [choosenBtnDsc] and has the following further options [btnsDsc]",
+        "ru": "Пользователь нажал кнопку [choosenBtnDsc] и имеет следующие дополнительные опции [btnsDsc]."
+    },
+    "file_upload_failed":{
+        "en":"User tried to upload file named [fileName], but failed with the following error: [uploadFileError].",
+        "ru":"Пользователь попытался загрузить файл с именем [fileName], но не удалось из-за следующей ошибки: [uploadFileError]."
+    },
+    "file_upload_unsupported_format":{
+        "en":"User tried to upload file named [fileName], but failed as files with extention [prohibitedExtentions] are not allowed.",
+        "ru":"Пользователь попытался загрузить файл с именем [fileName], но не удалось, так как файлы с расширениями [prohibitedExtentions] не обрабатываются."
+    },
+    "file_upload_success":{
+        "en":"User provided the following file. Use it if appropriate\n[fileInfo]",
+        "ru":"Пользователь предоставил следующий файл. Используйте его, если это уместно\n[fileInfo]"
+    },
+    "file_upload_success_html":{
+        "en":"<b>Uploaded file info:</b>\n[fileInfo]",
+        "ru":"<b>Информация о загруженном файле:</b>\n[fileInfo]"
+    }
 };

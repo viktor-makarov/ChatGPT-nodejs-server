@@ -1,7 +1,8 @@
 const { StringDecoder } = require('string_decoder');
 const { Transform } = require('stream');
 const msqTemplates = require("../../config/telegramMsgTemplates");
-
+const otherFunctions = require("../other_func");
+const aws = require("../aws_func.js")
 const mongo = require("../mongo");
 const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
@@ -329,7 +330,8 @@ class Completion extends Transform {
           ` Размер вашего диалога = ${this.#dialogue.tokensWithCurrentPrompt} токенов. Ограничение данной модели = ${this.#overalltokensLimit} токенов.`,null,null,null) 
         
         await mongo.deleteDialogByUserPromise([this.#user.userid], null); //Удаляем диалог
-        await aws.deleteS3FilesByPefix(this.#user.userid) 
+        await aws.deleteS3FilesByPefix(this.#user.userid) //to delete later
+        await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#user.userid)))
         await this.#replyMsg.simpleSendNewMessage(msqTemplates.dialogresetsuccessfully,null,null,null)
         //Сообщение, что диалог перезапущен
     }

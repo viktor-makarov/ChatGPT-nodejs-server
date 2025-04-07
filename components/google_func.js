@@ -38,14 +38,19 @@ async function ocr_document(url, mimeType){
 
     const request = {
         name: `projects/${projectId}/locations/${location}/processors/${processorId}`,
+        imagelessMode:false,
+        processOptions: {
+          ocrConfig: {
+            enableNativePdfParsing:true,
+            enableImageQualityScores:true
+          }
+        },
         rawDocument: {
           content: fileBuffer.toString('base64'),
           mimeType: mimeType
       }
     };
-
   const [result] = await client.processDocument(request);
-
   const {document} = result;
   const {text} = document;
   const endTime = performance.now();

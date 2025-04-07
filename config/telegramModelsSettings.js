@@ -45,7 +45,7 @@ module.exports = {
                 "name":"<< Назад"
             }
         },
-        "hostname":'https://api.openai.com',
+        "hostname":`https://${process.env.OAI_URL}`,
         "default_model":'gpt-4o',
         "url_path":'/v1/chat/completions',
         "default_dialogue_ttl_ms":3600000,
@@ -95,7 +95,7 @@ module.exports = {
                 "name":"<< Назад"
             }
         },
-        "hostname":'https://api.openai.com',
+        "hostname":`https://${process.env.OAI_URL}`,
         "default_model":'gpt-4o',
         "url_path":'/v1/chat/completions',
         "default_dialogue_ttl_ms":3600000,
@@ -145,7 +145,7 @@ module.exports = {
                 "name":"<< Назад"
             }
         },
-        "hostname":'https://api.openai.com',
+        "hostname":`https://${process.env.OAI_URL}`,
         "default_model":'gpt-4o',
         "url_path":'/v1/chat/completions',
         "default_dialogue_ttl_ms":3600000,
@@ -153,7 +153,7 @@ module.exports = {
     "voicetotext":{
         "welcome_msg":"Функция 'Голос в текст' может преобразовать аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
         "name":"Голос в текст",
-        "hostname":'https://api.openai.com',
+        "hostname":`https://${process.env.OAI_URL}`,
         "default_model":'whisper-1',
         "url_path":'/v1/audio/transcriptions',
         "response_format":"json",
@@ -169,9 +169,10 @@ module.exports = {
     "texttospeech":{
         "welcome_msg":"Функция 'Текст в голос' может преобразовать текст в аудио запись. Пришлите текст, который нужно преобразовать. Длина текста не должна превышать [limit] символов. Текущий голос = [voice].",
         "name":"Текст в голос",
-        "hostname":'https://api.openai.com',
-        "default_model":'tts-1-hd',
-        "url_path":'/v1/audio/speech',
+        "hostname":`https://${process.env.OAI_URL}`,
+       // "default_model":'tts-1-hd',
+        "default_model":'gpt-4o-mini-tts',
+       "url_path":'/v1/audio/speech',
         "response_format":"json",
         "voice": "shimmer",
         "options_desc":"Параметры работы функции Текст в голос:",

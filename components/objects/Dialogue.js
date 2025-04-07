@@ -13,7 +13,7 @@ class Dialogue extends EventEmitter {
     #replyMsg;
     #toolCallsInstance;
     #metaObject
-    #defaultMetaObject = {userid:this.#userid,function_calls:{inProgress:false,runs:{},mdjButtonsShown:[]}};
+    #defaultMetaObject = {userid:this.#userid,function_calls:{inProgress:false,failedRuns:{},mdjButtonsShown:[]}};
 
     #dialogueForRequest = [];
     #dialogueFull = [];
@@ -215,9 +215,11 @@ class Dialogue extends EventEmitter {
         const completionMsIds = this.getCompletionsLastMsgIds() 
         await this.#replyMsg.deletePreviousRegenerateButtons(completionMsIds)
         await mongo.deleteDialogByUserPromise([this.#userid], "chat");
-        const deleteS3Results = await aws.deleteS3FilesByPefix(this.#userid)
+        await aws.deleteS3FilesByPefix(this.#userid) //to delete later
+        const deleteS3Results = await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)))
         const deletedFiles = deleteS3Results.Deleted
-        await this.commitSystemToDialogue(msqTemplates.system_start_dialogue)
+        await this.commitDevPromptToDialogue(otherFunctions.startDeveloperPrompt(this.#user.language_code))
+
         await this.deleteMeta()
         await this.createMeta()
 
@@ -225,6 +227,7 @@ class Dialogue extends EventEmitter {
             reply_markup: {
               keyboard: [['Перезапустить диалог']],
               resize_keyboard: true,
+              one_time_keyboard: false
             }
         }
 
@@ -252,21 +255,32 @@ class Dialogue extends EventEmitter {
         await mongo.createDialogueMeta(this.#metaObject)
     }
 
-    async metaIncrementFunction(functionName){
+    async metaIncrementFailedFunctionRuns(functionName){
 
-        if(this.#metaObject.function_calls.runs[functionName]>0){
-            this.#metaObject.function_calls.runs[functionName] += 1;
+        if(this.#metaObject.function_calls?.failedRuns && this.#metaObject.function_calls.failedRuns[functionName]>0){
+            this.#metaObject.function_calls.failedRuns[functionName] += 1;
         } else {
-            this.#metaObject.function_calls.runs[functionName] = 1;
+            if(!this.#metaObject.function_calls?.failedRuns){
+                this.#metaObject.function_calls.failedRuns = {}
+            }
+            this.#metaObject.function_calls.failedRuns[functionName] = 1;
         }
 
         await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
-        return this.#metaObject.function_calls.runs[functionName]
+        return this.#metaObject.function_calls.failedRuns[functionName]
     }
 
-    metaGetNumberOfFunctionRuns(functionName){
-        if(this.#metaObject.function_calls.runs[functionName]>0){
-            return this.#metaObject.function_calls.runs[functionName]
+    async metaResetFailedFunctionRuns(functionName){
+
+        if(this.#metaObject.function_calls?.failedRuns && this.#metaObject.function_calls.failedRuns[functionName]>0){
+        delete this.#metaObject.function_calls.failedRuns[functionName]
+        await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+        }
+    }
+
+    metaGetNumberOfFailedFunctionRuns(functionName){
+        if(this.#metaObject.function_calls?.failedRuns && this.#metaObject.function_calls.failedRuns[functionName]>0){
+            return this.#metaObject.function_calls.failedRuns[functionName]
         } else {
             return 0
         }
@@ -323,6 +337,7 @@ class Dialogue extends EventEmitter {
           }
 
         const savedPrompt = await mongo.upsertPrompt(promptObj); //записываем prompt в базу
+        
         promptObj._id = savedPrompt.upserted[0]._id
 
         this.#dialogueForRequest.push({
@@ -348,20 +363,16 @@ class Dialogue extends EventEmitter {
         this.#previousMsg = this.#currentMsg;
         this.#currentMsg = promptObj;
         
-        console.log("USER MESSAGE")
-        this.emit('callCompletion')
+        console.log("USER PROMPT")
     };
 
-    async commitSystemToDialogue(text){
+    async commitDevPromptToDialogue(text){
 
-        let currentRole = "system"
-        if(["o1-mini","o1-preview"].includes(this.#userid.currentModel)){
-            currentRole = "developer"
-        }
-
+        let currentRole = "developer"
+        
         const datetime = new Date();
 
-        const sourceid = otherFunctions.valueToSHA1(datetime.toISOString())
+        const sourceid = otherFunctions.valueToMD5(datetime.toISOString())
         const unixTimestamp = Math.floor(datetime.getTime() / 1000)
         let systemObj = {
             sourceid: sourceid,
@@ -399,7 +410,7 @@ class Dialogue extends EventEmitter {
         this.#previousMsg = this.#currentMsg;
         this.#currentMsg = systemObj;
         
-        console.log("SYSTEM MESSAGE")
+        console.log("DEVELOPER MESSAGE")
     };
 
     async  sendUnsuccessFileMsg(fileSystemObj){
@@ -414,18 +425,15 @@ class Dialogue extends EventEmitter {
         const MsgText = `✅ Файл <code>${fileSystemObj.fileName}</code> добавлен в наш диалог.`
         
         let infoForUser = {
-            fileId:fileSystemObj.sourceid,
+            fileId:fileSystemObj.fileId,
             fileName:`<code>${fileSystemObj.fileName}</code>`,
             fileUrl:`<code>${fileSystemObj.fileUrl}</code>`,
             fileExtention: fileSystemObj.fileExtention,
             fileMimeType:fileSystemObj.fileMimeType
            }
           
-        if(fileSystemObj.fileCaption){
-            infoForUser["fileCaption"] = fileSystemObj.fileCaption
-        }
-
-        const unfoldedTextHtml = `<b>Uploaded file info:</b>\n${JSON.stringify(infoForUser,null,4)}`
+        const placeholders = [{key:"[fileInfo]",filler:JSON.stringify(infoForUser,null,4)}]
+        const unfoldedTextHtml = otherFunctions.getLocalizedPhrase("file_upload_success_html",this.#user.language_code,placeholders)
         
         const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:MsgText})
         
@@ -449,28 +457,74 @@ class Dialogue extends EventEmitter {
 
     };
 
-    async commitFileToDialogue(url,requestInstance){
+    async commitImageToDialogue(url,requestInstance){
 
         const currentRole = "user"
-        const obj = {
-            fileid:requestInstance.msgId,
-            filename:requestInstance.fileName,
-            download_url:url,
-            fileDescription:requestInstance.fileCaption
-        }
+        const sourceid = String(requestInstance.msgId)+"_"+"image_url"
 
-        const text = `User provided the following file\n${JSON.stringify(obj, null, 4)}`
-
-        let content = [{type:"text",text:text}]
-
-        if(requestInstance.fileType ==="image"){
-            content.push({type:"image_url",image_url: {url:url}})
-        }
-
-        let fileSystemObj = {
-            sourceid: requestInstance.msgId,
+        let promptObj = {
+            sourceid: sourceid,
             createdAtSourceTS: requestInstance.msgTS,
             createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
+            telegramMsgId: requestInstance.msgIdsForDbCompletion,
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: currentRole,
+            roleid: 1,
+            content: [{type:"image_url",image_url: {url:url}}]
+          }
+
+        const savedPrompt = await mongo.upsertPrompt(promptObj); //записываем prompt в базу
+        
+        promptObj._id = savedPrompt.upserted[0]._id
+
+        this.#dialogueForRequest.push({
+            role:promptObj.role,
+            content:promptObj.content,
+        });
+
+        this.#dialogueFull.push({
+            _id:promptObj._id,
+            sourceid: promptObj.sourceid,
+            createdAtSourceDT_UTC:promptObj.createdAtSourceDT_UTC,
+            role: promptObj.role,
+            content: promptObj.content,
+            tokens: promptObj.tokens,
+            tool_calls: promptObj.tool_calls,
+            tool_reply: promptObj.tool_reply
+        });
+
+        //update variables
+        this.#previousRole = this.#currentRole;
+        this.#currentRole = currentRole
+
+        this.#previousMsg = this.#currentMsg;
+        this.#currentMsg = promptObj;
+        
+        console.log("USER IMAGE")
+    }
+
+    async commitFileToDialogue(url,requestInstance){
+
+        const currentRole = "developer"
+        const fileid = requestInstance.msgId
+        const sourceid = String(requestInstance.msgId)+"_"+"file_uploaded"
+        const obj = {
+            fileid:fileid,
+            filename:requestInstance.fileName,
+            download_url:url
+        }
+
+        const placeholders = [{key:"[fileInfo]",filler:JSON.stringify(obj, null, 4)}]
+        const devPrompt = otherFunctions.getLocalizedPhrase("file_upload_success",requestInstance.user.language_code,placeholders)
+
+        let fileSystemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: requestInstance.msgTS,
+            createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
+            fileId:fileid,
             fileName:requestInstance.fileName,
             fileUrl:url,
             fileCaption:requestInstance.fileCaption,
@@ -482,7 +536,7 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 0,
-            content: content
+            content: [{type:"text",text:devPrompt}]
           }      
           
 
@@ -537,7 +591,6 @@ class Dialogue extends EventEmitter {
                 tool_call_id:result.tool_call_id,
                 functionFriendlyName:result.functionFriendlyName,
             },
-            telegramMsgId:result.statusMessageId,
             createdAtSourceDT_UTC: new Date(),
             createdAtSourceTS:Math.ceil(Number(new Date())/1000),
             roleid:0,

@@ -160,6 +160,7 @@ function router(botInstance) {
         err.mongodblog = true;
       }
       err.place_in_code = err.place_in_code || arguments.callee.name;
+      
       telegramErrorHandler.main(
         {
           replyMsgInstance:replyMsg,
@@ -343,7 +344,7 @@ function router(botInstance) {
             const contentObject = await otherFunctions.decodeJson(hash_unfolded)           
 
             const unfoldedFileSysMsg = msgShortener(contentObject.unfolded_text)
-
+            
             const callback_data = {e:"f_f_up",d:hash_unfolded}
             
             const fold_button = {
@@ -443,12 +444,14 @@ function router(botInstance) {
           const buttons = resultMdj.replymsg.options
           const labels = buttons.map(button => button.label)
           const buttonsShownBefore = dialogue.metaGetMdjButtonsShown
+          
           const btnsDescription = telegramCmdHandler.generateButtonDescription(labels,buttonsShownBefore)
           await dialogue.metaSetMdjButtonsShown(labels)
           const choosenButton = resultMdj.buttonPushed
-          const choosenBtnsDescription = telegramCmdHandler.generateButtonDescription([{label:choosenButton}])         
-          const text = `User has pushed the button ${JSON.stringify(choosenBtnsDescription)} and has the following further options ${JSON.stringify(btnsDescription)}`
-          await dialogue.commitSystemToDialogue(text)
+          const choosenBtnsDescription = telegramCmdHandler.generateButtonDescription([{label:choosenButton}],[])         
+          const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(btnsDescription)}]
+          const devPrompt = otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders)
+          await dialogue.commitDevPromptToDialogue(devPrompt)
           
           break;
           default:
@@ -501,15 +504,40 @@ async function triggerToolCall(obj){
   await toolCallsInstance.router()
 }
 
-function msgShortener(text){
-  let new_msg = text;
+function closeUnclosedTags(htmlString) {
+  const tags = [];
+  const tagPattern = /<([a-zA-Z]+)(\s+[^>]*?)?>|<\/([a-zA-Z]+)>/gi;
+  let match;
+
+  // Scan the HTML string from beginning to end
+  while ((match = tagPattern.exec(htmlString))) {
+      const [fullMatch, group1, group2, group3] = match;
+      const tagName = group1 ? group1 : group3
+      if (fullMatch.startsWith('</')) {
+          // If it's a closing tag, forget the corresponding opening tag
+          const tagIndex = tags.lastIndexOf(tagName);
+          if (tagIndex !== -1) {
+              
+              tags.splice(tagIndex, 1);
+          }
+      } else {
+          // Otherwise, remember the opening tag
+          tags.push(tagName);
+      }
+  }
+  // Add unclosed tags to the end of the string
+  const closingTags = tags.reverse().map(tag => `</${tag}>`).join('');
+  return htmlString + closingTags;
+}
+
+function msgShortener(html){
+  let new_msg_html = html;
   const overheadSymbolsCount = 100;
   const limit = (appsettings.telegram_options.big_outgoing_message_threshold - overheadSymbolsCount)
-  if (text.length > limit){
-      new_msg = text.slice(0, limit) + "... (текст сокращен)"
-
+  if (html.length > limit){
+    new_msg_html = closeUnclosedTags(html.slice(0, limit) + "... (текст сокращен)")
     }
-  return new_msg
+  return new_msg_html
 }
 
 module.exports = {

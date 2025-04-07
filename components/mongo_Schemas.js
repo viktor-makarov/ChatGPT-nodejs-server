@@ -223,6 +223,7 @@ const TelegramDialogSheema = new Schema(
     model:{ type: String },
     role: { type: String },
     roleid: { type: Number },
+    fileId: { type: Number },
     fileName:{ type: String },
     fileUrl:{ type: String },
     fileCaption:{ type: String },

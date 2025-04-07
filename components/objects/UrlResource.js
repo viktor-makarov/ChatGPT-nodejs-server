@@ -23,7 +23,7 @@ class UrlResource{
     constructor(url) {
         this.#url = url;
         this.defaultEncoding = 'utf-8';
-        this.#resourceId = func.valueToSHA1(url);
+        this.#resourceId = func.valueToMD5(url);
         this.#isValid = !(url === "" || url === null || url === undefined) & typeof url === "string"
       };
 
@@ -121,12 +121,6 @@ class UrlResource{
 
       }
 
-
-      async getRelevantContent(){
-
-        const result = await func.cleanTextWithAI(this.#htmlFullBody,1)
-
-      }
     
       get htmlFullBodyLengthChar(){
         return this.#htmlFullBodyLengthChar

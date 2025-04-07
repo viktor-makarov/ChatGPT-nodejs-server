@@ -470,7 +470,49 @@ async function extractTextLambdaOtherFiles(url,mine_type){
   }
 }
 
-function valueToSHA1(value){
+
+function startDeveloperPrompt(locale){
+
+  let prompt = getLocalizedPhrase("system_start_dialogue",locale)
+
+  return prompt
+}
+
+function getLocalizedPhrase(phrase_key,locale,placeholders){
+
+  const msqTemplates = require("../config/telegramMsgTemplates");
+
+  const langOption = locale ? (locale === "ru" ? "ru" : "en") : "ru"
+  const phraseByKey = msqTemplates[phrase_key]
+  
+  let isLocalized = false;
+  let localizedPhrase;
+
+  if (phraseByKey === undefined) {
+    throw new Error(`Phrase key "${phrase_key}" not found.`);
+  } else if (typeof phraseByKey === "string") {
+      isLocalized = false;
+  } else if (typeof phraseByKey === "object") {
+      isLocalized = true;
+      localizedPhrase = phraseByKey[langOption]
+      if(!localizedPhrase){
+        throw new Error(`Phrase with key "${phrase_key}" is not localized for "${langOption}". Check telegramMsgTemplates file.`)
+      }
+  } else {
+      throw new Error("Unexpected type for phraseByKey. Check telegramMsgTemplates file.");
+  }
+
+  let preFinalPhrase =  localizedPhrase ?? phraseByKey
+  if(placeholders){
+    for (const placeholder of placeholders){
+      preFinalPhrase = preFinalPhrase.replace(placeholder.key,placeholder.filler)
+    }
+  }
+  return preFinalPhrase
+}
+
+
+function valueToMD5(value){
   const hash = cryptofy.createHash('md5');
   return hash.update(value).digest('hex');
 }
@@ -612,49 +654,7 @@ function jsonToMarkdownCodeBlock(jsonObject) {
   return '```\n' + escapedJsonString + '\n```';
 }
 
-async function cleanTextWithAI(text,index){
 
-  try{
-  
-  const open_ai_api_key = process.env.OPENAI_API_KEY
-  const message = [
-    {
-      "role": "system",
-      "content": "Extract only text and url. Keep text unchanged and observe the original order"
-    },
-    {
-      "role": "user",
-      "content": text
-    }
-  ]
-  
-  const options ={
-    url: `https://${process.env.OAI_URL}${appsettings.functions_options.content_clean_oai_url}`,
-    method: "POST",
-    encoding: "utf8",
-    timeout: appsettings.http_options.OAI_request_timeout,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${open_ai_api_key}`,
-    },
-    validateStatus: function (status) {
-      return status == appsettings.http_options.SUCCESS_CODE;
-    },
-    data: {
-      model:appsettings.functions_options.content_clean_oai_model,
-      temperature: 0,
-      messages: message
-    },
-  }
-  
-  
-  const result = await axios(options)
-  console.log(result.data.choices[0].message)
-  return {success:1,index,result:result.data}
-  } catch(err){
-    return {success:0,index,result:err}
-  }
-  }
 
 function safeStringify(obj) {
   const cache = new Set();
@@ -914,8 +914,7 @@ module.exports = {
   jsonToMarkdownCodeBlock,
   charLimitFor,
   splitTextByCharLimit,
-  cleanTextWithAI,
-  valueToSHA1,
+  valueToMD5,
   countTokensLambda,
   wireHtml,
   convertMarkdownToLimitedHtml,
@@ -928,5 +927,7 @@ module.exports = {
   extractSystemRolesFromEnd,
   fileDownload,
   extractTextFromFile,
-  executePythonCode
+  executePythonCode,
+  getLocalizedPhrase,
+  startDeveloperPrompt
 };

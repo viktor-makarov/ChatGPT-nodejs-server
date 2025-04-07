@@ -125,7 +125,6 @@ if(err.consolelog){
 }
 
 function createErrorObject(error){
-
     const errorObject = {
         error: {
           code: error.code,
