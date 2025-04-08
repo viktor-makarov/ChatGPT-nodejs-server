@@ -1,7 +1,7 @@
 module.exports = {
     "chat":{
-        "welcome_msg":"Это режим диалога! \nНапишите сообщение, чтобы начать диалог. \nТекущие настройки: t° = [temperature], модель = [model]" ,
-        "incomplete_msg":"Это режим диалога! \nТекущие настройки: t° = [temperature], модель = [model] \nВ диалоге использовано [previous_dialogue_tokens] из [request_length_limit_in_tokens] токенов. \nЧтобы начать новый диалог, нажмите здесь: /resetchat. ",
+        "welcome_msg":"Это режим диалога! \nНапишите сообщение, чтобы начать диалог. \nТекущие настройки: t° = [temperature], модель = [model], стиль = [response_style]",
+        "incomplete_msg":"Это режим диалога! \nТекущие настройки: t° = [temperature], модель = [model], стиль = [response_style] \nВ диалоге использовано [previous_dialogue_tokens] из [request_length_limit_in_tokens] токенов. \nЧтобы начать новый диалог, нажмите здесь: /resetchat. ",
         "name":"Диалог",
         "options_desc":"Параметры работы Диалога:",
         "options":{
@@ -37,10 +37,44 @@ module.exports = {
                     "gpt-4o":{
                         "name":"GPT-4 Омни",
                     },
+                    "o1":{
+                        "name":"O1",
+                    },
                     "back":{
                         "name":"<< Назад"
                     }
             }},
+            "response_style":{
+                "name":"Стить ответов",
+                "options_desc":"Выберите стиль ответов:",
+                "templateRespMsg":"Стиль ответов изменен на [value].",
+                "options":{
+                    "gentleman":{
+                        "name":"Джентльмен",
+                    },
+                    "lady":{
+                        "name":"Леди",
+                    },
+                    "criminal":{
+                        "name":"Уголовник",
+                    },
+                    "chansonnier":{
+                        "name":"Шансонье",
+                    },
+                    "hacker":{
+                        "name":"Хакер",
+                    },
+                    "c_3po":{
+                        "name":"C-3ПиО",
+                    },
+                    "neutral":{
+                        "name":"Нейтральный",
+                    },
+                    "back":{
+                        "name":"<< Назад"
+                    }
+            }
+            },
             "back":{
                 "name":"<< Назад"
             }
@@ -137,6 +171,7 @@ module.exports = {
                     "gpt-4o":{
                         "name":"GPT-4 Омни",
                     },
+                    
                     "back":{
                         "name":"<< Назад"
                     }

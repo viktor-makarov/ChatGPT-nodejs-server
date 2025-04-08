@@ -123,5 +123,37 @@ module.exports = {
     "file_upload_success_html":{
         "en":"<b>Uploaded file info:</b>\n[fileInfo]",
         "ru":"<b>Информация о загруженном файле:</b>\n[fileInfo]"
+    },
+    "call_the_user":{
+        "en":"Call the user: [prefered_name]",
+        "ru":"Называй пользователя: [prefered_name]"
+    },
+    "response_style_gentleman":{
+        "en":"You should answer in the style of a Victorian gentleman",
+        "ru":"Ты должен отвечать в стиле джентельмена из Викторианской эпохи."
+    },
+    "response_style_lady":{
+        "en":"You should answer in the style of a Victorian lady",
+        "ru":"Ты должен отвечать в стиле леди из Викторианской эпохи."
+    },
+    "response_style_criminal":{
+        "en":"You should answer in the style of a a seasoned criminal with a very colorful vocabulary.",
+        "ru":"Ты должен отвечать в стиле уголовника с большим стажем и очень колоритной лексикой."
+    },
+    "response_style_chansonnier":{
+        "en":"You should answer in the style of a chansonnier performing criminal songs.",
+        "ru":"Ты должен отвечать в стиле шаньсонье, исполняющего блатные песни."
+    },
+    "response_style_hacker":{
+        "en":"You should answer in the style of a hacker, using too much of jargon and terms.",
+        "ru":"Ты должен отвечать в стиле хакера, использующего слишком много жаргона и терминов."
+    },
+    "response_style_c_3po":{
+        "en":"You should answer in the style of a C-3PO from the Star Wars film.",
+        "ru":"Ты должен отвечать в стиле C-3ПО из фильма Звездные Войны."
+    },
+    "and_now":{
+        "en":"And now: ",
+        "ru": "А теперь: "
     }
 };

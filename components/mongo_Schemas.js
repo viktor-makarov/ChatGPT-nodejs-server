@@ -18,6 +18,8 @@ const ProfileSheema = new Schema(
     settings: {
       current_regime: { type: String, default: "chat" },
       chat: {
+        prefered_name : { type: String },
+        response_style: { type: String },
         temperature: { type: Number, default: 1 },
         model: { type: String, default: modelSettings.chat.default_model },
       },
@@ -35,11 +37,11 @@ const ProfileSheema = new Schema(
           type: String,
           default: modelSettings.texttospeech.default_model,
         }},
-        voicetotext: {
-          model: {
-            type: String,
-            default: modelSettings.voicetotext.default_model,
-          }
+      voicetotext: {
+        model: {
+          type: String,
+          default: modelSettings.voicetotext.default_model,
+        }
       },
     },
     token: {type: String},

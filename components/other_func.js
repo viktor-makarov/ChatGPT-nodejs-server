@@ -215,7 +215,7 @@ function convertMarkdownToLimitedHtml(text){
       convertedText = convertedText.replace(/&(?![a-z]+;)/g, '&amp;');
       convertedText = convertedText.replace(/</g, '&lt;');
       convertedText = convertedText.replace(/(?<!^)>(?!\s)/gm, '&gt;');
-
+      
       const formulasObj = {};
             // Handle LaTeX block formulas using \[...\]
           convertedText = convertedText.replace(/\\\[(.*?)\\\]/gs, (_, formula) => {
@@ -471,9 +471,45 @@ async function extractTextLambdaOtherFiles(url,mine_type){
 }
 
 
-function startDeveloperPrompt(locale){
+function startDeveloperPrompt(userInstance){
 
-  let prompt = getLocalizedPhrase("system_start_dialogue",locale)
+  let prompt = getLocalizedPhrase("system_start_dialogue",userInstance.language_code)
+
+
+  if(userInstance.prefered_name){
+    const placeholders = [{key:"[prefered_name]",filler:userInstance.prefered_name}]
+    prompt += "\n\n"+ getLocalizedPhrase("call_the_user",userInstance.language_code,placeholders)
+  }
+
+  if(userInstance.response_style){
+
+    prompt += "\n\n"
+
+    switch(userInstance.response_style) {
+    case "neutral":
+    //skip
+    break;
+    case "gentleman":
+      prompt += getLocalizedPhrase("response_style_gentleman",userInstance.language_code)
+    break;
+    case "lady":
+      prompt += getLocalizedPhrase("response_style_lady",userInstance.language_code)
+    break;
+    case "criminal":
+      prompt += getLocalizedPhrase("response_style_criminal",userInstance.language_code)
+    break;
+    case "chansonnier":
+      prompt += getLocalizedPhrase("response_style_chansonnier",userInstance.language_code)
+    break;
+    case "hacker":
+      prompt += getLocalizedPhrase("response_style_hacker",userInstance.language_code)
+    break;
+    case "c_3po":
+      prompt += getLocalizedPhrase("response_style_c_3po",userInstance.language_code)
+    break;
+    }
+
+  }
 
   return prompt
 }

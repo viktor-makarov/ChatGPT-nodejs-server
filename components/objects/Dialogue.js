@@ -218,7 +218,7 @@ class Dialogue extends EventEmitter {
         await aws.deleteS3FilesByPefix(this.#userid) //to delete later
         const deleteS3Results = await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)))
         const deletedFiles = deleteS3Results.Deleted
-        await this.commitDevPromptToDialogue(otherFunctions.startDeveloperPrompt(this.#user.language_code))
+        await this.commitDevPromptToDialogue(otherFunctions.startDeveloperPrompt(this.#user))
 
         await this.deleteMeta()
         await this.createMeta()
@@ -335,6 +335,7 @@ class Dialogue extends EventEmitter {
             roleid: 1,
             content: [{type:"text",text:text}]
           }
+                
 
         const savedPrompt = await mongo.upsertPrompt(promptObj); //записываем prompt в базу
         
@@ -343,6 +344,7 @@ class Dialogue extends EventEmitter {
         this.#dialogueForRequest.push({
             role:promptObj.role,
             content:promptObj.content,
+            name:promptObj.name,
         });
 
         this.#dialogueFull.push({
@@ -351,6 +353,7 @@ class Dialogue extends EventEmitter {
             createdAtSourceDT_UTC:promptObj.createdAtSourceDT_UTC,
             role: promptObj.role,
             content: promptObj.content,
+            name:promptObj.name,
             tokens: promptObj.tokens,
             tool_calls: promptObj.tool_calls,
             tool_reply: promptObj.tool_reply
@@ -458,7 +461,7 @@ class Dialogue extends EventEmitter {
     };
 
     async commitImageToDialogue(url,requestInstance){
-
+        
         const currentRole = "user"
         const sourceid = String(requestInstance.msgId)+"_"+"image_url"
 

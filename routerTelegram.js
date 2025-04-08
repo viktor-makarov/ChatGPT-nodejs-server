@@ -402,7 +402,8 @@ function router(botInstance) {
           case "settings":
             try{
             const response_s = await telegramCmdHandler.settingsOptionsHandler(
-              requestMsg
+              requestMsg,
+              dialogue
             );
 
             if(response_s.operation ==="update"){

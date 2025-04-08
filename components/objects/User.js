@@ -11,6 +11,8 @@ class User{
     #user_last_name;
     #user_username;
     #active;
+    #prefered_name;
+    #response_style;
     #plan;
     #groups;
     #currentRegime;
@@ -51,6 +53,8 @@ class User{
         this.#isRegistered = result[0]?.permissions?.registered
         this.#hasReadInfo = result[0]?.permissions?.readInfo
         this.#isAdmin = this.#groups?.includes("admin")
+        this.#prefered_name = this.#settings[this.#currentRegime]?.prefered_name;
+        this.#response_style = this.#settings[this.#currentRegime]?.response_style ?? "neutral";
 
     } else {
         this.#active = false;
@@ -80,8 +84,15 @@ class User{
     get user_username(){
         return this.#user_username
     }
-    
 
+    get prefered_name(){
+        return this.#prefered_name
+    }
+
+    get response_style(){
+        return this.#response_style
+    }
+    
     get openAIToken(){
 
         return this.#openAIToken
