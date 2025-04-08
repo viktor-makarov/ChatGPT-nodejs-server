@@ -13,7 +13,10 @@ module.exports = {
 },
 "o1":{
     "name":"O1",
-    "request_length_limit_in_tokens": 128000
+    "request_length_limit_in_tokens": 200000
+},
+"o3-mini":{
+    "name":"O3 Мини",
+    "request_length_limit_in_tokens": 200000
 }
-
 };

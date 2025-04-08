@@ -731,14 +731,14 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
     const result = await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
 
 
-    if(option_type==="response_style" && requestMsgInstance.user.currentRegime==="chat"){
+    if(option_type==="response_style" && requestMsgInstance.user.currentRegime==="chat" && end_value !="neutral"){
       console.log("requestMsgInstance.user.currentRegime",requestMsgInstance.user.currentRegime)
       let devPrompt = "";
       devPrompt +=otherFunctions.getLocalizedPhrase("and_now",requestMsgInstance.user.language_code)
       devPrompt += otherFunctions.getLocalizedPhrase("response_style_"+end_value,requestMsgInstance.user.language_code)
       await dialogueInstance.commitDevPromptToDialogue(devPrompt)
     }
-    
+
     //console.log("Обновление результатов",result)
     return {operation:"insert",text:templateResponseMsg.replace("[value]", objectToParce[end_value].name)}
 }

@@ -481,35 +481,11 @@ function startDeveloperPrompt(userInstance){
     prompt += "\n\n"+ getLocalizedPhrase("call_the_user",userInstance.language_code,placeholders)
   }
 
-  if(userInstance.response_style){
+  if(userInstance.response_style && userInstance.response_style !="neutral"){
 
-    prompt += "\n\n"
+    prompt += "\n\n" + getLocalizedPhrase("response_style_"+userInstance.response_style,userInstance.language_code)
 
-    switch(userInstance.response_style) {
-    case "neutral":
-    //skip
-    break;
-    case "gentleman":
-      prompt += getLocalizedPhrase("response_style_gentleman",userInstance.language_code)
-    break;
-    case "lady":
-      prompt += getLocalizedPhrase("response_style_lady",userInstance.language_code)
-    break;
-    case "criminal":
-      prompt += getLocalizedPhrase("response_style_criminal",userInstance.language_code)
-    break;
-    case "chansonnier":
-      prompt += getLocalizedPhrase("response_style_chansonnier",userInstance.language_code)
-    break;
-    case "hacker":
-      prompt += getLocalizedPhrase("response_style_hacker",userInstance.language_code)
-    break;
-    case "c_3po":
-      prompt += getLocalizedPhrase("response_style_c_3po",userInstance.language_code)
-    break;
     }
-
-  }
 
   return prompt
 }
@@ -803,7 +779,6 @@ function optionsToButtons(object,requestMsgInstance){
   listItems.forEach((item)=>{
 
     const call_back_data_array = previousData.concat([item])
-    console.log("call_back_data_array",call_back_data_array)
     const callback_data = {
       e:requestMsgInstance.callback_event ? requestMsgInstance.callback_event : requestMsgInstance.commandName,
       d:call_back_data_array

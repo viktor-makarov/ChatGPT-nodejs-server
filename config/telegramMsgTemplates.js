@@ -129,8 +129,8 @@ module.exports = {
         "ru":"Называй пользователя: [prefered_name]"
     },
     "response_style_gentleman":{
-        "en":"You should answer in the style of a Victorian gentleman",
-        "ru":"Ты должен отвечать в стиле джентельмена из Викторианской эпохи."
+        "en":"You should answer in the style of a noble Victorian gentleman",
+        "ru":"Ты должен отвечать в стиле благородного джентельмена из Викторианской эпохи."
     },
     "response_style_lady":{
         "en":"You should answer in the style of a Victorian lady",
@@ -140,17 +140,21 @@ module.exports = {
         "en":"You should answer in the style of a a seasoned criminal with a very colorful vocabulary.",
         "ru":"Ты должен отвечать в стиле уголовника с большим стажем и очень колоритной лексикой."
     },
-    "response_style_chansonnier":{
-        "en":"You should answer in the style of a chansonnier performing criminal songs.",
-        "ru":"Ты должен отвечать в стиле шаньсонье, исполняющего блатные песни."
+    "response_style_philosopher":{
+        "en":"You should answer in the style of a greek philosopher.",
+        "ru":"Ты должен отвечать в стиле греческого философа."
     },
     "response_style_hacker":{
         "en":"You should answer in the style of a hacker, using too much of jargon and terms.",
         "ru":"Ты должен отвечать в стиле хакера, использующего слишком много жаргона и терминов."
     },
-    "response_style_c_3po":{
-        "en":"You should answer in the style of a C-3PO from the Star Wars film.",
-        "ru":"Ты должен отвечать в стиле C-3ПО из фильма Звездные Войны."
+    "response_style_genie":{
+        "en":"You should answer in the style of Geniea from the Disney cartoon about Alladin.",
+        "ru":"Ты должен отвечать в стиле Джинни из мультка дисней про Алладина."
+    },
+    "response_style_peabody":{
+        "en":"You should answer in the style of Mr. Peabody.",
+        "ru":"Ты должен отвечать в стиле Мистера Пибоди."
     },
     "and_now":{
         "en":"And now: ",
