@@ -215,8 +215,8 @@ class Dialogue extends EventEmitter {
         const completionMsIds = this.getCompletionsLastMsgIds() 
         await this.#replyMsg.deletePreviousRegenerateButtons(completionMsIds)
         await mongo.deleteDialogByUserPromise([this.#userid], "chat");
-        await aws.deleteS3FilesByPefix(this.#userid) //to delete later
-        const deleteS3Results = await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)))
+        await aws.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
+        const deleteS3Results = await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)),this.#user.currentRegime)
         const deletedFiles = deleteS3Results.Deleted
         await this.commitDevPromptToDialogue(otherFunctions.startDeveloperPrompt(this.#user))
 

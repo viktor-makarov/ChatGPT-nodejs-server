@@ -20,10 +20,10 @@ async function lambda_invoke(funcName, payload){
   };
   /** snippet-end:[javascript.v3.lambda.actions.Invoke] */
   
-  async function deleteS3FilesByPefix(prefix){
+  async function deleteS3FilesByPefix(prefix,regime){
 
     const bucketName = process.env.S3_BUCKET_NAME;
-    const prefixKey = process.env.S3_STORAGE_INCOMINGFILES_FOLDER+"/"+prefix;
+    const prefixKey = process.env.S3_STORAGE_INCOMINGFILES_FOLDER+"/"+prefix + "_" + regime;
     const client = new S3Client({});
 
     const listCommand = new ListObjectsV2Command({

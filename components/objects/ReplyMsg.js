@@ -8,6 +8,7 @@ class ReplyMsg extends EventEmitter {
 #callbackId;
 #botInstance ;
 #text = "";
+#text_prefix;
 #textLength = 0;
 #textToSend = "";
 #textToSendLength = 0;
@@ -60,7 +61,10 @@ async deliverCompletionToTelegramThrottled(completionInstance){
 };
 
 calculateTextToSend(){
-    this.#textToSend=this.#text.slice(this.#sentTextIndex)
+    this.#textToSend =  this.#text_prefix ? 
+                                this.#text_prefix + this.#text.slice(this.#sentTextIndex) 
+                                :
+                                this.#text.slice(this.#sentTextIndex)
     this.#textToSendLength = this.#textToSend.length
 };
 
@@ -318,7 +322,6 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
 
   if(msgExceedsThreshold){
 
-
     const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,parse_mode,null)
     this.#lastMsgSentId = result.message_id
     this.#msgIdsForDbCompletion.push(result.message_id)
@@ -368,11 +371,9 @@ extractWaitTimeFromError(err){
 return seconds_to_wait
 }
 
-
 async generateMdjButtons(msg,reply_markup){
 
   let version_row_buttons =[]
-
 
   const sorted_buttons = appsettings.mdj_options.sorted_buttons
   const exclude_buttons = appsettings.mdj_options.exclude_buttons;
@@ -443,6 +444,27 @@ generateFormulasButton(reply_markup){
 return reply_markup
 }
 
+truncateTextByThreshold(text){
+
+  const lastNewlineIndex = text.lastIndexOf('\n', this.#msgThreshold); //find previous line break for smooth split
+  const splitIndex = lastNewlineIndex !== -1 ? lastNewlineIndex : this.#msgThreshold;
+  this.#sentTextIndex += splitIndex
+  const truncatedText = text.slice(0,splitIndex)
+
+  const brokenTags = otherFunctions.findBrokenTags(truncatedText)
+  this.#text_prefix = brokenTags?.open //it will be used for text in the next message
+
+  const splitFiller = lastNewlineIndex !== -1 ? "" : "...";
+
+  return truncatedText + splitFiller + brokenTags?.close
+}
+
+addMissingClosingTags(text){
+
+  const brokenTags = otherFunctions.findBrokenTags(text)
+  return text + brokenTags?.close
+}
+
 async deliverCompletionToTelegram(completionInstance){
 
         if(this.#completion_ended){
@@ -463,13 +485,11 @@ async deliverCompletionToTelegram(completionInstance){
             const msgExceedsThreshold = this.#textToSend.length > this.#msgThreshold
             if(msgExceedsThreshold){
 
-                oneMsgText = this.#textToSend.slice(0,this.#msgThreshold) + "..."
-                this.#sentTextIndex += this.#msgThreshold
+                oneMsgText = this.truncateTextByThreshold(this.#textToSend)
                 this.calculateTextToSend()
-
               
             } else {
-                oneMsgText = this.#textToSend
+                oneMsgText = this.addMissingClosingTags(this.#textToSend)
             }
 
             let options = {
@@ -480,6 +500,7 @@ async deliverCompletionToTelegram(completionInstance){
             }
 
             if(options.parse_mode==="HTML"){
+
               const resultObj = otherFunctions.convertMarkdownToLimitedHtml(oneMsgText)
               oneMsgText = resultObj.html
               completionInstance.completionLatexFormulas = resultObj.latex_formulas

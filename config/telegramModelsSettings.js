@@ -8,7 +8,7 @@ module.exports = {
             "temperature":{
                 "name":"Температура (t°)",
                 "options_desc":"Выберите новое значение температуры:",
-                "templateRespMsg":"Параметр Температура (t°) для Ассистента изменен на [value].",
+                "templateRespMsg":"Параметр Температура (t°) для функции Диалог изменен на [value].",
                 "options":{
                 "0":{
                     "name":"0",
@@ -32,13 +32,19 @@ module.exports = {
             "model":{
                 "name":"Версия модели",
                 "options_desc":"Выберите версию модели:",
-                "templateRespMsg":"Модель для функции Ассистент изменена на [value].",
+                "templateRespMsg":"Модель для функции Диалог изменена на [value].",
                 "options":{
                     "gpt-4o":{
                         "name":"GPT-4 Омни",
                     },
                     "o1":{
                         "name":"O1",
+                    },
+                    "gpt-4o-search-preview":{
+                            "name":"GPT Search",
+                    },
+                    "gpt-4o-mini-search-preview":{
+                            "name":"GPT Search Mini",
                     },
                     "o3-mini":{
                         "name":"O3 Мини",
@@ -211,7 +217,7 @@ module.exports = {
         "response_format":"json",
         "mime_types":['audio/ogg','audio/mpeg','audio/mpeg','audio/wav','video_note','audio/mp4'],
         "filesize_limit_mb":25,
-        "options_desc":"У функции Голос в текст нет:",
+        "options_desc":"У функции Голос в текст нет параметров",
         "options":{
             "back":{
                 "name":"<< Назад"

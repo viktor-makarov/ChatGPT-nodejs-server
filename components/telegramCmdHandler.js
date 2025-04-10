@@ -415,7 +415,7 @@ async function adminHandler(requestMsgInstance) {
 async function uploadFileToS3Handler(requestMsgInstance){
 
 const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
-const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)) + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
+const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
 const uploadResult  = await aws.uploadFileToS3(downloadStream,filename)
 
@@ -652,8 +652,8 @@ async function unregisterHandler(requestMsgInstance) {
     );
 
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
-    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) //to delete tater
-    await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)))
+    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
+    await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
@@ -670,49 +670,29 @@ async function createNewFreeAccount(){
 
 async function resetTranslatorDialogHandler(requestMsgInstance) {
   await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "translator");
-
+  await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid,"translator") //to delete tater
+  await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"translator")
   return;
 }
 
 async function resetTexteditorDialogHandler(requestMsgInstance) {
   await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "texteditor");
-
+  await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid,"texteditor") //to delete tater
+  await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"texteditor")
   return;
 }
 
-async function resetdialogHandler(requestMsgInstance) {
-    await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "chat");
-    
-    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid) //to delete later
-    const deleteS3Results = await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))) 
-    const deletedFiles = deleteS3Results.Deleted
-
-    const buttons = {
-      reply_markup: {
-        keyboard: [['Перезапустить диалог']],
-        resize_keyboard: true,
-        one_time_keyboard: false
-      }
-    }
-
-   if(deletedFiles){
-    return { text: msqTemplates.dialogresetsuccessfully_extended.replace("[files]",deletedFiles.length),buttons:buttons};
-   } else {
-    return { text: msqTemplates.dialogresetsuccessfully,buttons:buttons};
-   }
-}
 
 async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
 
   let callbackArray = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
 
   if(requestMsgInstance.callback_data){
-      callbackArray =  callbackArray.concat(requestMsgInstance.callback_data)
+      const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
+      callbackArray =  callbackArray.concat(callback_data)
     }
 
     const end_value = callbackArray.pop()
-    const option_type = callbackArray[callbackArray.length-1]
-
     const pathString = callbackArray.join(".");
 
     let templateResponseMsg = "";
@@ -722,6 +702,7 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
         options: modelSettings,
       },
     };
+
     callbackArray.forEach((part) => {
       //Получаем объект, который нужно превратить в кнопки
       templateResponseMsg = objectToParce[part].templateRespMsg;
@@ -730,9 +711,7 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
 
     const result = await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
 
-
-    if(option_type==="response_style" && requestMsgInstance.user.currentRegime==="chat" && end_value !="neutral"){
-      console.log("requestMsgInstance.user.currentRegime",requestMsgInstance.user.currentRegime)
+    if(callbackArray.includes("response_style") && callbackArray.includes("chat") && end_value !="neutral"){
       let devPrompt = "";
       devPrompt +=otherFunctions.getLocalizedPhrase("and_now",requestMsgInstance.user.language_code)
       devPrompt += otherFunctions.getLocalizedPhrase("response_style_"+end_value,requestMsgInstance.user.language_code)
@@ -899,13 +878,19 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
 
     let callback_data_array = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
     if(requestMsgInstance.callback_data){
-      callback_data_array =  callback_data_array.concat(requestMsgInstance.callback_data)
-    }
-   // console.log("callback_data_array",callback_data_array)
-    if(callback_data_array.includes("currentsettings")){
-      return {operation:"insert", text: msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(requestMsgInstance.user.settings)) };
+      const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
+      callback_data_array =  callback_data_array.concat(callback_data)
     }
 
+    if(callback_data_array.includes("currentsettings")){
+      return {operation:"insert", text: msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(requestMsgInstance.user.settings)) };
+    } else if (callback_data_array.includes("back")) {
+      callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
+      const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
+      requestMsgInstance.callback_data = await otherFunctions.encodeJson(callback_data.slice(0, callback_data.length - 2)); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
+      //console.log("back trigger",callbackArray)
+    }
+    
     let settingsKeyboard = [];
     let objectToParce = {
       settings: {
@@ -914,19 +899,12 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
       },
     };
 
-    //console.log("initialObject",objectToParce)
     let msgText = "";
-
-    if (callback_data_array[callback_data_array.length - 1] === "back") {
-      callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
-      requestMsgInstance.callback_data = requestMsgInstance.callback_data.slice(0, requestMsgInstance.callback_data.length - 2); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
-      //console.log("back trigger",callbackArray)
-    }
-
     callback_data_array.forEach((part) => {
+      
       //Получаем объект, который нужно превратить в кнопки
       msgText = objectToParce[part].options_desc;
-      objectToParce = objectToParce[part].options;
+      objectToParce = objectToParce[part]?.options;
 
     });
     // console.log("final object",JSON.stringify(objectToParce))
@@ -934,10 +912,11 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
     if (objectToParce) {
       //Если объект с опциями существует
       //Обновляем меню
-      settingsKeyboard = otherFunctions.optionsToButtons(
+      settingsKeyboard = await otherFunctions.optionsToButtons(
         objectToParce,
         requestMsgInstance
       );
+      
        
       //console.log("Обновленная клавиатура",settingsKeyboard)
       return {
@@ -1098,7 +1077,6 @@ module.exports = {
   noMessageText,
   unregisterHandler,
   infoacceptHandler,
-  resetdialogHandler,
   changeRegimeHandlerPromise,
   sendtoallHandler,
   sendtomeHandler,

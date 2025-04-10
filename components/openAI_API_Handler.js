@@ -4,6 +4,7 @@ const FormData = require("form-data");
 const telegramErrorHandler = require("./telegramErrorHandler.js");
 const msqTemplates = require("../config/telegramMsgTemplates");
 const modelSettings = require("../config/telegramModelsSettings");
+const modelConfig = require("../config/modelConfig");
 const { Readable } = require("stream");
 const mongo = require("./mongo");
 const Completion = require("./objects/Completion.js");
@@ -196,7 +197,6 @@ async function chatCompletionStreamAxiosRequest(
       },
       data: {
         model:requestMsg.user.currentModel,
-        temperature: requestMsg.user.currentTemperature,
         messages: dialogueClass.dialogueForRequest,
         stream: true,
         stream_options: {
@@ -204,9 +204,16 @@ async function chatCompletionStreamAxiosRequest(
         }
       },
     };
-
+    
     const available_tools =  await toolCallsInstance.generateAvailableTools(requestMsg.user)
-    if(available_tools){
+    const canUseTools = modelConfig[requestMsg.user.currentModel].canUseTool
+    const canUseTemperature = modelConfig[requestMsg.user.currentModel].canUseTemperature
+
+    if(canUseTemperature){
+      options.data.temperature = requestMsg.user.currentTemperature
+    }
+
+    if(available_tools && canUseTools){
       //Add functions, if they exist
       options.data.tools = available_tools;
       options.data.tool_choice = toolCallsInstance.tool_choice

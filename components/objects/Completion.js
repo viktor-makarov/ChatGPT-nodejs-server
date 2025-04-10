@@ -293,6 +293,7 @@ class Completion extends Transform {
         }  else if (error.code === "ECONNABORTED") {
             err = new Error(error.message);
             err.code = "OAI_ERR_408";
+            err.message_from_response = this.#responseErrorMsg
             err.user_message = msqTemplates.OAI_ERR_408;
             err.mongodblog = true;
             err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
@@ -304,6 +305,7 @@ class Completion extends Transform {
         } else {
           err = new Error(error.message);
           err.code = "OAI_ERR99";
+          err.message_from_response = this.#responseErrorMsg
           err.user_message = msqTemplates.error_api_other_problems;
           err.mongodblog = true;
           err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
@@ -330,8 +332,8 @@ class Completion extends Transform {
           ` Размер вашего диалога = ${this.#dialogue.tokensWithCurrentPrompt} токенов. Ограничение данной модели = ${this.#overalltokensLimit} токенов.`,null,null,null) 
         
         await mongo.deleteDialogByUserPromise([this.#user.userid], null); //Удаляем диалог
-        await aws.deleteS3FilesByPefix(this.#user.userid) //to delete later
-        await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#user.userid)))
+        await aws.deleteS3FilesByPefix(this.#user.userid,this.#user.currentRegime) //to delete later
+        await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#user.userid)),this.#user.currentRegime)
         await this.#replyMsg.simpleSendNewMessage(msqTemplates.dialogresetsuccessfully,null,null,null)
         //Сообщение, что диалог перезапущен
     }

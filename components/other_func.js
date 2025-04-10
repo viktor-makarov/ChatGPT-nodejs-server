@@ -207,6 +207,17 @@ function countTokens(text) {
   return encoded.length;
 }
 
+function findBrokenTags(text){
+
+  const codeBlockMatches = text.match(/```/g);
+  if(codeBlockMatches && codeBlockMatches.length % 2 != 0){
+    return {close:"\n```",open:"```\n"}
+  } else {
+    return {close:""}
+  }
+
+}
+
 function convertMarkdownToLimitedHtml(text){
 
   let convertedText = text
@@ -229,30 +240,24 @@ function convertMarkdownToLimitedHtml(text){
             return `<code>${unicodeit.replace(formula.trim())}</code>`;
         });
 
-      // Replace headers
-      convertedText = convertedText.replace(/^##### (.*$)/gim, '<i>$1</i>');
-      convertedText = convertedText.replace(/^#### (.*$)/gim, '<i>$1</i>');
-      convertedText = convertedText.replace(/^### (.*$)/gim, '<b><i>$1</i></b>');
-      convertedText = convertedText.replace(/^## (.*$)/gim, '<b>$1</b>');
-      convertedText = convertedText.replace(/^# (.*$)/gim, (_, header) => `${header.toUpperCase()}`);
 
-      // Replace block quotes
-      convertedText = convertedText.replace(/^[\s]*\> (.*$)/gim, '<blockquote>$1</blockquote>');
-
-      // Extract code blocks and replace them with placeholders
+      // Extract code blocks and replace them with placeholders/ We withdraw code blocks to awoid their altering by other replacements
       const placeholder = '\uFFFF';  // Character unlikely to appear in Markdown
       const codeObj = {};
       
-      // Inline code handling
-
+      // Inline code handling. 
       convertedText = convertedText.replace(/^[\s]*```markdown?\s+([\s\S]+?)^[\s]*```/gm, (_, code) => {
         const index = Object.keys(codeObj).length;
         codeObj[index]= (`<pre><code  class="language-markdown">${code}</code></pre>`);
         return `${placeholder}${index}${placeholder}`;
       });
 
-      convertedText = convertedText.replace(/^[\s]*```(\w+)?\s+([\s\S]+?)^[\s]*```/gm, '<pre><code class="language-$1">$2</code></pre>');
-
+      convertedText = convertedText.replace(/^[\s]*```(\w+)?\s+([\s\S]+?)^[\s]*```/gm, (_, language, code) => {
+        const index = Object.keys(codeObj).length;
+        codeObj[index] = `<pre><code class="language-${language}">${code}</code></pre>`;
+        return `${placeholder}${index}${placeholder}`;
+    });
+    
       convertedText = convertedText.replace(/`` `([^`]+)` ``/g, (_, code) => {
         const index = Object.keys(codeObj).length;
         codeObj[index]= (`<code>${code}</code>`);
@@ -265,6 +270,15 @@ function convertMarkdownToLimitedHtml(text){
         return `${placeholder}${index}${placeholder}`;
       });
 
+      // Replace headers
+      convertedText = convertedText.replace(/^##### (.*$)/gim, '<i>$1</i>');
+      convertedText = convertedText.replace(/^#### (.*$)/gim, '<i>$1</i>');
+      convertedText = convertedText.replace(/^### (.*$)/gim, '<b><i>$1</i></b>');
+      convertedText = convertedText.replace(/^## (.*$)/gim, '<b>$1</b>');
+      convertedText = convertedText.replace(/^# (.*$)/gim, (_, header) => `${header.toUpperCase()}`);
+    
+    // Replace block quotes
+    convertedText = convertedText.replace(/^[\s]*\> (.*$)/gim, '<blockquote>$1</blockquote>');
 
     // Replace bold, italic and strikethrough text
     convertedText = convertedText.replace(/\*\*\*(.*?)\*\*\*/gim, '<b><i>$1</i></b>');
@@ -764,7 +778,7 @@ function throttle(func, delay) {
   }
 }
 
-function optionsToButtons(object,requestMsgInstance){
+async function optionsToButtons(object,requestMsgInstance){
 
   try{
   const limit_in_line = 25;
@@ -773,15 +787,19 @@ function optionsToButtons(object,requestMsgInstance){
   let main_rows_final =[]
   let back_row =[]
   let listItems = Object.keys(object)
-
+  
+  const callback_data_decoded = await decodeJson(requestMsgInstance.callback_data)
+  console.log("callback_data_decoded",callback_data_decoded)
   //listItems.sort()
-  let previousData =  requestMsgInstance.callback_data ? requestMsgInstance.callback_data : []
-  listItems.forEach((item)=>{
+  let previousData =  callback_data_decoded ? callback_data_decoded : []
+
+  for (const item of listItems){
 
     const call_back_data_array = previousData.concat([item])
+    const call_back_data_array_hashed =  await encodeJson(call_back_data_array)
     const callback_data = {
       e:requestMsgInstance.callback_event ? requestMsgInstance.callback_event : requestMsgInstance.commandName,
-      d:call_back_data_array
+      d:call_back_data_array_hashed
     }
 
     if(item==="back"){
@@ -789,7 +807,7 @@ function optionsToButtons(object,requestMsgInstance){
     } else {
       main_rows.push({text:object[item].name,callback_data:JSON.stringify(callback_data)})
     }
-  })
+  }
 
   //Дальше будем разбивать кнопки по строчкам
   let temp_array = new Array();
@@ -940,5 +958,6 @@ module.exports = {
   extractTextFromFile,
   executePythonCode,
   getLocalizedPhrase,
-  startDeveloperPrompt
+  startDeveloperPrompt,
+  findBrokenTags
 };
