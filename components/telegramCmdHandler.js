@@ -16,7 +16,7 @@ async function messageBlock(requestInstance){
 }
 
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
-  let responses =[];
+  let responses = [];
   
   const current_regime = requestMsgInstance.user.currentRegime
 
@@ -58,7 +58,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
         if(checkResult.success===0){
           responses.push(checkResult.responce)
-          return;
+          return responses;
       }
         const result = await replyMsgInstance.sendAudioListenMsg()
         const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
@@ -78,49 +78,28 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
 
         await requestMsgInstance.getFileLinkFromTgm()
 
-        if(requestMsgInstance.uploadFileError){
+        const isAllowedFileType = requestMsgInstance.isAllowedFileType()
+
+        const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+
+        if(s3UploadResult.success === 0 || !isAllowedFileType){
           await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-          
 
-          if(fileCaption){
-            await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
-            dialogueInstance.emit('callCompletion')
+        } else {
+
+          const url = s3UploadResult.Location
+          await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
+
+          if(requestMsgInstance.fileType === "image"){
+            await dialogueInstance.commitImageToDialogue(url,requestMsgInstance)
           }
-
-          return ;
         }
 
-        let uploadResult;
-        try{
-        uploadResult = await uploadFileToS3Handler(requestMsgInstance)
-        } catch(err){
-          requestMsgInstance.uploadFileError = err.message
-          requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
-          const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
-          requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
-          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-          if(fileCaption){
-            await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
-            dialogueInstance.emit('callCompletion')
-          }
-          return;
-        }
-
-        const url = uploadResult.Location
-        
-        await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
-
-        if(requestMsgInstance.fileType === "image"){
-          await dialogueInstance.commitImageToDialogue(url,requestMsgInstance)
-        }
-        
-        console.log(current_regime)
         if(fileCaption){
           await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
           dialogueInstance.emit('callCompletion')
-        } else if(current_regime === "translator" || current_regime === "texteditor"){
+        } else if (current_regime === "translator" || current_regime === "texteditor"){
           dialogueInstance.emit('callCompletion')
         }
         
@@ -414,12 +393,24 @@ async function adminHandler(requestMsgInstance) {
 
 async function uploadFileToS3Handler(requestMsgInstance){
 
+try{
 const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
 const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
-const uploadResult  = await aws.uploadFileToS3(downloadStream,filename)
+let uploadResult  = await aws.uploadFileToS3(downloadStream,filename)
+uploadResult.success = 1
 
 return uploadResult
+} catch(err){
+
+  requestMsgInstance.uploadFileError = err.message
+  requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. при обработке файла возникла ошибка.`
+  const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
+  requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
+  
+  let uploadResult = {success:0}
+  return uploadResult
+}
 }
 
 

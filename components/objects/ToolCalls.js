@@ -266,7 +266,7 @@ async generateAvailableTools(userClass){
                     required: ["resources"]
                 }
             },
-            friendly_name: "Чтение текстового документа",
+            friendly_name: "Чтение документа",
             timeout_ms:60000,
             try_limit: 3 }
             );

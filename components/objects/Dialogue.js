@@ -464,7 +464,7 @@ class Dialogue extends EventEmitter {
         
         const currentRole = "user"
         const sourceid = String(requestInstance.msgId)+"_"+"image_url"
-
+        
         let promptObj = {
             sourceid: sourceid,
             createdAtSourceTS: requestInstance.msgTS,

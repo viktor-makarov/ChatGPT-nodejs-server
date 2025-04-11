@@ -124,7 +124,7 @@ function router(botInstance) {
         requestMsg.print()
       }
       
-      let responses;
+      let responses = [];
 
       const functionInProgress = dialogue.functionInProgress
 

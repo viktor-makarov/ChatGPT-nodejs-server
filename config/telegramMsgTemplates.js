@@ -113,8 +113,8 @@ module.exports = {
         "ru":"Пользователь попытался загрузить файл с именем [fileName], но не удалось из-за следующей ошибки: [uploadFileError]."
     },
     "file_upload_unsupported_format":{
-        "en":"User tried to upload file named [fileName], but failed as files with extention [prohibitedExtentions] are not allowed.",
-        "ru":"Пользователь попытался загрузить файл с именем [fileName], но не удалось, так как файлы с расширениями [prohibitedExtentions] не обрабатываются."
+        "en":"User tried to upload file named [fileName], but failed as files with extention [prohibitedMimeTypes] are not allowed.",
+        "ru":"Пользователь попытался загрузить файл с именем [fileName], но не удалось, так как файлы с расширениями [prohibitedMimeTypes] не обрабатываются."
     },
     "file_upload_success":{
         "en":"User provided the following file. Use it if appropriate\n[fileInfo]",

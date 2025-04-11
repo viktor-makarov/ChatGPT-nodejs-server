@@ -299,18 +299,22 @@ async getFileLinkFromTgm(){
     this.#fileExtention = this.extractFileExtention(this.#fileName)
     this.#fileMimeType = this.#fileMimeType ? this.#fileMimeType : mime.lookup(this.#fileName)
     
-
-    const prohibitedExtentions = appsettings.file_options.prohibited_extentions
-
-    if(prohibitedExtentions.includes(this.#fileExtention)){
-        this.#uploadFileError = `Files with extentions ${prohibitedExtentions.join(", ")} are not allowed to upload to the dialogue}`
-        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы с расширением <code>${prohibitedExtentions.join(", ")}</code> не обрабатываются.`
-        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[prohibitedExtentions]",filler:prohibitedExtentions.join(", ")}]
-        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_unsupported_format",this.#user.language_code,placeholders)
-    }
-
     return this.#fileLink
 };
+
+isAllowedFileType(){
+    const prohibitedMimeTypes = appsettings.file_options.prohibited_mime_types
+
+    if(prohibitedMimeTypes.includes(this.#fileMimeType)){
+        this.#uploadFileError = `Files with mime types ${prohibitedMimeTypes.join(", ")} are not allowed to upload to the dialogue}`
+        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы <code>${prohibitedMimeTypes.join(", ")}</code> не обрабатываются.`
+        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[prohibitedMimeTypes]",filler:prohibitedMimeTypes.join(", ")}]
+        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_unsupported_format",this.#user.language_code,placeholders)
+        return false
+    } else {
+        return true
+    }
+}
 
 extentionNormaliser(filename,mimeType){
 

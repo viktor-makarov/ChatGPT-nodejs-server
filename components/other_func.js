@@ -352,7 +352,7 @@ async function countTokensLambda(text,model){
 async function extractTextFromFile(url,mine_type){
 
   try{
-    if(mine_type==="image/jpeg"){
+    if(mine_type==="image/jpeg" || mine_type ==="image/gif"){
     const text =  await google.ocr_document(url,mine_type)
     console.log(text)
       return {success:1,text:text}
