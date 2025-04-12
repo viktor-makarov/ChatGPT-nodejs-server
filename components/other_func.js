@@ -789,7 +789,7 @@ async function optionsToButtons(object,requestMsgInstance){
   let listItems = Object.keys(object)
   
   const callback_data_decoded = await decodeJson(requestMsgInstance.callback_data)
-  console.log("callback_data_decoded",callback_data_decoded)
+
   //listItems.sort()
   let previousData =  callback_data_decoded ? callback_data_decoded : []
 

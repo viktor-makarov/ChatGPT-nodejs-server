@@ -16,6 +16,7 @@ class ReplyMsg extends EventEmitter {
 #waitMsgInProgress = false;
 #sentTextIndex = 0;
 #user;
+#errorHandler;
 #chatId;
 #lastMsgSentId
 #msgIdsForDbCompletion =[];
@@ -40,6 +41,7 @@ constructor(obj) {
     this.#chatId = obj.chatId
     this.#user = obj.userInstance
     this.#deliverCompletionToTelegramThrottled = this.throttle(this.deliverCompletionToTelegram,appsettings.telegram_options.send_throttle_ms)
+    
     this.#completionRegenerateButtons = 
       {
         text: msqTemplates.regenerate.replace(
@@ -48,6 +50,8 @@ constructor(obj) {
         ),
         callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
       };
+
+    this.#errorHandler = require("../telegramErrorHandler");
 };
 
 set text(value){
@@ -369,6 +373,8 @@ extractWaitTimeFromError(err){
       }
 
 return seconds_to_wait
+
+
 }
 
 async generateMdjButtons(msg,reply_markup){
@@ -467,13 +473,15 @@ addMissingClosingTags(text){
 
 async deliverCompletionToTelegram(completionInstance){
 
+  try{
         if(this.#completion_ended){
           console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 3.")
         }
         
             let oneMsgText;
 
-            const isValidTextToSend = this.#textToSend && this.#textToSendLength>0 && this.#textToSend != this.#textSent
+
+            const isValidTextToSend = this.#textToSend && this.#textToSendLength>0
             if(!isValidTextToSend){
               return
             }
@@ -540,41 +548,45 @@ async deliverCompletionToTelegram(completionInstance){
             var result;
             try{
               result = await this.simpleMessageUpdate(oneMsgText, options)
-
+              
               if(lastMsgPart){
                 this.emit('msgDelivered', {message_id:result.message_id});
               }
             } catch(err){
                 if (err.message.includes("can't parse entities")) {
                     delete options.parse_mode;
+                    
                     result = await this.#botInstance.editMessageText(oneMsgText, options);
+                    
                     if(lastMsgPart){
                       this.emit('msgDelivered', {message_id:result.message_id});
                     }
+                  } else if (err.message.includes(" message is not modified")){
+                    
+                    //Do nothing. It just happens)
                   } else {
-                
+                    
                     err.mongodblog = true;
                     err.details = err.message
                     err.place_in_code = err.place_in_code || "sentToExistingMessage_Handler";
                     throw err
                   }
-            }
-            this.#textSent = result.text
+            } 
             
               if(msgExceedsThreshold){
                   await this.sendStatusMsg()
-     
+                
                   await this.delay(appsettings.telegram_options.debounceMs)
                   this.deliverCompletionToTelegram(completionInstance)
               }
             } catch(err){
                 const secondsToWait =  this.extractWaitTimeFromError(err)
+
                 if(secondsToWait>0){
                     const waitMsgResult = await this.sendTelegramWaitMsg(secondsToWait)
   
                     this.#waitMsgInProgress = true
                     setTimeout(async () => {
-
                         await this.deleteMsgByID(waitMsgResult.message_id)
                         this.#waitMsgInProgress = false
                         await this.deliverCompletionToTelegram(completionInstance)
@@ -582,7 +594,22 @@ async deliverCompletionToTelegram(completionInstance){
                 } else {
                     throw err;
                 }
-            } 
+            }
+          }  catch(err){
+        
+            if (err.mongodblog === undefined) {
+              err.mongodblog = true;
+            }
+
+            this.#errorHandler.main(
+            {
+              replyMsgInstance:this,
+              error_object:err,
+              place_in_code:err.place_in_code,
+              user_message:err.user_message
+            }
+      );
+          }
 }
 
 async delay(ms) {
