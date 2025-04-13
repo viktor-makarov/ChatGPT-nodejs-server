@@ -598,39 +598,22 @@ const getDialogueByUserId = async (userid, regime) => {
   }
 };
 
-const update_models_listPromise = (model_list) => {
-  const func_name = arguments.callee.name;
-  return new Promise(async (resolve, reject) => {
-    try {
-
-      if (model_list.length > 0) {
-        //Если array пуст, то сразу возвращаем null
-        for (const model of model_list) {
-          try {
-            await updateOnePromise(
-              telegram_model_collection,
-              { id: model.id },
-              model,
-              { upsert: true }
-            );
-          } catch (err) {
-            err.code = "MONGO_ERR";
-            err.place_in_code = func_name;
-            reject(err);
-          }
-        }
-        resolve("Success");
-      } else {
-        resolve(null);
-      }
-    } catch (err) {
-      err.place_in_code = func_name;
-      reject(err);
+async function update_models_listPromise(model_list) {
+    if (model_list.length === 0) {
+      return null;
     }
-  });
-};
-
-
+    
+    for (const model of model_list) {
+      await updateOnePromise(
+        telegram_model_collection,
+        { id: model.id },
+        model,
+        { upsert: true }
+      );
+    }
+    
+    return "Success";
+}
 
 async function insert_permissions_migrationPromise(msg) {
   try {

@@ -77,6 +77,7 @@ async router(){
                 functionCall:toolCall,
                 replyMsgInstance:this.#replyMsg,
                 dialogueInstance:this.#dialogue,
+                requestMsgInstance:this.#requestMsg,
                 userInstance:this.#user,
                 functionConfig:toolConfig,
                 tokensLimitPerCall:tokensLimitPerCall
@@ -95,7 +96,6 @@ async router(){
             toolCallResult.success = outcome.success
         }
                
-        
         await mongo.insertFunctionUsagePromise({
             userInstance:this.#user,
             tool_function:toolCallResult.function_name,
@@ -108,15 +108,26 @@ async router(){
         return toolCallResult
     })
 
-        
-        const results = await Promise.all(toolCallsPromiseList)
-        
+        let results = []
+        try{
+            await this.#dialogue.metaSetAllFunctionsInProgressStatus(true)
+            results = await Promise.all(toolCallsPromiseList)
+        } finally{
+            await this.#dialogue.metaSetAllFunctionsInProgressStatus(false)
+        }
+
         await this.#dialogue.commitToolCallResults({
             userInstance:this.#user,
             results:results
         });
 
-        
+        //Commit images
+        for (const result of results) {
+            if(result.function_name==="create_midjourney_image"){
+               // console.log("create_midjourney_image url",result)
+        }
+    }
+
         this.#toolCalls =[];
 };
 

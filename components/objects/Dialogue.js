@@ -240,8 +240,9 @@ class Dialogue extends EventEmitter {
 
     async getMetaFromDB(){
         this.#metaObject =  await mongo.readDialogueMeta(this.#userid)
+        
         if(this.#metaObject === null){
-            await createMeta()
+            await this.createMeta()
         }
         return this.#metaObject
     }
@@ -310,12 +311,12 @@ class Dialogue extends EventEmitter {
         return buttonsAdded
     }
 
-    async metaSetFunctionInProgressStatus(value){
+    async metaSetAllFunctionsInProgressStatus(value){
         this.#metaObject.function_calls.inProgress = value;
         await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
     }
 
-    get functionInProgress(){
+    get anyFunctionInProgress(){
         return this.#metaObject?.function_calls?.inProgress || false
     }
     

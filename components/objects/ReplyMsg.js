@@ -377,9 +377,14 @@ return seconds_to_wait
 
 }
 
-async generateMdjButtons(msg,reply_markup){
+async generateMdjButtons(msg){
 
   let version_row_buttons =[]
+
+  let reply_markup = {
+    one_time_keyboard: true,
+    inline_keyboard: []
+  };
 
   const sorted_buttons = appsettings.mdj_options.sorted_buttons
   const exclude_buttons = appsettings.mdj_options.exclude_buttons;

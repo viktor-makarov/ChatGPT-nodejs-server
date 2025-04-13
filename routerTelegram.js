@@ -49,7 +49,9 @@ async function GetModelsFromAPI() {
 async function setBotParameters(botInstance) {
   try {
     await botInstance.setMyCommands(appsettings.telegram_options.commands);
-    await botInstance.setMyDescription(msqTemplates.bot_description);
+    await botInstance.setMyDescription({description:msqTemplates.bot_description});
+    await botInstance.setMyShortDescription({short_description:msqTemplates.bot_description})
+    
   } catch (err) {
     err.consolelog = true;
     console.log("setBotParameters", err);
@@ -99,7 +101,7 @@ function router(botInstance) {
         replyMsgInstance:replyMsg,
         userInstance:user
       })
-
+      
       await dialogue.getMetaFromDB()
       
       const toolCalls = new ToolCalls({
@@ -123,12 +125,12 @@ function router(botInstance) {
       if (process.env.PROD_RUN != "true") {
         requestMsg.print()
       }
-      
+     
       let responses = [];
 
-      const functionInProgress = dialogue.functionInProgress
+      const anyFunctionInProgress = dialogue.anyFunctionInProgress
 
-      if(functionInProgress){
+      if(anyFunctionInProgress){
 
         responses = await telegramCmdHandler.messageBlock(requestMsg)
 
@@ -156,11 +158,8 @@ function router(botInstance) {
       //обрабатываем остальные сообщения, то есть сообщения с текстом.
      
     } catch (err) {
-      if (err.mongodblog === undefined) {
-        err.mongodblog = true;
-      }
+      err.mongodblog = err.mongodblog || true;
       err.place_in_code = err.place_in_code || arguments.callee.name;
-      
       telegramErrorHandler.main(
         {
           replyMsgInstance:replyMsg,
@@ -464,9 +463,7 @@ function router(botInstance) {
       }
       
     } catch (err) {
-      if (err.mongodblog === undefined) {
-        err.mongodblog = true;
-      }
+      err.mongodblog = err.mongodblog || true;
       err.place_in_code = err.place_in_code || arguments.callee.name;
       telegramErrorHandler.main(
         {

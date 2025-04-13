@@ -992,27 +992,7 @@ async function tokenValidation(requestMsgInstance) {
     }
 }
 
-async function mdj_create_handler(prompt){
 
-  const info = await MdjMethods.executeInfo()
-  console.log(info)
-
-let msg;
-try{
-  msg = await MdjMethods.executeImagine(prompt);
-} catch(err){
-  err.code = "MDJ_ERR"
-  err.user_message = err.message
-  throw err
-}
-
-  const imageBuffer = await otherFunctions.getImageByUrl(msg.uri)
-  
-  return {
-    imageBuffer:imageBuffer,
-    replymsg:msg
-  }
-}
 
 function extractTextBetweenDoubleAsterisks(text) {
   const matches = text.match(/\*\*(.*?)\*\*/);
@@ -1039,12 +1019,8 @@ async function mdj_custom_handler(requestInstance,replyInstance){
     err.user_message = err.message
     throw err
   }
-
-  let reply_markup = {
-    one_time_keyboard: true,
-    inline_keyboard: []
-  };
-  reply_markup = await replyInstance.generateMdjButtons(msg,reply_markup);
+ 
+  const reply_markup = await replyInstance.generateMdjButtons(msg);
   const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
   
   await replyInstance.deleteMsgByID(statusMsg.message_id)
@@ -1079,7 +1055,6 @@ module.exports = {
   fileRouter,
   textMsgRouter,
   mdj_custom_handler,
-  mdj_create_handler,
   generateButtonDescription,
   pdfdownloadHandler,
   messageBlock,

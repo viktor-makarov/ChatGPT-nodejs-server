@@ -76,8 +76,10 @@ if(err.mongodblog){
     let errorJSON  = createErrorObject(err);
     doc = await mongo.insert_error_logPromise(errorJSON)
     errorJSON._id = doc._id
+
+    if(user_msg_result){
     if(replyMsgInstance){
-                if(replyMsgInstance.user.isAdmin){
+                if( replyMsgInstance.user.isAdmin ){
                     let unfolded_text = JSON.stringify(errorJSON,null,4)
                     unfolded_text = otherFunctions.wireHtml(unfolded_text)
                     unfolded_text = msgShortener(unfolded_text)
@@ -109,6 +111,7 @@ if(err.mongodblog){
             err_local.code = "INT_ERR2"
             throw err_local
         }
+    }
 }
 
 //Thirdly we log to console.
@@ -128,7 +131,6 @@ function createErrorObject(error){
     const errorObject = {
         error: {
           code: error.code,
-          userid:error.userid,
           original_code: error.original_code,
           message: otherFunctions.wireHtml(error.message),
           message_from_response:otherFunctions.wireHtml(error.message_from_response),
@@ -137,6 +139,7 @@ function createErrorObject(error){
           place_in_code: otherFunctions.wireHtml(error.place_in_code),
           user_message: otherFunctions.wireHtml(error.user_message),
         },
+        userid:error.userid,
         comment: otherFunctions.wireHtml(error.message),
       }
 

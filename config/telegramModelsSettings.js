@@ -54,7 +54,7 @@ module.exports = {
                     }
             }},
             "response_style":{
-                "name":"Стить ответов",
+                "name":"Стиль ответов",
                 "options_desc":"Выберите стиль ответов:",
                 "templateRespMsg":"Стиль ответов изменен на [value].",
                 "options":{
