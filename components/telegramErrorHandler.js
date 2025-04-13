@@ -13,6 +13,7 @@ try{
 
     //Refactor error object
     err.user_message = user_message
+    err.userid = replyMsgInstance.user.userid;
     err.original_code = err.code
     err.place_in_code=place_in_code
     if(err.original_code==="ETELEGRAM"){
@@ -121,13 +122,13 @@ if(err.consolelog){
     console.log(new Date(),"Initial error ", "Code: ",err.code,"\nOriginal code:", err.original_code,"Message: ",err.message,"\nStack: ",err.stack)
 
 }
-
 }
 
 function createErrorObject(error){
     const errorObject = {
         error: {
           code: error.code,
+          userid:error.userid,
           original_code: error.original_code,
           message: otherFunctions.wireHtml(error.message),
           message_from_response:otherFunctions.wireHtml(error.message_from_response),

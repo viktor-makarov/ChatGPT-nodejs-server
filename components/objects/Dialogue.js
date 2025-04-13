@@ -240,6 +240,9 @@ class Dialogue extends EventEmitter {
 
     async getMetaFromDB(){
         this.#metaObject =  await mongo.readDialogueMeta(this.#userid)
+        if(this.#metaObject === null){
+            await createMeta()
+        }
         return this.#metaObject
     }
 
@@ -249,7 +252,6 @@ class Dialogue extends EventEmitter {
     }
 
     async createMeta(){
-        
         this.#metaObject =  this.#defaultMetaObject
         this.#metaObject.userid = this.#userid
         await mongo.createDialogueMeta(this.#metaObject)
@@ -257,10 +259,13 @@ class Dialogue extends EventEmitter {
 
     async metaIncrementFailedFunctionRuns(functionName){
 
-        if(this.#metaObject.function_calls?.failedRuns && this.#metaObject.function_calls.failedRuns[functionName]>0){
+        if (this.#metaObject.function_calls?.failedRuns && this.#metaObject.function_calls.failedRuns[functionName] > 0) {
             this.#metaObject.function_calls.failedRuns[functionName] += 1;
         } else {
-            if(!this.#metaObject.function_calls?.failedRuns){
+            if (!this.#metaObject.function_calls) {
+                this.#metaObject.function_calls = {};
+            }
+            if (!this.#metaObject.function_calls.failedRuns) {
                 this.#metaObject.function_calls.failedRuns = {}
             }
             this.#metaObject.function_calls.failedRuns[functionName] = 1;
@@ -311,7 +316,7 @@ class Dialogue extends EventEmitter {
     }
 
     get functionInProgress(){
-        return this.#metaObject.function_calls.inProgress
+        return this.#metaObject?.function_calls?.inProgress || false
     }
     
     async updateInputMsgTokenUsage(msgToUpdate){

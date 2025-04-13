@@ -127,6 +127,7 @@ const LogsSheema = new Schema(
       default: Date.now,
       description:"Date and time of error occurance. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')."
     },
+    userid: { type: Number},
     error: {type: Object,description:"Error details" },
     comment: { type: String,description: "Additional comment" },
   },
