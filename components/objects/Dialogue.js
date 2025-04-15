@@ -11,6 +11,7 @@ class Dialogue extends EventEmitter {
     #user;
     #userid;
     #replyMsg;
+    #requestMsg;
     #toolCallsInstance;
     #metaObject
     #defaultMetaObject = {userid:this.#userid,function_calls:{inProgress:false,failedRuns:{},mdjButtonsShown:[]}};
@@ -37,6 +38,7 @@ class Dialogue extends EventEmitter {
         this.#user = obj.userInstance;
         this.#userid = this.#user.userid;
         this.#replyMsg = obj.replyMsgInstance;
+        this.#requestMsg = obj.requestMsgInstance;
         this.#toolCallsInstance = obj.toolCallsInstance
       };
 
@@ -466,27 +468,33 @@ class Dialogue extends EventEmitter {
 
     };
 
-    async commitImageToDialogue(url,requestInstance){
-        
+    async commitImageToDialogue(url,description){
+
         const currentRole = "user"
-        const sourceid = String(requestInstance.msgId)+"_"+"image_url"
+        const datetime = new Date();
+        const sourceid = otherFunctions.valueToMD5(datetime.toISOString())+"_"+"image_url"
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
         
+        let content = [{type:"image_url",image_url: {url:url}}]
+        if(description && description.length>0){
+            content.push({type:"text",text:description})
+        }
+
         let promptObj = {
             sourceid: sourceid,
-            createdAtSourceTS: requestInstance.msgTS,
-            createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
-            telegramMsgId: requestInstance.msgIdsForDbCompletion,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            telegramMsgId: this.#requestMsg.msgIdsForDbCompletion,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 1,
-            content: [{type:"image_url",image_url: {url:url}}]
+            content: content
           }
 
         const savedPrompt = await mongo.upsertPrompt(promptObj); //записываем prompt в базу
-        
         promptObj._id = savedPrompt.upserted[0]._id
 
         this.#dialogueForRequest.push({
@@ -515,30 +523,30 @@ class Dialogue extends EventEmitter {
         console.log("USER IMAGE")
     }
 
-    async commitFileToDialogue(url,requestInstance){
+    async commitFileToDialogue(url){
 
         const currentRole = "developer"
-        const fileid = requestInstance.msgId
-        const sourceid = String(requestInstance.msgId)+"_"+"file_uploaded"
+        const fileid = this.#requestMsg.msgId
+        const sourceid = String(this.#requestMsg.msgId)+"_"+"file_uploaded"
         const obj = {
             fileid:fileid,
-            filename:requestInstance.fileName,
+            filename:this.#requestMsg.fileName,
             download_url:url
         }
 
         const placeholders = [{key:"[fileInfo]",filler:JSON.stringify(obj, null, 4)}]
-        const devPrompt = otherFunctions.getLocalizedPhrase("file_upload_success",requestInstance.user.language_code,placeholders)
+        const devPrompt = otherFunctions.getLocalizedPhrase("file_upload_success",this.#requestMsg.user.language_code,placeholders)
 
         let fileSystemObj = {
             sourceid: sourceid,
-            createdAtSourceTS: requestInstance.msgTS,
-            createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
+            createdAtSourceTS: this.#requestMsg.msgTS,
+            createdAtSourceDT_UTC: new Date(this.#requestMsg.msgTS * 1000),
             fileId:fileid,
-            fileName:requestInstance.fileName,
+            fileName:this.#requestMsg.fileName,
             fileUrl:url,
-            fileCaption:requestInstance.fileCaption,
-            fileExtention:requestInstance.fileExtention,
-            fileMimeType:requestInstance.fileMimeType,
+            fileCaption:this.#requestMsg.fileCaption,
+            fileExtention:this.#requestMsg.fileExtention,
+            fileMimeType:this.#requestMsg.fileMimeType,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,

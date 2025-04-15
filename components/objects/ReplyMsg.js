@@ -1,7 +1,6 @@
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
-const { Deadline } = require("aws-sdk");
 
 class ReplyMsg extends EventEmitter {
 
@@ -65,8 +64,10 @@ async deliverCompletionToTelegramThrottled(completionInstance){
 };
 
 calculateTextToSend(){
+
+    
     this.#textToSend =  this.#text_prefix ? 
-                                this.#text_prefix + this.#text.slice(this.#sentTextIndex) 
+                                this.#text_prefix + this.#text.slice(this.#sentTextIndex)
                                 :
                                 this.#text.slice(this.#sentTextIndex)
     this.#textToSendLength = this.#textToSend.length
@@ -259,15 +260,15 @@ async sendToNewMessage(text,reply_markup,parse_mode,add_options){
 };
 
 async sendDocumentByUrl(url) {
-  await bot.sendDocument(this.#chatId, url);
+  await this.#botInstance.sendDocument(this.#chatId, url);
 }
 
 async sendDocumentAsBinary(file,fileName) {
 
   if(fileName) {
-    await bot.sendDocument(this.#chatId, file, {}, { filename: fileName });
+    await this.#botInstance.sendDocument(this.#chatId, file, {}, { filename: fileName });
   } else {
-    await bot.sendDocument(this.#chatId, file);
+    await this.#botInstance.sendDocument(this.#chatId, file);
   }
 
 
@@ -374,7 +375,21 @@ extractWaitTimeFromError(err){
 
 return seconds_to_wait
 
+}
 
+async sendMdjImage(generateResult,prompt){
+
+  const reply_markup = await this.generateMdjButtons(generateResult.mdjMsg);
+
+  const sent_result = await this.simpleSendNewImage({
+    caption:prompt,
+    reply_markup:reply_markup,
+    contentType:"image/jpeg",
+    fileName:`mdj_imagine_${generateResult.mdjMsg.id}.jpeg`,
+    imageBuffer:generateResult.imageBuffer
+  });
+
+  return sent_result
 }
 
 async generateMdjButtons(msg){
@@ -455,19 +470,24 @@ generateFormulasButton(reply_markup){
 return reply_markup
 }
 
-truncateTextByThreshold(text){
+truncateTextByThreshold(text) {
+  
+  const splitLinesString = '\n';
+  const lastNewlineIndex = text.lastIndexOf(splitLinesString, this.#msgThreshold); //find previous line break for smooth split
+ 
+  const lineBreakIsUsed = lastNewlineIndex !== -1
+  const splitIndex = lineBreakIsUsed ? lastNewlineIndex : this.#msgThreshold;
 
-  const lastNewlineIndex = text.lastIndexOf('\n', this.#msgThreshold); //find previous line break for smooth split
-  const splitIndex = lastNewlineIndex !== -1 ? lastNewlineIndex : this.#msgThreshold;
-  this.#sentTextIndex += splitIndex
-  const truncatedText = text.slice(0,splitIndex)
+  this.#sentTextIndex += splitIndex + (lineBreakIsUsed ? splitLinesString.length : 0) - (this.#text_prefix ? this.#text_prefix.length : 0);
 
-  const brokenTags = otherFunctions.findBrokenTags(truncatedText)
-  this.#text_prefix = brokenTags?.open //it will be used for text in the next message
+  const truncatedText = text.slice(0, splitIndex);
+ 
+  const brokenTags = otherFunctions.findBrokenTags(truncatedText);
+  this.#text_prefix = brokenTags?.open; //it will be used for text in the next message
+  
+  const splitFiller = lineBreakIsUsed ? "" : "...";
 
-  const splitFiller = lastNewlineIndex !== -1 ? "" : "...";
-
-  return truncatedText + splitFiller + brokenTags?.close
+  return truncatedText + splitFiller + brokenTags?.close;
 }
 
 addMissingClosingTags(text){
@@ -482,9 +502,7 @@ async deliverCompletionToTelegram(completionInstance){
         if(this.#completion_ended){
           console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 3.")
         }
-        
             let oneMsgText;
-
 
             const isValidTextToSend = this.#textToSend && this.#textToSendLength>0
             if(!isValidTextToSend){
@@ -601,17 +619,11 @@ async deliverCompletionToTelegram(completionInstance){
                 }
             }
           }  catch(err){
-        
-            if (err.mongodblog === undefined) {
-              err.mongodblog = true;
-            }
-
+            
             this.#errorHandler.main(
             {
               replyMsgInstance:this,
-              error_object:err,
-              place_in_code:err.place_in_code,
-              user_message:err.user_message
+              error_object:err
             }
       );
           }

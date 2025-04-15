@@ -2,7 +2,6 @@ const UrlResource = require("./UrlResource.js");
 const MdjMethods = require("../midjourneyMethods.js");
 const mongo = require("../mongo.js");
 const func = require("../other_func.js");
-const telegramCmdHandler = require("../telegramCmdHandler.js")
 const telegramErrorHandler = require("../telegramErrorHandler.js");
 
 
@@ -24,6 +23,8 @@ class FunctionCall{
     #timeout_ms;
     #isCanceled;
     #functionConfig;
+
+    #telegramCmdHandler;
    
 constructor(obj) {
     this.#functionCall = obj.functionCall;
@@ -39,6 +40,7 @@ constructor(obj) {
     this.#isCanceled = false;
     this.abortController = null;
     this.#inProgress = false;
+    this.#telegramCmdHandler = require("../telegramCmdHandler.js");
 };
 
 async router(){
@@ -70,9 +72,9 @@ async router(){
 
     const duration = ((new Date() - callExecutionStart) / 1000).toFixed(2);
 
-    const ultimateResult = { ...functionOutcome, statusMessageId,duration }
+    const ultimateResult = { ...functionOutcome, duration }
     
-    await this.finalizeStatusMessage(ultimateResult)
+    await this.finalizeStatusMessage(ultimateResult,statusMessageId)
     
     return ultimateResult;
 }
@@ -107,7 +109,7 @@ triggerLongWaitNotes(tgmMsgId){
 };
 
 
-async finalizeStatusMessage(functionResult){
+async finalizeStatusMessage(functionResult,statusMessageId){
 
     const resultImage = functionResult.success === 1 ? "✅" : "❌";
     const msgText = `${this.#functionConfig.friendly_name}. ${resultImage}`
@@ -130,7 +132,7 @@ async finalizeStatusMessage(functionResult){
 
       const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
-        message_id:functionResult.statusMessageId,
+        message_id:statusMessageId,
         reply_markup:reply_markup
     })
 }
@@ -139,10 +141,10 @@ buildFunctionResultHtml(functionResult){
     const argsJson = JSON.parse(this.#functionCall?.function?.arguments);
     const argsText = func.formatObjectToText(argsJson)
 
-    const request = `<pre>${argsText}</pre>`
+    const request = `<pre>${func.wireHtml(argsText)}</pre>`
 
     const resultText = func.formatObjectToText(functionResult)
-    const reply = `<pre><code class="json">${resultText}</code></pre>`
+    const reply = `<pre><code class="json">${func.wireHtml(resultText)}</code></pre>`
 
     const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
 
@@ -184,12 +186,19 @@ async functionHandler(){
                 const timeoutPromise = new Promise((_, reject) =>
                     setTimeout(() => {
                         this.#isCanceled = true
-                        reject({ success: 0, error: `Timeout exceeded. The function is allowed ${this.#timeout_ms} seconds.`})
+                        let error = new Error(`Timeout exceeded. The function is allowed ${this.#timeout_ms / 1000} seconds.`)
+                        error.code = "FUNC_TIMEOUT"
+                        reject(error)
                     }, this.#timeout_ms)
                 );
+
                     try{
                         this.#inProgress = true
                         this.#functionResult = await Promise.race([this.functionWraper(), timeoutPromise]);
+                        
+                        if(this.#isCanceled){
+                            return {success:0,error: "Function is canceled by timeout."}
+                        }
                     } finally{
                         this.#inProgress = false
                     }
@@ -203,24 +212,20 @@ async functionHandler(){
             }
         } catch(err){
             //Here is the main error handler for functions.
-            err.mongodblog = err.mongodblog || true;
             err.instructions = err.instructions || "Server internal error occured. Try to find other ways to fulfill the user's task.";
             err.place_in_code = err.place_in_code || "FunctionCall.functionHandler";
+            err.user_message = null //Functions have their own pattern to communicate errors to the user
             telegramErrorHandler.main(
                     {
                       replyMsgInstance:this.#replyMsg,
-                      error_object:err,
-                      place_in_code:err.place_in_code,
-                      user_message: null //Functions have their own pattern to communicate errors to the user
+                      error_object:err
                     }
                   );
-            if(this.#isCanceled){
-                return {success:0,error: "Function is canceled by timeout."}
-            } else {
-                return {success:0,error:err.message + "\n" + err.stack,instructions:err.instructions}
+            
+            return {success:0,error:err.message + (err.stack ? "\n" + err.stack : ""),instructions:err.instructions}
         }
     }
-}
+
 
 validateFunctionCallObject(callObject){
     const requiredFields = ['index', 'id', 'type', 'function'];
@@ -257,9 +262,6 @@ validateFunctionCallObject(callObject){
 
 async get_current_datetime(){
     
-    if(this.#isCanceled){
-        return {success:0,error: "Function is canceled by timeout."}
-    }
     return {success:1,result: new Date().toString()}
 
 }
@@ -270,11 +272,6 @@ async get_user_guide(){
 
 
         const extractedObject = await func.extractTextFromFile(url,"application/pdf")
-
-        if(this.#isCanceled){
-            return {success:0,error: "Function is canceled by timeout."}
-        }
-
         if(extractedObject.success===1){
             return {success:1,resource_url:url,text:extractedObject.text}
         } else {
@@ -304,8 +301,6 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             return {success:0,error:`There is not handler for mongodb table ${table_name}. Consider modication of the server code`,instructions:"Report the error to the user"}
         }
 
-        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
-
         const actualTokens = func.countTokensProportion(JSON.stringify(result))
         
         if(actualTokens>this.#tokensLimitPerCall){
@@ -322,7 +317,6 @@ async get_data_from_mongoDB_by_pipepine(table_name){
         return response
             
     } catch (err){
-        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
         return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message + "" + err.stack}`,instructions:"Adjust the pipeline provided and retry."}
     }
 
@@ -337,10 +331,8 @@ async get_data_from_mongoDB_by_pipepine(table_name){
     
         try{
         result = this.runJavaScriptCodeAndCaptureLogAndErrors(codeToExecute)
-        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
 
         } catch(err) {
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
             return {success:0,error: err.message + "" + err.stack}
         }
 
@@ -367,9 +359,9 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             
             try{
             result = await this.#other_functions.executePythonCode(codeToExecute)
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
             } catch(err) {
-                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
                 return {success:0,error: err.message + "" + err.stack}
             }
     
@@ -395,9 +387,9 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             
             try{
             result = await mongo.getKwgItemBy(kwg_base_id)
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
             } catch(err) {
-                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
                 return {success:0,error: err.message + "" + err.stack}
             }
             if(result.length > 0){
@@ -481,7 +473,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             const concatenatedText = results.map(obj => obj.text).join(' ');
             
             const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
             console.log("numberOfTokens",numberOfTokens)
             console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)    
             if(numberOfTokens >this.#tokensLimitPerCall){
@@ -491,7 +483,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             return {success:1,content_token_count:numberOfTokens, result:concatenatedText}
                 
                 } catch(err){
-                    if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
 
                     err.place_in_code = err.place_in_code || "extract_text_from_file_router";
                     throw err;
@@ -543,9 +535,9 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             if(numberOfTokens >this.#tokensLimitPerCall){
                 return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the url content is too big to fit into the dialogue", instructions:"Inform the user about the error details"}
             }
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
         } catch(err){
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
             return {success:0,error:`${err.message} ${err.stack}`,instructions:"Inform the user about the error details in simple and understandable for ordinary users words."}
         }
         
@@ -565,29 +557,6 @@ async get_data_from_mongoDB_by_pipepine(table_name){
         return prompt
     }
 
-    async mdj_create_handler(prompt){
-    
-      const info = await MdjMethods.executeInfo()
-     // console.log("MdjMethods info",info)
-        
-    let msg;
-    try{
-      msg = await MdjMethods.executeImagine(prompt);
-     
-    } catch(err){
-      
-      err.code = "MDJ_ERR"
-      err.user_message = err.message
-      throw err
-    }
-    
-      const imageBuffer = await func.getImageByUrl(msg.uri)
-      
-      return {
-        imageBuffer:imageBuffer,
-        replymsg:msg
-      }
-    }
 
     async CreateMdjImageRouter(){
    
@@ -595,46 +564,30 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
             const prompt = this.craftPromptFromArguments()
 
-            let result;
-            try{
-                result = await this.mdj_create_handler(prompt)
-            } catch(err){
-                if(err.message.includes("429")){
-                    return {
-                        success:0,
-                        error:"The image failed to generate due to the limit of concurrent generations. Try again later.",
-                        instructions:"Communicate the reason of the failure to the user."
-                    };
-                } else {
-                    throw err;
-                }
-            }
+            const generate_result = await MdjMethods.generateHandler(prompt)
 
-            const reply_markup = await this.#replyMsg.generateMdjButtons(result.replymsg);
-            
-            const msgResult = await this.#replyMsg.simpleSendNewImage({
-                caption:prompt,
-                reply_markup:reply_markup,
-                contentType:"image/jpeg",
-                fileName:`mdj_imagine_${result.replymsg.id}.jpeg`,
-                imageBuffer:result.imageBuffer
-              });
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
 
-            const buttons = result.replymsg.options
+            const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
+
+            const buttons = generate_result.mdjMsg.options
             const labels = buttons.map(button => button.label)
             const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
             
-            const btnsDescription = telegramCmdHandler.generateButtonDescription(labels,buttonsShownBefore)
+            const btnsDescription = this.#telegramCmdHandler.generateButtonDescription(labels,buttonsShownBefore)
             await this.#dialogue.metaSetMdjButtonsShown(labels)
 
             return {
                     success:1,
                     result:"The image has been generated and successfully sent to the user with several options to handle the image.",
                     buttonsDescription: btnsDescription,
+                    image_url:generate_result.mdjMsg.uri,
                     instructions:"Show buttons description to the user only once."
                 };
             };
+    
 
+    
 
     handleInputArguments(){
 

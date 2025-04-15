@@ -1,5 +1,5 @@
 const MdjClient = require("./midjourneyClient.js").MdjClient
-
+const func = require("./other_func.js");
 
   async function executeImagine(prompt) {
     
@@ -10,6 +10,31 @@ const MdjClient = require("./midjourneyClient.js").MdjClient
 
         return msg
 };
+
+
+async function generateHandler(prompt){
+
+    let mdjMsg;
+    try{
+        mdjMsg = await executeImagine(prompt);
+    } catch(err){
+      err.code = "MDJ_ERR"
+      if(err.message.includes("429")){
+        err.message ="The image failed to generate due to the limit of concurrent generations. Try again later."
+        err.instructions = "Communicate the reason of the failure to the user."
+      } else {
+        err.user_message = err.message
+      }
+      throw err;
+    }
+    
+    const imageBuffer = await func.getImageByUrl(mdjMsg.uri)
+      
+        return {
+        imageBuffer:imageBuffer,
+        mdjMsg:mdjMsg
+        }
+    }
 
 async function executeCustom(obj) {
 
@@ -24,7 +49,7 @@ async function executeCustom(obj) {
         flags:obj.flags,
         loading:progressFunction
     });
-
+    
     return msg
 };
 
@@ -38,5 +63,6 @@ async function executeInfo(){
 module.exports = {
     executeImagine,
     executeCustom,
-    executeInfo
+    executeInfo,
+    generateHandler
 }

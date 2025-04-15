@@ -9,60 +9,33 @@ const RequestMsg  = require("./components/objects/RequestMsg.js");
 const User = require("./components/objects/User.js");
 const Dialogue = require("./components/objects/Dialogue.js");
 const ToolCalls  = require("./components/objects/ToolCalls.js");
+const MdjMethods = require("./components/midjourneyMethods.js");
+
+
+async function MdjAccountInfo(){
+  const info = await MdjMethods.executeInfo()
+   console.log(new Date(),"Midjournet account info",info)
+}
 
 async function UpdateGlobalVariables() {
-  try {
+
     await mongo.setDefaultVauesForNonExiting(); //Должно быть перед get_all_registeredPromise
-  } catch (err) {
-    err.consolelog = true;
-    err.place_in_code = err.place_in_code || arguments.callee.name;
-    console.log("UpdateGlobalVariables", err);
-    /* telegramErrorHandler.main(
-    {
-      replyMsgInstance:null,
-      error_object:err,
-      place_in_code:arguments.callee.name,
-      user_message:null
-    })*/
-  }
+    console.log(new Date(), "Success! Default values setted");
+
 }
 
 async function GetModelsFromAPI() {
-  try {
     const models_array = await openAIApiHandler.getModels(); //обновляем список моделей в базе
-    const write_result = await mongo.update_models_listPromise(
-      models_array.data
-    );
-    console.log(new Date(), "Models updated", write_result);
-  } catch (err) {
-    err.consolelog = true;
-    console.log("GetModelsFromAPI", err);
-    /* telegramErrorHandler.main(
-     {
-      replyMsgInstance:null,
-      error_object:err,
-      place_in_code:arguments.callee.name,
-      user_message:err.user_message
-    })*/
-  }
-}
+    const write_result = await mongo.update_models_listPromise(models_array.data);
+    console.log(new Date(), `Success! OpenAI models updated: ${write_result}`);
+};
 async function setBotParameters(botInstance) {
-  try {
+
     await botInstance.setMyCommands(appsettings.telegram_options.commands);
     await botInstance.setMyDescription({description:msqTemplates.bot_description});
     await botInstance.setMyShortDescription({short_description:msqTemplates.bot_description})
-    
-  } catch (err) {
-    err.consolelog = true;
-    console.log("setBotParameters", err);
-   /* telegramErrorHandler.main(
-     {
-      replyMsgInstance:null,
-      error_object:err,
-      place_in_code:arguments.callee.name,
-      user_message:null
-    })*/
-  }
+    console.log(new Date(),"Success! Bot parameters setted");
+ 
 }
 function router(botInstance) {
 
@@ -72,7 +45,7 @@ function router(botInstance) {
     
     //Слушаем сообщения пользователей
     try {
-   
+      
       user = new User(msg.from)
       await user.getUserProfileFromDB()
 
@@ -87,7 +60,7 @@ function router(botInstance) {
         chatId:msg.chat.id,
         userInstance:user
       });
-
+      
       const authResult = requestMsg.authenticateRequest()
 
       if(!authResult.passed){
@@ -99,6 +72,7 @@ function router(botInstance) {
 
       const dialogue = new Dialogue({
         replyMsgInstance:replyMsg,
+        requestMsgInstance:requestMsg,
         userInstance:user
       })
       
@@ -158,14 +132,11 @@ function router(botInstance) {
       //обрабатываем остальные сообщения, то есть сообщения с текстом.
      
     } catch (err) {
-      err.mongodblog = err.mongodblog || true;
-      err.place_in_code = err.place_in_code || arguments.callee.name;
+      err.place_in_code = err.place_in_code || "routerTelegram.on.message";
       telegramErrorHandler.main(
         {
           replyMsgInstance:replyMsg,
-          error_object:err,
-          place_in_code:err.place_in_code,
-          user_message:err.user_message
+          error_object:err
         }
       );
     }
@@ -201,6 +172,7 @@ function router(botInstance) {
 
       const dialogue = new Dialogue({
         replyMsgInstance:replyMsg,
+        requestMsgInstance:requestMsg,
         userInstance:user
       })
 
@@ -340,8 +312,7 @@ function router(botInstance) {
           
             const hash_unfolded = requestMsg.callback_data
             
-            const contentObject = await otherFunctions.decodeJson(hash_unfolded)           
-
+            const contentObject = await otherFunctions.decodeJson(hash_unfolded)
             const unfoldedFileSysMsg = msgShortener(contentObject.unfolded_text)
             
             const callback_data = {e:"f_f_up",d:hash_unfolded}
@@ -365,6 +336,7 @@ function router(botInstance) {
               })
           } catch(err){
             if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
+              err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query.un_f_up";
               throw err
             }
           }
@@ -393,6 +365,7 @@ function router(botInstance) {
                 })
               } catch(err){
                 if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
+                  err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query.f_f_up";
                   throw err
                 }
               }
@@ -440,18 +413,17 @@ function router(botInstance) {
           case "mdjbtn":
           
           const resultMdj = await telegramCmdHandler.mdj_custom_handler(requestMsg,replyMsg)
-
           const buttons = resultMdj.replymsg.options
           const labels = buttons.map(button => button.label)
-          const buttonsShownBefore = dialogue.metaGetMdjButtonsShown
           
-          const btnsDescription = telegramCmdHandler.generateButtonDescription(labels,buttonsShownBefore)
+          const btnsDescription = telegramCmdHandler.generateButtonDescription(labels,[])
+
           await dialogue.metaSetMdjButtonsShown(labels)
           const choosenButton = resultMdj.buttonPushed
-          const choosenBtnsDescription = telegramCmdHandler.generateButtonDescription([{label:choosenButton}],[])         
+          const choosenBtnsDescription = telegramCmdHandler.generateButtonDescription([choosenButton],[])
           const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(btnsDescription)}]
           const devPrompt = otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders)
-          await dialogue.commitDevPromptToDialogue(devPrompt)
+          await dialogue.commitImageToDialogue(resultMdj.replymsg.uri,devPrompt)
           
           break;
           default:
@@ -463,22 +435,20 @@ function router(botInstance) {
       }
       
     } catch (err) {
-      err.mongodblog = err.mongodblog || true;
-      err.place_in_code = err.place_in_code || arguments.callee.name;
+      err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query";
       telegramErrorHandler.main(
         {
           replyMsgInstance:replyMsg,
-          error_object:err,
-          place_in_code:err.place_in_code,
-          user_message:err.user_message
+          error_object:err
         }
       );
     }
   });
+
+  console.log(new Date(), "Telegram bot started and listening for messages...","TelegramBot options:",botInstance.options);
 }
 
 async function callCompletion(obj){
-
 
   const replyMsgInstance = obj.replyMsgInstance;
   const requestMsgInstance = obj.requestMsgInstance;
@@ -542,5 +512,6 @@ module.exports = {
   router,
   setBotParameters,
   GetModelsFromAPI,
-  UpdateGlobalVariables
+  UpdateGlobalVariables,
+  MdjAccountInfo
 };

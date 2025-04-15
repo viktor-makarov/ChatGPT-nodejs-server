@@ -7,6 +7,7 @@ const modelConfig = require("../config/modelConfig");
 const openAIApiHandler = require("./openAI_API_Handler.js");
 const MdjMethods = require("./midjourneyMethods.js");
 const aws = require("./aws_func.js")
+const FunctionCall  = require("./objects/FunctionCall.js");
 
 
 async function messageBlock(requestInstance){
@@ -89,10 +90,10 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
         } else {
 
           const url = s3UploadResult.Location
-          await dialogueInstance.commitFileToDialogue(url,requestMsgInstance)
+          await dialogueInstance.commitFileToDialogue(url)
 
           if(requestMsgInstance.fileType === "image"){
-            await dialogueInstance.commitImageToDialogue(url,requestMsgInstance)
+            await dialogueInstance.commitImageToDialogue(url)
           }
         }
 
@@ -160,7 +161,6 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   const cmpName = requestMsgInstance.commandName
   const isRegistered = requestMsgInstance.user.isRegistered
-  const hasReadInfo = requestMsgInstance.user.hasReadInfo
   const isAdmin = requestMsgInstance.user.isAdmin
   let responses =[];
 
@@ -247,14 +247,20 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   } else if(cmpName==="imagine"){
 
-    const statusMsg = await replyMsgInstance.sendStatusMsg()
+    const statusMsg = await replyMsgInstance.simpleSendNewMessage(`Imagine. Выполняется.`,null,null,null)
 
-    const result = getPromtFomMsg(requestMsgInstance)
+    const prompt = getPromptFromMsg(requestMsgInstance)
 
-    if(result.success === 0){
-      responses.push({text:result.error})
+    if(prompt){
+
+    const generate_result = await MdjMethods.generateHandler(prompt)
+
+    const sent_result = await  replyMsgInstance.sendMdjImage(generate_result,prompt)
+    
+    await dialogueInstance.commitImageToDialogue(generate_result.mdjMsg.uri)
+    
     } else {
-      await  mdj_create_handler(replyMsgInstance,result.prompt)
+      responses.push({text:msqTemplates.mdj_lacks_prompt})
     }
 
     await replyMsgInstance.deleteMsgByID(statusMsg.message_id)
@@ -310,6 +316,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
    return responses
 }
 
+
 async function handleCancelCommand(call_id){
 
   console.log("handleCancelCommand",call_id)
@@ -324,23 +331,6 @@ function noMessageText() {
   return msqTemplates.no_text_msg;
 }
 
-
-function generateButtonDescription(buttonLabels,buttonsShownBefore){
-
-  let description ={};
-  let lables = buttonLabels;
-  const descriptionSource = appsettings.mdj_options.buttons_description
-  const exclude_buttons = appsettings.mdj_options.exclude_buttons;
-  lables = lables.filter(label => !exclude_buttons.includes(label));
-  if(buttonsShownBefore){
-  lables = lables.filter(label => !buttonsShownBefore.includes(label));
-  }
-
-  for (const label of lables){
-    description[label] = descriptionSource[label]
-  }
-  return description
-}
 
 
 async function infoacceptHandler(requestMsgInstance) {
@@ -928,20 +918,16 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
     }
 };
 
-function getPromtFomMsg(requestMsgInstance){
-
- const prompt = requestMsgInstance.text.substring("/imagine".length).trim();
-
- if(prompt){
-  if(prompt===""){
-    return {success:0,error:msqTemplates.mdj_lacks_prompt}
+function getPromptFromMsg(requestMsgInstance) {
+    // Extract prompt by removing the command and trimming whitespace
+  const prompt = requestMsgInstance.text.substring("/imagine".length).trim();
+  
+  // Check if the prompt exists and is not empty
+  if (!prompt || prompt === "") {
+    return null
   } else {
-    return {success:1,prompt:prompt}
+    return prompt 
   }
- } else {
-  return {success:0,error:msqTemplates.mdj_lacks_prompt}
-};
-
 }
 
 async function tokenValidation(requestMsgInstance) {
@@ -992,8 +978,6 @@ async function tokenValidation(requestMsgInstance) {
     }
 }
 
-
-
 function extractTextBetweenDoubleAsterisks(text) {
   const matches = text.match(/\*\*(.*?)\*\*/);
   return matches ? matches[1] : null;
@@ -1039,6 +1023,25 @@ return {
 }
 };
 
+function generateButtonDescription(buttonLabels,buttonsShownBefore){
+
+  let description ={};
+  let lables = buttonLabels;
+  const descriptionSource = appsettings.mdj_options.buttons_description
+  const exclude_buttons = appsettings.mdj_options.exclude_buttons;
+  lables = lables.filter(label => !exclude_buttons.includes(label));
+  if(buttonsShownBefore){
+  lables = lables.filter(label => !buttonsShownBefore.includes(label));
+  }
+  
+  for (const label of lables){
+
+      description[label] = descriptionSource[label]
+  }
+
+  return description
+  }
+
 
 module.exports = {
   noMessageText,
@@ -1055,8 +1058,8 @@ module.exports = {
   fileRouter,
   textMsgRouter,
   mdj_custom_handler,
-  generateButtonDescription,
   pdfdownloadHandler,
   messageBlock,
-  handleCancelCommand
+  handleCancelCommand,
+  generateButtonDescription
 };

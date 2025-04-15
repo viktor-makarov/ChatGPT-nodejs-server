@@ -1,4 +1,4 @@
-const fs = require('fs').promises;
+const fs = require('fs');
 const modelConfig = require("../config/modelConfig");
 const { Script } = require('vm');
 const cryptofy = require('crypto');
@@ -8,6 +8,7 @@ const unicodeit = require('unicodeit');
 const mjAPI = require('mathjax-node');
 const mongo = require("./mongo");
 const google = require("./google_func");
+const path = require('path');
 
 function extractSystemRolesFromEnd(documents) {
   const result = [];
@@ -210,12 +211,17 @@ function countTokens(text) {
 function findBrokenTags(text){
 
   const codeBlockMatches = text.match(/```/g);
+  
   if(codeBlockMatches && codeBlockMatches.length % 2 != 0){
-    return {close:"\n```",open:"```\n"}
+    const lastCodeBlocIndex = text.lastIndexOf('```');
+    const trimmedText = text.substring(lastCodeBlocIndex);
+    const codeWithLanguagePattern = /```([^\s]+)/g
+    const [fullMatch,language] = codeWithLanguagePattern.exec(trimmedText) || [];
+
+    return {close:"\n```",open:"```"+ (language || "" ) +"\n"+commentSymbolForLanguage(language)+"continued\n"}
   } else {
     return {close:""}
   }
-
 }
 
 function convertMarkdownToLimitedHtml(text){
@@ -252,7 +258,7 @@ function convertMarkdownToLimitedHtml(text){
         return `${placeholder}${index}${placeholder}`;
       });
 
-      convertedText = convertedText.replace(/^[\s]*```(\w+)?\s+([\s\S]+?)^[\s]*```/gm, (_, language, code) => {
+      convertedText = convertedText.replace(/^[\s]*```([^\s]+)?\s+([\s\S]+?)^[\s]*```/gm, (_, language, code) => {
         const index = Object.keys(codeObj).length;
         codeObj[index] = `<pre><code class="language-${language}">${code}</code></pre>`;
         return `${placeholder}${index}${placeholder}`;
@@ -319,7 +325,7 @@ function wireHtml(text){
   .replace(/</g,"&lt;")
   .replace(/>/g,"&gt;")
   .replace(/&/g,"&amp;")
-
+  
   return wiredText
 }
 
@@ -872,21 +878,7 @@ function throttlePromise(fn, delay) {
   };
 }
 
-async function get_ielts_part1_heders(){
 
-  const questionObject = JSON.parse(await fs.readFile("./config/ielts_questions_list_p_1.json", 'utf8'));
-
-  const subjects = Object.keys(questionObject)
-  return subjects
-}
-
-async function get_ielts_part1_questions_by_headers(header_str){
-
-  const questionObject = JSON.parse(await fs.readFile("./config/ielts_questions_list_p_1.json", 'utf8'));
-  const question_list = questionObject[header_str]
-
-  return question_list
-}
 
 
 function jsonToText(obj, indent = '') {
@@ -922,6 +914,96 @@ function formatObjectToText(obj) {
   return formattedText;
 }
 
+function saveTextToTempFile(text, filename) {
+  const tempDir = path.join(__dirname, '../tempfiles');
+  // Create directory if it doesn't exist
+  if (fs.existsSync(tempDir)) {
+    // Save text to the specified filename
+    fs.writeFileSync(path.join(tempDir, filename), text, 'utf8');
+  } else {
+    const error = new Error(`Directory ${tempDir} does not exist`);
+    throw error;
+  }
+}
+
+function commentSymbolForLanguage(language){
+
+  let symbol;
+  // Convert language to lowercase to handle case variations
+  language = language ? language.toLowerCase() : "";
+  // Array of case objects for cleaner readability and alphabetical sorting
+  const languageCases = [
+    { language: "actionscript", symbol: "//" },
+    { language: "ada", symbol: "--" },
+    { language: "asm", symbol: ";" },
+    { language: "awk", symbol: "#" },
+    { language: "bash", symbol: "#" },
+    { language: "c", symbol: "//" },
+    { language: "c++", symbol: "//" },
+    { language: "clojure", symbol: ";;" },
+    { language: "cobol", symbol: "*" },
+    { language: "cmd", symbol: "@REM" },
+    { language: "cpp", symbol: "//" },
+    { language: "cristal", symbol: "#" },
+    { language: "csharp", symbol: "//" },
+    { language: "css", symbol: "/*" },
+    { language: "dart", symbol: "//" },
+    { language: "dax", symbol: "//" },
+    { language: "elixir", symbol: "#" },
+    { language: "erlang", symbol: "%" },
+    { language: "fsharp", symbol: "//" },
+    { language: "fortran", symbol: "!" },
+    { language: "forth", symbol: "\\" },
+    { language: "go", symbol: "//" },
+    { language: "groovy", symbol: "//" },
+    { language: "haskell", symbol: "--" },
+    { language: "haxe", symbol: "//" },
+    { language: "html", symbol: "<!--" },
+    { language: "java", symbol: "//" },
+    { language: "javascript", symbol: "//" },
+    { language: "json", symbol: "//" },
+    { language: "kotlin", symbol: "//" },
+    { language: "lisp", symbol: ";;" },
+    { language: "lua", symbol: "--" },
+    { language: "lulia", symbol: "#" },
+    { language: "markdown", symbol: "<!--" },
+    { language: "matlab", symbol: "%" },
+    { language: "m", symbol: "//" },
+    { language: "nim", symbol: "#" },
+    { language: "objc", symbol: "//" },
+    { language: "objective-c", symbol: "//" },
+    { language: "pascal", symbol: "//" },
+    { language: "perl", symbol: "#" },
+    { language: "php", symbol: "//" },
+    { language: "powershell", symbol: "#" },
+    { language: "powerquery", symbol: "//" },
+    { language: "prolog", symbol: "%" },
+    { language: "python", symbol: "#" },
+    { language: "r", symbol: "#" },
+    { language: "racket", symbol: "#;" },
+    { language: "ruby", symbol: "#" },
+    { language: "rust", symbol: "//" },
+    { language: "scala", symbol: "//" },
+    { language: "scheme", symbol: ";;" },
+    { language: "sh", symbol: "#" },
+    { language: "shell", symbol: "#" },
+    { language: "sql", symbol: "--" },
+    { language: "swift", symbol: "//" },
+    { language: "typescript", symbol: "//" },
+    { language: "tcl", symbol: "#" },
+    { language: "vhdl", symbol: "--" },
+    { language: "vba", symbol: "'" },
+    { language: "vbnet", symbol: "'" },
+    { language: "xml", symbol: "<!--" },
+    { language: "zig", symbol: "//" }
+  ];
+
+  // Find the matching language case or default to "//"
+  const languageCase = languageCases.find(item => item.language === language);
+  symbol = languageCase ? languageCase.symbol : "//";
+    
+    return symbol;
+}
 
 module.exports = {
   formatObjectToText,
@@ -932,8 +1014,7 @@ module.exports = {
   throttle,
   throttlePromise,
   optionsToButtons,
-  get_ielts_part1_heders,
-  get_ielts_part1_questions_by_headers,
+  saveTextToTempFile,
   jsonToText,
   replaceNewDate,
   replaceISOStr,
@@ -959,5 +1040,6 @@ module.exports = {
   executePythonCode,
   getLocalizedPhrase,
   startDeveloperPrompt,
-  findBrokenTags
+  findBrokenTags,
+  commentSymbolForLanguage
 };

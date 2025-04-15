@@ -85,10 +85,17 @@ async router(){
 
             let outcome = await functionCall.router()
 
-   
-            toolCallResult.content = JSON.stringify(outcome)
+            if(outcome.image_url){
+            toolCallResult.image_url = outcome.image_url
+            delete outcome.image_url
+            };
             toolCallResult.success = outcome.success
             toolCallResult.duration = outcome.duration;
+            delete outcome.duration
+
+            toolCallResult.content = JSON.stringify(outcome)
+
+
                            
         } else {
             const outcome = {success:0,error:"Non-function types cannot be processed for now.",instructions:"Rework into a function"}
@@ -124,7 +131,7 @@ async router(){
         //Commit images
         for (const result of results) {
             if(result.function_name==="create_midjourney_image"){
-               // console.log("create_midjourney_image url",result)
+                await this.#dialogue.commitImageToDialogue(result.image_url)
         }
     }
 

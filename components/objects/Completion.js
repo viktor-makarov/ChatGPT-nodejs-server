@@ -312,16 +312,11 @@ class Completion extends Transform {
           throw err;
         }
       } catch (err) {
-        if (err.mongodblog === undefined) {
-          err.mongodblog = true;
-        }
-    
-        err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
+        err.mongodblog = err.mongodblog || true;
+        err.place_in_code = err.place_in_code || "Completion.UnSuccessResponseHandle";
         telegramErrorHandler.main({
           replyMsgInstance:this.#replyMsg,
-          error_object:err,
-          place_in_code:err.place_in_code,
-          user_message:err.user_message
+          error_object:err
         });
       }
     }

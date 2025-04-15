@@ -12,8 +12,6 @@ const Completion = require("./objects/Completion.js");
 const axios = require("axios");
 
 async function getModels() {
-  try {
-
     const options = {
       url: `https://${process.env.OAI_URL}/v1/models`,
       headers: {
@@ -25,16 +23,7 @@ async function getModels() {
     const models = await axios(options)
     
     return models.data
-  } catch (err) {
-    err.consolelog = true;
-    err.place_in_code = err.place_in_code || arguments.callee.name;
-    telegramErrorHandler.main({
-        replyMsgInstance:null,
-        error_object:err,
-        place_in_code:err.place_in_code,
-        user_message:err.user_message
-      });
-  }
+ 
 };
 
 async function VoiceToText(requestMsgInstance) {

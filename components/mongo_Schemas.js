@@ -134,6 +134,8 @@ const LogsSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_errors_log }
 );
 
+LogsSheema.index({ datetimeUTC: -1 });
+
 const DetailsSheema = new Schema(
   {
     datetimeUTC: {

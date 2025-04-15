@@ -599,20 +599,22 @@ const getDialogueByUserId = async (userid, regime) => {
 };
 
 async function update_models_listPromise(model_list) {
-    if (model_list.length === 0) {
-      return null;
+  if (model_list.length === 0) {
+    const error = new Error("Model list is empty");
+    throw error;
+  }
+  
+  const operations = model_list.map(model => ({
+    updateOne: {
+      filter: { id: model.id },
+      update: model,
+      upsert: true
     }
-    
-    for (const model of model_list) {
-      await updateOnePromise(
-        telegram_model_collection,
-        { id: model.id },
-        model,
-        { upsert: true }
-      );
-    }
-    
-    return "Success";
+  }));
+  
+  await telegram_model_collection.bulkWrite(operations);
+  
+  return model_list.length;
 }
 
 async function insert_permissions_migrationPromise(msg) {

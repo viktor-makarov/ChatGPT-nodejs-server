@@ -15,7 +15,6 @@ async function lambda_invoke(funcName, payload){
     const result = Buffer.from(Payload).toString();
     const logs = Buffer.from(LogResult, "base64").toString();
 
-   
     return result;
   };
   /** snippet-end:[javascript.v3.lambda.actions.Invoke] */

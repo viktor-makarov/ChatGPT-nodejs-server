@@ -17,7 +17,7 @@ if (process.env.PROD_RUN == "true") {
     const connection = await mongoose.connect(connectionString,
         global.appsettings.mongodb_connections.options
       );
-    console.log("Connected to mongo",connectionString)
+    console.log(new Date,"Connected to mongo",connectionString)
     return connection;
   };
 

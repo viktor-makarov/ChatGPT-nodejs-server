@@ -2,7 +2,6 @@ require('dotenv').config(); //Загружаем переменные из .env 
 const yaml = require('js-yaml');
 const path = require('path');
 const fs = require('fs');
-const aws = require('../components/aws_func.js');
 
 //load config to global var
 const yamlFileContent = fs.readFileSync(path.join(__dirname,'..',"config","main_config.yml"), 'utf8');
@@ -11,6 +10,8 @@ global.appsettings = yaml.load(yamlFileContent);
 //Подключаем и настраивам телеграм-бот
 
 async function startServer(){
+console.time('Server startup');
+console.log(new Date(),"Telegram bot is launching...")
 const mongoClient = require("../components/mongoClient")
 global.mongoConnection = await mongoClient.connectToMongo()
 
@@ -52,12 +53,12 @@ global.bot.setWebHook(webHookUrl)
 .catch((err) => console.log("setWebHook err:",err))
 }
 
-console.log("TelegramBot options:",options);
-
-telegramRouter.setBotParameters(global.bot) //задаем параметры бота
-telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
-telegramRouter.GetModelsFromAPI() //получаем список моделей
+//telegramRouter.MdjAccountInfo()
+await telegramRouter.setBotParameters(global.bot) //задаем параметры бота
+await telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
+await telegramRouter.GetModelsFromAPI() //получаем список моделей
 telegramRouter.router(global.bot) //включаем роутер
+console.timeEnd('Server startup');
 }
 
 startServer()

@@ -55,6 +55,7 @@ constructor(obj) {
 
         this.#callbackId = obj.requestMsg.id;
         this.#callback_dataRaw = obj.requestMsg.data
+        this.#inputType = "callback_query"
 
         this.#refMsgId = obj.requestMsg.message.message_id
         
@@ -154,7 +155,7 @@ constructor(obj) {
 
     }
     
-    console.log("inputType",this.#inputType)
+    //console.log("inputType",this.#inputType)
   };
 
 extractFileExtention(fileName){
