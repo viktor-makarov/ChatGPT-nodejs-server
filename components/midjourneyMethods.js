@@ -3,9 +3,11 @@ const func = require("./other_func.js");
 
   async function executeImagine(prompt) {
     
-        const progressFunction = function(uri) {  // Use standard function syntax
+        const progressFunction = function(uri,progress) {  // Use standard function syntax
+            console.log("Progress",new Date(), progress);
             console.log("loading imagine",new Date(), uri);
         };
+       // await MdjClient.init();
         const msg = await MdjClient.Imagine(prompt, progressFunction);
 
         return msg
@@ -38,9 +40,12 @@ async function generateHandler(prompt){
 
 async function executeCustom(obj) {
 
-    const progressFunction = function(uri) {  // Use standard function syntax
+    const progressFunction = function(uri,progress) {  // Use standard function syntax
+        console.log("зкщпкуыы",new Date(), progress); 
         console.log("loading custom",new Date(), uri);
     }
+
+  //  await MdjClient.init();
 
     const msg = await MdjClient.Custom({
         msgId:obj.msgId,

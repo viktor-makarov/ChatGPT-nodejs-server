@@ -7,8 +7,6 @@ const modelConfig = require("../config/modelConfig");
 const openAIApiHandler = require("./openAI_API_Handler.js");
 const MdjMethods = require("./midjourneyMethods.js");
 const aws = require("./aws_func.js")
-const FunctionCall  = require("./objects/FunctionCall.js");
-
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -16,7 +14,13 @@ async function messageBlock(requestInstance){
   return responses
 }
 
-async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
+async function callbackBlock(){
+  let responses =[];
+  responses.push({text:msqTemplates.callback_block})
+  return responses
+}
+
+async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   let responses = [];
   
   const current_regime = requestMsgInstance.user.currentRegime
@@ -69,49 +73,80 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,t
           chat_id:replyMsgInstance.chatId,
           message_id:result.message_id
         })
-        await dialogueInstance.getDialogueFromDB()
         await dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
         dialogueInstance.emit('callCompletion')
 
-      } else if(requestMsgInstance.fileType === "image" || requestMsgInstance.fileType === "document"){
+      } else if(requestMsgInstance.fileType === "document"){
         
         const fileCaption =  requestMsgInstance.fileCaption
 
-        await requestMsgInstance.getFileLinkFromTgm()
+        const tgmFileLnk = await requestMsgInstance.getFileLinkFromTgm()
 
         const isAllowedFileType = requestMsgInstance.isAllowedFileType()
 
         const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
 
         if(s3UploadResult.success === 0 || !isAllowedFileType){
+          //Add info to the dialogue and notify user about problems with the file upload
           await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
 
         } else {
 
-          const url = s3UploadResult.Location
-          await dialogueInstance.commitFileToDialogue(url)
-
-          if(requestMsgInstance.fileType === "image"){
-            await dialogueInstance.commitImageToDialogue(url)
-          }
+            const url = s3UploadResult.Location
+            const devPrompt = await dialogueInstance.commitFileToDialogue(url)
+           // await dialogueInstance.sendSuccessFileMsg(devPrompt)
+            if(fileCaption){
+              await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+            }
         }
 
         if(fileCaption){
-          await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
           dialogueInstance.emit('callCompletion')
         } else if (current_regime === "translator" || current_regime === "texteditor"){
           dialogueInstance.emit('callCompletion')
         }
         
-      }} else {
+      } else if(requestMsgInstance.fileType === "image"){
+
+        const fileCaption =  requestMsgInstance.fileCaption
+
+        const tgmFileLnk = await requestMsgInstance.getFileLinkFromTgm()
+
+        const isAllowedFileType = requestMsgInstance.isAllowedFileType()
+
+        if(!isAllowedFileType){
+          //Add info to the dialogue and notify user about problems with the file upload
+          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
+          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
+
+        } else {
+            const fileComment = {
+              fileid:requestMsgInstance.msgId,
+              context:"User has sent the image to the bot.",
+              public_url:tgmFileLnk
+            }
+            if(fileCaption){
+              fileComment.user_prompt = fileCaption
+            }
+            await dialogueInstance.commitImageToDialogue(tgmFileLnk,fileComment)
+        }
+
+        if(fileCaption){
+          dialogueInstance.emit('callCompletion')
+        } else if (current_regime === "translator" || current_regime === "texteditor"){
+          dialogueInstance.emit('callCompletion')
+        }
+      }
+      
+    } else {
           responses.push({text:msqTemplates.file_handler_wrong_regime})
       }
 
   return responses
 }
 
-async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstance,toolCallsInstance){
+async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   let responses =[];
 
   switch(requestMsgInstance.user.currentRegime) {
@@ -131,10 +166,9 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
       
     break;
     case "chat":
-      await dialogueInstance.getDialogueFromDB()
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
       dialogueInstance.emit('callCompletion')
-    
+      
     break;
     case "translator":
       await resetTranslatorDialogHandler(requestMsgInstance)
@@ -157,7 +191,7 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
   return responses
 }
 
-async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgInstance,toolCallsInstance){
+async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgInstance){
 
   const cmpName = requestMsgInstance.commandName
   const isRegistered = requestMsgInstance.user.isRegistered
@@ -220,7 +254,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor" || cmpName==="voicetotext" || cmpName==="texttospeech"){
    
     requestMsgInstance.user.currentRegime = cmpName
-    await dialogueInstance.getDialogueFromDB() //чтобы посчитать потраченные токены в диалоге
+   
     let response = await changeRegimeHandlerPromise({
       newRegime:cmpName,
       requestMsgInstance:requestMsgInstance,
@@ -257,7 +291,13 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     const sent_result = await  replyMsgInstance.sendMdjImage(generate_result,prompt)
     
-    await dialogueInstance.commitImageToDialogue(generate_result.mdjMsg.uri)
+    const fileComment = {
+      midjourney_prompt:prompt,
+      public_url:sent_result.mdjMsg.uri,
+      context:"User has user '/imagine' command to generate a midjourney image with his own prompt."
+    }
+
+    await dialogueInstance.commitImageToDialogue(generate_result.mdjMsg.uri,fileComment)
     
     } else {
       responses.push({text:msqTemplates.mdj_lacks_prompt})
@@ -272,9 +312,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       }}})
     } else {
       let response = await reportsOptionsHandler(requestMsgInstance);
-      response.buttons = {reply_markup: {
-        remove_keyboard: true,
-      }}
+
       responses.push(response)
     }
   } else if(cmpName==="donate"){
@@ -316,6 +354,257 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
    return responses
 }
 
+async function callbackRouter(requestMsg,replyMsg,dialogue){
+  let responses =[];
+
+  const callback_event = requestMsg.callback_event;
+  const callback_data_input = requestMsg.callback_data;
+
+  if (callback_event === "info_accepted"){
+
+    const response = await infoacceptHandler(requestMsg);
+    
+    responses.push(response)
+    requestMsg.user.hasReadInfo = true
+
+  } else if (callback_event === "dwnld_hash") {
+
+    const content = await otherFunctions.decodeJson(callback_data_input)
+    const date = new Date()
+    const filename = (content?.folded_text || "file") + "_" + date.toISOString() + ".pdf"
+    const formatedHtml =  otherFunctions.formatHtml(content.unfolded_text,filename)
+    const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
+    const mimetype = "application/pdf"
+    const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
+    otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+    await  replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+
+  } else if (callback_event === "pdf_download"){
+
+    await pdfdownloadHandler(replyMsg);
+
+  } else if (callback_event === "regenerate"){
+
+    if(requestMsg.user.currentRegime != callback_data_input){
+      responses.push(checkResult.response)
+      return responses;
+    }
+
+    const lastdoc = await dialogue.getLastCompletionDoc()
+    lastdoc?.telegramMsgId && await replyMsg.deleteMsgsByIDs(lastdoc.telegramMsgId)
+    
+    dialogue.regenerateCompletionFlag = true
+
+    dialogue.emit('callCompletion')
+  } else if (callback_event === "choose_ver"){
+
+    const doc = await dialogue.getLastCompletionDoc()
+    await replyMsg.deleteMsgsByIDs(doc?.telegramMsgId)
+
+    await replyMsg.sendTypingStatus()
+    const choosenVersionIndex = callback_data_input
+    const choosenContent = doc.content[choosenVersionIndex-1]
+    const choosenContentFormulas = doc.content_latex_formula[choosenVersionIndex-1]
+    const totalVersionsCount = doc.content.length;
+    await replyMsg.sendChoosenVersion(choosenContent,choosenContentFormulas,choosenVersionIndex,totalVersionsCount)
+    
+    await mongo.updateCompletionInDb({
+      filter: {telegramMsgId:{"$in":doc.telegramMsgId}},
+      updateBody:{
+        telegramMsgId:replyMsg.msgIdsForDbCompletion,
+        completion_version:choosenVersionIndex
+      }
+    })
+
+  } else if (callback_event === "latex_formula"){
+
+    const lastdoc = await dialogue.getLastCompletionDoc()
+    
+    await replyMsg.sendTypingStatus()
+
+    const letexObject = lastdoc.content_latex_formula[lastdoc.completion_version-1]
+    let pngBuffer;
+    try{
+    pngBuffer  = await otherFunctions.generateCanvasPNG(letexObject);
+    } catch(err){
+      let error = new Error(`Error in generating PNG from LaTeX formula: ${err}`)
+      error.place_in_code = error.place_in_code || "routerTelegram.on.callback_query.latex_formula.pngBuffer"
+      throw error;
+    }
+    await replyMsg.simpleSendNewImage({
+      imageBuffer:pngBuffer,
+      fileName: `Формулы.png`,
+      contentType: 'image/png',
+      caption:`Формулы для ${currentVersionIndex} версии ответа`
+    })
+
+  } else if (callback_event === "readaloud"){
+
+    const result = await replyMsg.sendTextToSpeachWaiterMsg()
+    await openAIApiHandler.TextToVoice(requestMsg);
+    await replyMsg.deleteMsgByID(result.message_id)
+
+  } else if(callback_event === "un_f_up") {
+
+    const contentObject = await otherFunctions.decodeJson(callback_data_input)
+    const unfoldedFileSysMsg = msgShortener(contentObject.unfolded_text)
+    
+    const new_callback_data = {e:"f_f_up",d:callback_data_input}
+    
+    const fold_button = {
+      text: "Скрыть",
+      callback_data: JSON.stringify(new_callback_data),
+    };
+    const downloadPDF_button = {
+      text: "Скачать PDF",
+      callback_data: JSON.stringify({e:"dwnld_hash",d:callback_data_input}),
+    };
+
+    const reply_markup = {
+      one_time_keyboard: true,
+      inline_keyboard: [[fold_button],[downloadPDF_button]],
+    };
+
+    try{
+      await replyMsg.simpleMessageUpdate(unfoldedFileSysMsg, {
+        chat_id: requestMsg.chatId,
+        message_id: requestMsg.refMsgId,
+        parse_mode:"HTML",
+        reply_markup: reply_markup
+      })
+  } catch(err){
+    if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
+      err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query.un_f_up";
+      throw err
+    }
+  }
+
+  } else if(callback_event === "f_f_up"){
+
+    const contentFoldObject = await otherFunctions.decodeJson(callback_data_input)
+
+    const new_callback_data = {e:"un_f_up",d:callback_data_input};
+
+    const unfold_button = {
+      text: "Показать подробности",
+      callback_data: JSON.stringify(new_callback_data),
+    };
+
+    const reply_markup_unfold = {
+      one_time_keyboard: true,
+      inline_keyboard: [[unfold_button],],
+    };
+    try{
+    await replyMsg.simpleMessageUpdate(contentFoldObject.folded_text, {
+      chat_id: requestMsg.chatId,
+      message_id: requestMsg.refMsgId,
+      parse_mode:"HTML",
+      reply_markup: reply_markup_unfold
+    })
+  } catch(err){
+    if(!err.message.includes('message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message')){
+      err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query.f_f_up";
+      throw err
+    }
+  }
+
+  } else if (callback_event === "settings"){
+    try{
+      const response = await settingsOptionsHandler(
+        requestMsg,
+        dialogue
+      );
+
+      if(response.operation ==="update"){
+      await replyMsg.simpleMessageUpdate(response.text, {
+        chat_id: requestMsg.chatId,
+        message_id: requestMsg.refMsgId,
+        reply_markup: response?.buttons?.reply_markup,
+      })
+    } else if(response.operation ==="insert"){
+      responses.push(response)
+    }
+    } catch(err){
+      console.log(err)
+      throw err
+    }
+
+  } else if(callback_event === "reports"){
+
+    const response = await reportsOptionsHandler(
+                requestMsg
+              );
+    if(response.operation ==="update"){
+    await replyMsg.simpleMessageUpdate(response.text, {
+      chat_id: requestMsg.chatId,
+      message_id: requestMsg.refMsgId,
+      reply_markup: response?.buttons?.reply_markup,
+    });
+
+  } else if(response.operation ==="insert"){
+    responses.push(response)
+  }
+
+  } else if(callback_event === "mdjbtn"){
+    const resultMdj = await mdj_custom_handler(requestMsg,replyMsg)
+    const buttons = resultMdj.replymsg.options
+    const labels = buttons.map(button => button.label)
+    
+    const btnsDescription = generateButtonDescription(labels,[])
+
+    await dialogue.metaSetMdjButtonsShown(labels)
+    const choosenButton = resultMdj.buttonPushed
+    const choosenBtnsDescription = generateButtonDescription([choosenButton],[])
+    const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(btnsDescription)}]
+    const fileComment = {
+      context: otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders),
+      public_url:resultMdj.replymsg.uri,
+      midjourney_prompt: resultMdj.prompt
+    };
+    await dialogue.commitImageToDialogue(resultMdj.replymsg.uri,fileComment)
+              
+  } else {
+    responses = [{text:msqTemplates.unknown_callback}]
+  }
+  return responses
+
+}
+
+function msgShortener(html){
+  let new_msg_html = html;
+  const overheadSymbolsCount = 100;
+  const limit = (appsettings.telegram_options.big_outgoing_message_threshold - overheadSymbolsCount)
+  if (html.length > limit){
+    new_msg_html = closeUnclosedTags(html.slice(0, limit) + "... (текст сокращен)")
+    }
+  return new_msg_html
+}
+
+function closeUnclosedTags(htmlString) {
+  const tags = [];
+  const tagPattern = /<([a-zA-Z]+)(\s+[^>]*?)?>|<\/([a-zA-Z]+)>/gi;
+  let match;
+
+  // Scan the HTML string from beginning to end
+  while ((match = tagPattern.exec(htmlString))) {
+      const [fullMatch, group1, group2, group3] = match;
+      const tagName = group1 ? group1 : group3
+      if (fullMatch.startsWith('</')) {
+          // If it's a closing tag, forget the corresponding opening tag
+          const tagIndex = tags.lastIndexOf(tagName);
+          if (tagIndex !== -1) {
+              
+              tags.splice(tagIndex, 1);
+          }
+      } else {
+          // Otherwise, remember the opening tag
+          tags.push(tagName);
+      }
+  }
+  // Add unclosed tags to the end of the string
+  const closingTags = tags.reverse().map(tag => `</${tag}>`).join('');
+  return htmlString + closingTags;
+}
 
 async function handleCancelCommand(call_id){
 
@@ -341,6 +630,7 @@ async function infoacceptHandler(requestMsgInstance) {
 async function pdfdownloadHandler(replyMsgInstance){
   
   const downloadedFile = await otherFunctions.fileDownload(appsettings.other_options.pdf_guide_url)
+  console.log("downloadedFile",downloadedFile)
   const fileName = "Manual";
   
   await replyMsgInstance.sendDocumentAsBinary(downloadedFile,fileName)
@@ -419,12 +709,12 @@ function sendtomeHandler(requestMsgInstance) {
       return { text: substrings.join(" "),parse_mode:"HTML"};
     } else {
       err = new Error(
-        `No match for pattern ${pattern} found in function ${arguments.callee.name}.`
+        `No match for pattern ${pattern} found in function ${"sendtomeHandler"}.`
       );
       //Tested
       err.code = "RQS_ERR3";
       err.user_message = msqTemplates.sendtome_error;
-      err.place_in_code = err.place_in_code || arguments.callee.name
+      err.place_in_code = err.place_in_code || "sendtomeHandler"
       err.mongodblog = false;
       throw err;
     }
@@ -514,7 +804,7 @@ async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
         };
       } else {
         err = new Error(
-          `No match for pattern ${pattern} found in function ${arguments.callee.name}.`
+          `No match for pattern ${pattern} found in function ${"sendtoallHandler"}.`
         );
         //Tested
         err.code = "RQS_ERR3";
@@ -525,18 +815,18 @@ async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
    
   } catch (err) {
     //Tested
-    err.place_in_code = err.place_in_code || arguments.callee.name
+    err.place_in_code = err.place_in_code || "sendtoallHandler"
     throw err;
   }
 }
 
 async function changeRegimeHandlerPromise(obj){
-  
+   
    await mongo.updateCurrentRegimeSetting(obj.requestMsgInstance);
 
       if (obj.newRegime == "chat") {
-        const previous_dialogue_tokens = obj.dialogueInstance.allDialogueTokens
-      
+        const previous_dialogue_tokens = await obj.dialogueInstance.metaGetTotalTokens()
+
         if (previous_dialogue_tokens > 0) {
           return {
             text: modelSettings[obj.newRegime].incomplete_msg
@@ -832,7 +1122,7 @@ async function reportsOptionsHandler(requestMsgInstance) {
       //Если объект с опциями существует
       //Обновляем меню
 
-      settingsKeyboard = otherFunctions.optionsToButtons(
+      settingsKeyboard = await otherFunctions.optionsToButtons(
         objectToParce,
         requestMsgInstance
       );
@@ -1008,6 +1298,7 @@ async function mdj_custom_handler(requestInstance,replyInstance){
   const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
   
   await replyInstance.deleteMsgByID(statusMsg.message_id)
+  const prompt = extractTextBetweenDoubleAsterisks(jsonDecoded.content)
   await replyInstance.simpleSendNewImage({
     caption:extractTextBetweenDoubleAsterisks(jsonDecoded.content),
     reply_markup:reply_markup,
@@ -1019,7 +1310,8 @@ async function mdj_custom_handler(requestInstance,replyInstance){
 return {
   imageBuffer:imageBuffer,
   replymsg:msg,
-  buttonPushed:buttonPushed
+  buttonPushed:buttonPushed,
+  prompt: prompt
 }
 };
 
@@ -1060,6 +1352,8 @@ module.exports = {
   mdj_custom_handler,
   pdfdownloadHandler,
   messageBlock,
+  callbackBlock,
   handleCancelCommand,
-  generateButtonDescription
+  generateButtonDescription,
+  callbackRouter
 };

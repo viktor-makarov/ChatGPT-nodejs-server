@@ -6,7 +6,7 @@ const aws = require("../aws_func.js")
 const mongo = require("../mongo");
 const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
-const fs = require('fs');
+const openAIApiHandler = require("../openAI_API_Handler.js");
 
 class Completion extends Transform {
 
@@ -25,7 +25,6 @@ class Completion extends Transform {
     #responseHeaders;
     #user;
 
-    #overalltokensLimit;
 
     #telegramMsgBtns = false;
 
@@ -50,6 +49,8 @@ class Completion extends Transform {
     #completionPreviousVersionsContentCount;
     #completionPreviousVersionNumber;
     #completionCurrentVersionNumber = 1;
+    #long_wait_notes;
+    #timeout;
 
     #toolCallsInstance;
     #tool_calls=[];
@@ -66,91 +67,160 @@ class Completion extends Transform {
         this.#user = obj.userClass;
         this.#requestMsg = obj.requestMsg;
         this.#replyMsg = obj.replyMsg;
-        this.#toolCallsInstance = obj.toolCallsInstance;
-        this.#replyMsg.on('msgDelivered',this.msgDeliveredHandler.bind(this))
-        this.#replyMsg.on('btnsDeleted',this.btnsDeletedHandler.bind(this))
         this.#dialogue = obj.dialogueClass;
+        this.#toolCallsInstance = this.#dialogue.toolCallsInstance;
+
+        this.#replyMsg.on('msgDelivered',this.msgDeliveredHandler.bind(this))
 
         this.#completionRole = "assistant";
 
-        this.#completionCreatedDT_UTC = new Date();
-        
         this.#completionContent = "";
         this.#completionContentEnding ="";
         this.#chunkStringBuffer ="";
         
-        this.#responseReceived = false;
+        this.#completionCreatedDT_UTC = new Date();
 
-        this.#overalltokensLimit = modelConfig[this.#user.currentModel].request_length_limit_in_tokens
+        this.#responseReceived = false;
 
         this.#sendWithDelay = this.throttleFunction(
           this.sendMsg,
           appsettings.telegram_options.send_throttle_ms
         );
 
-        this.#completionPreviousVersionsDoc = this.completionPreviousVersions(this.#dialogue.dialogueFull);
-        
-        setTimeout(() => {this.updateStatusMsg(msqTemplates.timeout_messages[0],this.#responseReceived)}, appsettings?.http_options?.first_timeout_notice ? appsettings?.http_options?.first_timeout_notice : 15000);
-        setTimeout(() => {this.updateStatusMsg(msqTemplates.timeout_messages[1],this.#responseReceived)}, appsettings?.http_options?.second_timeout_notice ? appsettings?.http_options?.second_timeout_notice : 30000);
-        setTimeout(() => {this.updateStatusMsg(msqTemplates.timeout_messages[2],this.#responseReceived)}, appsettings?.http_options?.third_timeout_notice ? appsettings?.http_options?.third_timeout_notice : 45000);
-        setTimeout(() => {this.updateStatusMsg(msqTemplates.timeout_messages[3],this.#responseReceived)}, appsettings?.http_options?.fourth_timeout_notice ? appsettings?.http_options?.fourth_timeout_notice : 60000);
-        setTimeout(() => {this.updateStatusMsg(msqTemplates.timeout_messages[4],this.#responseReceived)}, appsettings?.http_options?.fiveth_timeout_notice ? appsettings?.http_options?.fiveth_timeout_notice : 90000);     
+        this.#timeout = modelConfig[this.#user.currentModel]?.timeout_ms || 120000;
+            
       };
+
+      async router(){
+
+        try{
+
+          this.#completionPreviousVersionsDoc = await this.completionPreviousVersions();
+
+          this.#updateCompletionVariables()
+          
+          await this.#replyMsg.sendTypingStatus()
+          await this.#replyMsg.sendStatusMsg()
+          this.#long_wait_notes = this.triggerLongWaitNotes()
+
+          await openAIApiHandler.chatCompletionStreamAxiosRequest(
+            this.#requestMsg,
+            this.#replyMsg,
+            this.#dialogue
+          );
+
+        } catch(err){
+          err.place_in_code = err.place_in_code || "completion.router";
+          telegramErrorHandler.main(
+            {
+              replyMsgInstance:this.#replyMsg,
+              error_object:err
+            }
+          );
+        
+        } finally {
+          this.clearLongWaitNotes()
+        }
+
+      }
+
+      #updateCompletionVariables(){
+
+        if(!this.#dialogue.regenerateCompletionFlag){
+          this.#completionPreviousVersionsContent = [];
+          this.#completionPreviousVersionsLatexFormulas = []
+          this.#completionPreviousVersionsContentCount = undefined;
+          this.#completionPreviousVersionNumber = undefined;
+          this.#completionCurrentVersionNumber = 1
+          return
+        }
+
+        const lastCompletionDoc = this.#completionPreviousVersionsDoc
+
+        if(!lastCompletionDoc){
+          this.#completionPreviousVersionsContent = [];
+          this.#completionPreviousVersionsLatexFormulas = []
+          this.#completionPreviousVersionsContentCount = undefined;
+          this.#completionPreviousVersionNumber = undefined;
+          this.#completionCurrentVersionNumber = 1
+          return 
+        }
+
+        //Standartization of content and latex formulas
+        if(Array.isArray(lastCompletionDoc?.content)){
+          this.#completionPreviousVersionsContent = lastCompletionDoc.content;
+          this.#completionPreviousVersionsLatexFormulas = lastCompletionDoc?.content_latex_formula || [];
+
+        } else {
+          this.#completionPreviousVersionsContent = lastCompletionDoc.content ? [lastCompletionDoc.content] : [];
+          this.#completionPreviousVersionsLatexFormulas = lastCompletionDoc?.content_latex_formula ? [lastCompletionDoc?.content_latex_formula] : [];
+
+        }
+
+        this.#completionPreviousVersionsContentCount = this.#completionPreviousVersionsContent.length
+        this.#completionPreviousVersionNumber = lastCompletionDoc.completion_version;
+        this.#completionCurrentVersionNumber = this.#completionPreviousVersionsContentCount + 1
+
+      
+      }
+
+
+      async completionPreviousVersions(){
+
+        const lastCompletionDoc = await this.#dialogue.getLastCompletionDoc()
+  
+        if(!lastCompletionDoc){
+          return null
+        }
+         return lastCompletionDoc;
+      }
+
+      triggerLongWaitNotes(){
+  
+        const long_wait_notes = modelConfig[this.#user.currentModel]?.long_wait_notes
+        let timeouts =[];
+        if(long_wait_notes && long_wait_notes.length >0){
+            
+            for (const note of long_wait_notes){
+                const timeoutInstance = setTimeout(() => {
+                  this.updateStatusMsg(note.comment)
+                }, note.time_ms);
+                timeouts.push(timeoutInstance)
+            }
+        }
+        return timeouts
+    };
+
+      clearLongWaitNotes() {
+        if (this.#long_wait_notes && this.#long_wait_notes.length > 0) {
+            this.#long_wait_notes.forEach(timeout => clearTimeout(timeout));
+            this.#long_wait_notes = [];
+        }
+    }
 
     async msgDeliveredHandler(data){
       await mongo.updateCompletionInDb({
         filter: {telegramMsgId:data.message_id},       
         updateBody:this.completionFieldsToUpdate
       })
+      console.log("Completion updated in DB")
     }
 
-    async btnsDeletedHandler(data){
-      await mongo.updateCompletionInDb({
-        filter: {telegramMsgId:{"$in":data.msgIds}},
-        updateBody:{telegramMsgBtns:false}
-      })
-    }
-
-    completionPreviousVersions(dialogueFromDB){
-
-      if(!Array.isArray(dialogueFromDB) || dialogueFromDB.length ===0){
-        return null;
-      }
-
-      const lastDocumentInDialogue = dialogueFromDB[dialogueFromDB.length-1]
-
-      if(lastDocumentInDialogue.role === "assistant"){
-        this.#completionPreviousVersionsContent = lastDocumentInDialogue.content;
-        this.#completionPreviousVersionsLatexFormulas = lastDocumentInDialogue.content_latex_formula;
-        if(Array.isArray(this.#completionPreviousVersionsContent)){
-          this.#completionPreviousVersionsContentCount = this.#completionPreviousVersionsContent.length
-          this.#completionPreviousVersionNumber = lastDocumentInDialogue.completion_version;
-          this.#completionCurrentVersionNumber = this.#completionPreviousVersionsContentCount + 1
-          
-        }
-        return lastDocumentInDialogue;
-      } else {
-        return null;
-      };
-    }
+   
 
     async handleResponceError(value){
+
       this.#responseErrorRaw = value;
 
-      this.#response_status = value.response.status 
+      this.#response_status = this.#responseErrorRaw.response.status 
       this.#responseReceived = true;
 
-      this.#replyMsg.simpleMessageUpdate("Ой-ой! :-(",{
-        chat_id:this.#replyMsg.chatId,
-        message_id:this.#replyMsg.lastMsgSentId
-      })
-
       try{
-        value.response.data.on('data', chunk => {
+        this.#responseErrorRaw.response.data.on('data', chunk => {
           this.#responseErrorMsg += this.#decoder.write(chunk);
         });
 
-        value.response.data.on('end', async () => {
+        this.#responseErrorRaw.response.data.on('end', async () => {
           await this.UnSuccessResponseHandle(this.#responseErrorRaw)
         });
 
@@ -158,6 +228,7 @@ class Completion extends Transform {
         this.#responseErrorMsg = {error:"Unable to derive error details from the service reply."}
         await this.UnSuccessResponseHandle(this.#responseErrorRaw)
       }
+    
       
     };
     
@@ -174,12 +245,16 @@ class Completion extends Transform {
       return this.#completionLatexFormulas
     } 
 
+    get timeout(){
+      return this.#timeout  
+    }
+
     set telegramMsgBtns(value){
       this.#telegramMsgBtns = value
     }
 
     get completionFieldsToUpdate(){
-
+      
       this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
       this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
       
@@ -197,10 +272,9 @@ class Completion extends Transform {
       this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
       this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
 
-      const completionId = this.#completionPreviousVersionsDoc?.sourceid ? this.#completionPreviousVersionsDoc.sourceid : this.#completionId
-      
-      const completionTokenCount = this.#completionPreviousVersionsDoc?.tokens ? this.#completionPreviousVersionsDoc?.tokens + this.#tokenUsage.completion_tokens : this.#tokenUsage.completion_tokens
-        return {
+      const completionId = this.#dialogue.regenerateCompletionFlag ?  this.#completionPreviousVersionsDoc?.sourceid : this.#completionId
+      console.log("this.#dialogue.regenerateCompletionFlag",this.#dialogue.regenerateCompletionFlag,this.#completionPreviousVersionsDoc?.sourceid,this.#completionId )
+      return {
             //Формируем сообщение completion
             sourceid: completionId,
             createdAtSourceTS: this.#completionCreatedTS,
@@ -221,7 +295,6 @@ class Completion extends Transform {
             content_latex_formula:this.#completionPreviousVersionsLatexFormulas,           
             completion_ended: this.#completion_ended,
             content_ending: this.#completionContentEnding,
-            tokens: completionTokenCount,
             regime: this.#user.currentRegime,
             finish_reason: this.#completionFinishReason,
           }
@@ -237,101 +310,61 @@ class Completion extends Transform {
     }
 
     async UnSuccessResponseHandle(error) {
-      try {
-        //  var err = new Error(api_res.statusMessage); //создаем ошибку и наполняем содержанием
-        
-        let err
+
+      try{
+      this.#response_status = error.response.status
+        let err = new Error(error.message);
+        err.message_from_response = this.#responseErrorMsg
+        err.place_in_code = err.place_in_code || "Completion.UnSuccessResponseHandle";
         if (this.#response_status === 400 || error.message.includes("400")) {
           if(this.#responseErrorMsg.includes("context_length_exceeded")){
-
             await this.#replyMsg.sendToNewMessage(msqTemplates.token_limit_exceeded,null,null)
             const response = await this.#dialogue.resetDialogue()
             await this.#replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode)
-            
           } else {
-            err = new Error(error.message);
             err.code = "OAI_ERR_400";
-            err.message_from_response = this.#responseErrorMsg
             err.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-            err.mongodblog = true;
-            err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
             throw err;
           }
         } else if (this.#response_status === 401 || error.message.includes("401")) {
-          err = new Error(error.message);
           err.code = "OAI_ERR_401";
-          err.message_from_response = this.#responseErrorMsg
           err.user_message = msqTemplates.OAI_ERR_401.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-          err.mongodblog = true;
-          err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
           throw err;
         } else if (this.#response_status === 429 || error.message.includes("429")) {
-          err = new Error(error.message);
           err.code = "OAI_ERR_429";
           err.data = error.data
-          err.message_from_response = this.#responseErrorMsg
           err.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",err?.message_from_response?? "отсутствует");
           err.mongodblog = false;
-          err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
           throw err;
         } else if (this.#response_status === 501 || error.message.includes("501")) {
-          err = new Error(error.message);
           err.code = "OAI_ERR_501";
-          err.message_from_response = this.#responseErrorMsg
           err.user_message = msqTemplates.OAI_ERR_501.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-          err.mongodblog = true;
-          err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
           throw err;
         } else if (this.#response_status === 503 || error.message.includes("503")) {
-          err = new Error(error.message);
           err.code = "OAI_ERR_503";
-          err.message_from_response = this.#responseErrorMsg
           err.user_message = msqTemplates.OAI_ERR_503.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-          err.mongodblog = true;
-          err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
           throw err;
         }  else if (error.code === "ECONNABORTED") {
-            err = new Error(error.message);
             err.code = "OAI_ERR_408";
-            err.message_from_response = this.#responseErrorMsg
             err.user_message = msqTemplates.OAI_ERR_408;
-            err.mongodblog = true;
-            err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
             throw err;
-        } else if (this.#dialogue.allDialogueTokens > this.#overalltokensLimit) {
-          //Проверяем, что кол-во токенов не превышает лимит
-    
-          await this.OverlengthErrorHandle();
+
         } else {
-          err = new Error(error.message);
           err.code = "OAI_ERR99";
-          err.message_from_response = this.#responseErrorMsg
           err.user_message = msqTemplates.error_api_other_problems;
-          err.mongodblog = true;
-          err.place_in_code = err.place_in_code || "UnSuccessResponseHandle";
           throw err;
         }
-      } catch (err) {
-        err.mongodblog = err.mongodblog || true;
-        err.place_in_code = err.place_in_code || "Completion.UnSuccessResponseHandle";
-        telegramErrorHandler.main({
-          replyMsgInstance:this.#replyMsg,
-          error_object:err
-        });
+      } catch(err){
+        err.place_in_code = err.place_in_code || "completion.UnSuccessResponseHandle";
+        telegramErrorHandler.main(
+          {
+            replyMsgInstance:this.#replyMsg,
+            error_object:err
+          }
+        );
       }
-    }
-
-    async OverlengthErrorHandle() {
-        //Логируем ошибку и отправляем сообщение пользователю
-        await this.#replyMsg.simpleSendNewMessage(msqTemplates.overlimit_dialog_msg +
-          ` Размер вашего диалога = ${this.#dialogue.tokensWithCurrentPrompt} токенов. Ограничение данной модели = ${this.#overalltokensLimit} токенов.`,null,null,null) 
-        
-        await mongo.deleteDialogByUserPromise([this.#user.userid], null); //Удаляем диалог
-        await aws.deleteS3FilesByPefix(this.#user.userid,this.#user.currentRegime) //to delete later
-        await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#user.userid)),this.#user.currentRegime)
-        await this.#replyMsg.simpleSendNewMessage(msqTemplates.dialogresetsuccessfully,null,null,null)
-        //Сообщение, что диалог перезапущен
-    }
+      }
+    
 
     _transform(chunk, encoding, callback) {
       this.#chunkBuffer.push(chunk);
@@ -367,12 +400,20 @@ class Completion extends Transform {
       console.log(new Date(),"end: part outside this.#chunkBuffer.length > 0. Test part 2.")
 
       this.checkIfCompletionIsEmpty()
-
-      await this.#dialogue.commitCompletionDialogue(this.currentCompletionObj,this.#tokenUsage)
       
+      const completionObject = this.currentCompletionObj
+      await this.#dialogue.commitCompletionDialogue(completionObject)
+
+      await this.#dialogue.finalizeTokenUsage(completionObject,this.#tokenUsage)
+      
+      this.#dialogue.emit('triggerToolCall', completionObject.tool_calls) 
+
       this.#decoder.end()
-      this.#chunkStringBuffer="";
+      
+      this.#dialogue.regenerateCompletionFlag = false
       this.#responseReceived = true;
+
+      
     //  console.log(JSON.stringify(this.currentCompletionObj,null,4))
     }
 
@@ -432,6 +473,7 @@ class Completion extends Transform {
       for (const chunk of jsonChunks){
         
         this.#completionId = this.#completionId ?? chunk.id
+        
         this.#completionCreatedTS = this.#completionCreatedTS ?? chunk.created
         this.#completionSystem_fingerprint = this.#completionSystem_fingerprint ?? chunk.system_fingerprint
         this.#actualModel = this.#actualModel ?? chunk.model
@@ -463,18 +505,16 @@ class Completion extends Transform {
                 this.#tool_calls.push(tool_call)
               } else {
                 
-                const lastKey = this.#tool_calls.length - 1;
-                this.#tool_calls[lastKey].type = this.#tool_calls[lastKey]?.type ?? tool_call.type
-                this.#tool_calls[lastKey].function = this.#tool_calls[lastKey]?.function ?? tool_call.function
-                this.#tool_calls[lastKey].function.name = this.#tool_calls[lastKey].function?.name ?? tool_call.function.name
-                this.#tool_calls[lastKey].function.arguments += tool_call.function.arguments
+                this.#tool_calls.at(-1).type = this.#tool_calls.at(-1)?.type ?? tool_call.type
+                this.#tool_calls.at(-1).function = this.#tool_calls.at(-1)?.function ?? tool_call.function
+                this.#tool_calls.at(-1).function.name = this.#tool_calls.at(-1).function?.name ?? tool_call.function.name
+                this.#tool_calls.at(-1).function.arguments += tool_call.function.arguments
               }
             }
           }
         }
       }
       this.#replyMsg.text = this.#completionContent;
-      this.#toolCallsInstance.tool_calls = this.#tool_calls;
 
     }
 

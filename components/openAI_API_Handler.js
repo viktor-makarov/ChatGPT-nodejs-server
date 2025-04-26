@@ -7,7 +7,6 @@ const modelSettings = require("../config/telegramModelsSettings");
 const modelConfig = require("../config/modelConfig");
 const { Readable } = require("stream");
 const mongo = require("./mongo");
-const Completion = require("./objects/Completion.js");
 
 const axios = require("axios");
 
@@ -58,7 +57,7 @@ async function VoiceToText(requestMsgInstance) {
       error.message_from_response = JSON.stringify(err?.response?.data?.error)
       error.user_message = msqTemplates.error_api_other_problems;
       error.mongodblog = true;
-      error.place_in_code = err.place_in_code || arguments.callee.name;
+      error.place_in_code = err.place_in_code || "VoiceToText";
       throw error;
     }
 
@@ -78,7 +77,7 @@ async function VoiceToText(requestMsgInstance) {
     if (err.mongodblog === undefined) {
       err.mongodblog = true;
     }
-    err.place_in_code = err.place_in_code || arguments.callee.name;
+    err.place_in_code = err.place_in_code || "VoiceToText";
     throw err;
   }
 }
@@ -115,7 +114,7 @@ const options = {
       err.code = "OAI_ERR99";
       err.user_message = msqTemplates.error_api_other_problems;
       err.mongodblog = true;
-      err.place_in_code = err.place_in_code || arguments.callee.name;
+      err.place_in_code = err.place_in_code || "TextToVoice";
       throw err;
     }
     const fileData = Buffer.from(openai_resp.data, 'binary');
@@ -149,7 +148,7 @@ const options = {
     if (err.mongodblog === undefined) {
       err.mongodblog = true;
     }
-    err.place_in_code = err.place_in_code || arguments.callee.name;
+    err.place_in_code = err.place_in_code || "TextToVoice";
     throw err;
   }
 } 
@@ -157,26 +156,18 @@ const options = {
 async function chatCompletionStreamAxiosRequest(
   requestMsg, 
   replyMsg,
-  dialogueClass,
-  toolCallsInstance
+  dialogueClass
 ) {
-  try {
 
-    const completionInstance = new Completion(
-      {
-       requestMsg:requestMsg,
-       replyMsg:replyMsg,
-       userClass:requestMsg.user,
-       dialogueClass:dialogueClass,
-       toolCallsInstance:toolCallsInstance
-      });
+    const toolCallsInstance = dialogueClass.toolCallsInstance
+    const completionInstance = dialogueClass.completionInstance
 
     const options = {
       url: modelSettings[requestMsg.user.currentRegime].hostname + modelSettings[requestMsg.user.currentRegime].url_path,
       method: "POST",
       encoding: "utf8",
       responseType: "stream",
-      timeout: appsettings.http_options.OAI_request_timeout,
+      timeout: completionInstance.timeout,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${requestMsg.user.openAIToken}`,
@@ -186,7 +177,7 @@ async function chatCompletionStreamAxiosRequest(
       },
       data: {
         model:requestMsg.user.currentModel,
-        messages: dialogueClass.dialogueForRequest,
+        messages: await dialogueClass.getDialogueForRequest(),
         stream: true,
         stream_options: {
           include_usage: true,
@@ -194,10 +185,10 @@ async function chatCompletionStreamAxiosRequest(
       },
     };
     
-    const available_tools =  await toolCallsInstance.generateAvailableTools(requestMsg.user)
+    const available_tools =  await toolCallsInstance.availableToolsForCompetion()
     const canUseTools = modelConfig[requestMsg.user.currentModel].canUseTool
     const canUseTemperature = modelConfig[requestMsg.user.currentModel].canUseTemperature
-
+    
     if(canUseTemperature){
       options.data.temperature = requestMsg.user.currentTemperature
     }
@@ -209,23 +200,19 @@ async function chatCompletionStreamAxiosRequest(
     }
    // console.log("4","before axios",new Date())
     
-    axios(options)
-      .then((response) => {
-        //Объявляем функцию для тротлинга       
-        completionInstance.response = response
-        response.data.pipe(completionInstance)
+    try {
+      const response = await axios(options);
+      completionInstance.response = response;
+      response.data.pipe(completionInstance);
+    } catch (error) {
+
+      await replyMsg.simpleMessageUpdate("Ой-ой! :-(",{
+        chat_id:replyMsg.chatId,
+        message_id:replyMsg.lastMsgSentId
       })
-      .catch(async (error) => {
-        
-        await completionInstance.handleResponceError(error);
-      });
-  } catch (err) {
-    if (err.mongodblog === undefined) {
-      err.mongodblog = true;
+
+      await completionInstance.handleResponceError(error);
     }
-    err.place_in_code = err.place_in_code || arguments.callee.name;
-    throw err;
-  }
 }
 
 module.exports = {

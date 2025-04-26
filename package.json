@@ -17,7 +17,6 @@
     "iconv-lite": "^0.6.3",
     "jimp": "^1.6.0",
     "js-yaml": "^4.1.0",
-    "lodash": "^4.17.21",
     "mathjax-node": "^1.2.1",
     "midjourney": "^4.3.17",
     "mime-types": "^2.1.35",
@@ -26,6 +25,7 @@
     "mongoose": "^5.13.5",
     "node-telegram-bot-api": "^0.66.0",
     "openai": "^4.59.0",
+    "puppeteer": "^24.6.1",
     "sharp": "^0.33.5",
     "svgson": "^5.3.1",
     "unicodeit": "^0.7.5"

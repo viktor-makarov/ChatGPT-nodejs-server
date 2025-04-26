@@ -2,6 +2,7 @@ const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
 
+
 class ReplyMsg extends EventEmitter {
 
 #callbackId;
@@ -101,8 +102,8 @@ get msgIdsForDbCompletion(){
 }
 
 set msgIdsForDbCompletion(value){
+  this.#msgIdsForDbCompletion = value   
 
-  this.#msgIdsForDbCompletion = value
 }
 
 get lastMsgSentId(){
@@ -218,37 +219,13 @@ async deleteMsgsByIDs(msgIds){
   }
 }
 
-copyValue(object){
-  const value = JSON.parse(JSON.stringify(object))
-  return value
+async updateMessageReplyMarkup(msgId,reply_markup){
+
+  await this.#botInstance.editMessageReplyMarkup(
+    reply_markup,
+    {chat_id:this.#chatId,message_id:msgId}
+)
 }
-
-async deletePreviousRegenerateButtons(msgIds){
-
-  if(Array.isArray(msgIds) && msgIds.length>0){
-    for (const id of msgIds){
-      let reply_markup = this.copyValue(this.#completionReplyMarkupTemplate)
-     // reply_markup.inline_keyboard.push(this.#completionRedaloudButtons)
-     try{
-      await this.#botInstance.editMessageReplyMarkup(
-        reply_markup,
-        {chat_id:this.#chatId,message_id:id}
-    )
-  } catch(err){
-    
-    console.log("error deletion completion msg",id)
-  }
-    
-
-    }
-    this.emit('btnsDeleted', {msgIds:msgIds})
-
-    return msgIds.length
-  } else {
-    return 0
-  }
-}
-
 
 async sendToNewMessage(text,reply_markup,parse_mode,add_options){
 
@@ -263,31 +240,41 @@ async sendDocumentByUrl(url) {
   await this.#botInstance.sendDocument(this.#chatId, url);
 }
 
-async sendDocumentAsBinary(file,fileName) {
+async sendDocumentAsBinary(fileBuffer,filename,mimetype) {
 
-  if(fileName) {
-    await this.#botInstance.sendDocument(this.#chatId, file, {}, { filename: fileName });
-  } else {
-    await this.#botInstance.sendDocument(this.#chatId, file);
-  }
+  try{
 
+    let options = {};
+    if(filename){
+      options.filename = filename;
+    }
+    if(mimetype){
+      options.contentType = mimetype;
+    }
+
+    await this.#botInstance.sendDocument(this.#chatId, fileBuffer, {}, options);
+  
+} catch(err){ 
+    err.code = "ETELEGRAM";
+    err.place_in_code = "sendDocumentAsBinary";
+    throw err;
+}
 
 }
 
+
 async sendChoosenVersion(text,formulas,version,versionsCount){
 
-  let buttons = this.copyValue(this.#completionReplyMarkupTemplate)
+  let buttons = structuredClone(this.#completionReplyMarkupTemplate)
   buttons = this.generateVersionButtons(version,versionsCount,buttons)
   if(formulas){
   buttons = this.generateFormulasButton(buttons)
-  }            
+  }     
   
   buttons.inline_keyboard.push([this.#completionRegenerateButtons])
   buttons.inline_keyboard.push([this.#completionRedaloudButtons])
 
-  const resultObj = otherFunctions.convertMarkdownToLimitedHtml(text)
-
-await this.deliverNewCompletionVersion(resultObj.html,buttons,"HTML")
+await this.deliverNewCompletionVersion(text,buttons,"HTML")
 
 }
 
@@ -321,31 +308,60 @@ async sendToNewMessageWithCheck(text,reply_markup){
 
 async deliverNewCompletionVersion(text,reply_markup,parse_mode){
 
-  let results = [];
+    const splitLinesString = '\n';
+    let residualText = text;
+    let startIndex = 0;
+    let endIndex = 0;
+    let splitIndexes = [];
+    while (endIndex < text.length) {
+      
+      if(residualText.length < this.#msgThreshold){
+        endIndex = text.length
+        splitIndexes.push([startIndex,endIndex,false])
+      } else {
+        const lastNewlineIndex = residualText.lastIndexOf(splitLinesString, this.#msgThreshold);
+        const lineBreakIsUsed = lastNewlineIndex !== -1
+        endIndex = lineBreakIsUsed ? lastNewlineIndex : this.#msgThreshold;
+        splitIndexes.push([startIndex,endIndex,lineBreakIsUsed])
+        startIndex = endIndex + (lineBreakIsUsed ? splitLinesString.length : 0);
+        residualText = residualText.slice(startIndex);
+      }
+    }
 
-  const msgExceedsThreshold = text.length > this.#msgThreshold
+    const textChunks = [];
+    for (const [startIndex, endIndex, lineBreakIsUsed] of splitIndexes) {
+      
+      if (splitIndexes.length === 1) { // Single chunk case - use the entire text
+        textChunks.push(text);
+        break;
+      }
+      
+      const chunk = text.slice(startIndex, endIndex); // Extract chunk of text
+      
+      const splitFiller = lineBreakIsUsed ? "" : "...";
+      textChunks.push(chunk + splitFiller);
+    }
 
-  if(msgExceedsThreshold){
-
-    const result = await this.simpleSendNewMessage(text.slice(0,this.#msgThreshold)+"...",null,parse_mode,null)
-    this.#lastMsgSentId = result.message_id
-    this.#msgIdsForDbCompletion.push(result.message_id)
-    this.#textSent = result.text
-    results.push(result)
     
-    this.sendToNewMessageWithCheck(text.slice(this.#msgThreshold),reply_markup)
+    let repairedText = [];
+    let prefix = "";
+    for (const chunk of textChunks){
+      const brokenTags = otherFunctions.findBrokenTags(prefix + chunk);
+      repairedText.push(prefix + chunk + brokenTags?.close)
+      prefix = brokenTags?.open; //it will be used for text in the next chunk
+    }
 
-  } else {
+    const sendOptions = repairedText.map((text, index) => {
+      const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text);
+      const isLastChunk = index === repairedText.length - 1;
+      return [conversionResult.html,isLastChunk ? reply_markup : null,parse_mode,null];
+    });
 
-
-  
-  const result = await this.simpleSendNewMessage(text,reply_markup,parse_mode,null)
-  this.#lastMsgSentId = result.message_id
-  this.#msgIdsForDbCompletion.push(result.message_id)
-  this.#textSent = result.text
-  results.push(result)
-
-  }
+    let results = []
+    for (const [html,reply_markup,parse_mode,add_options] of sendOptions) {
+      const result = await this.simpleSendNewMessage(html,reply_markup,parse_mode,add_options)
+      results.push(result)
+    }
 
   return results
 
@@ -474,7 +490,7 @@ truncateTextByThreshold(text) {
   
   const splitLinesString = '\n';
   const lastNewlineIndex = text.lastIndexOf(splitLinesString, this.#msgThreshold); //find previous line break for smooth split
- 
+  
   const lineBreakIsUsed = lastNewlineIndex !== -1
   const splitIndex = lineBreakIsUsed ? lastNewlineIndex : this.#msgThreshold;
 
@@ -546,7 +562,7 @@ async deliverCompletionToTelegram(completionInstance){
             if (lastMsgPart) {
               
             //Если отправялем последнюю часть сообщения
-              let reply_markup = this.copyValue(this.#completionReplyMarkupTemplate)
+              let reply_markup = structuredClone(this.#completionReplyMarkupTemplate)
               if(completionInstance.completionCurrentVersionNumber>1){
                 const currentVersionIndex = completionInstance.completionCurrentVersionNumber
                 const totalVersionsCount = currentVersionIndex
@@ -564,18 +580,21 @@ async deliverCompletionToTelegram(completionInstance){
               
               
               completionInstance.telegramMsgBtns = true;
+              console.log("telegramMsgBtns assined successfully")
               }
 
             try{
             
             var result;
             try{
+
               result = await this.simpleMessageUpdate(oneMsgText, options)
-              
+ 
               if(lastMsgPart){
                 this.emit('msgDelivered', {message_id:result.message_id});
               }
             } catch(err){
+
                 if (err.message.includes("can't parse entities")) {
                     delete options.parse_mode;
                     
@@ -594,12 +613,13 @@ async deliverCompletionToTelegram(completionInstance){
                     err.place_in_code = err.place_in_code || "sentToExistingMessage_Handler";
                     throw err
                   }
-            } 
+
+                            } 
             
               if(msgExceedsThreshold){
                   await this.sendStatusMsg()
                 
-                  await this.delay(appsettings.telegram_options.debounceMs)
+                  await otherFunctions.delay(appsettings.telegram_options.debounceMs)
                   this.deliverCompletionToTelegram(completionInstance)
               }
             } catch(err){
@@ -629,9 +649,7 @@ async deliverCompletionToTelegram(completionInstance){
           }
 }
 
-async delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+
 
 async answerCallbackQuery(callbackId){
 this.#callbackId = callbackId;

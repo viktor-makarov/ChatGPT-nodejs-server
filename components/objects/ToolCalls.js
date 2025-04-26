@@ -1,24 +1,20 @@
 const modelConfig = require("../../config/modelConfig");
 const mongo = require("../mongo");
 const scheemas = require("../mongo_Schemas.js");
+const telegramErrorHandler = require("../telegramErrorHandler.js");
 
 const FunctionCall  = require("./FunctionCall.js");
 
 class ToolCalls{
 
-    #toolCalls;
     #replyMsg;
     #requestMsg;
     #user;
     #dialogue;
     #available_tools;
     #tool_choice = "auto"
-    #callExecutionStart;
-    #callExecutionEnd;
-    #functionTimeTakenRounded;
     #tokenFetchLimitPcs;
     #overalTokenLimit;
-
 
     constructor(obj) {
      this.#replyMsg = obj.replyMsgInstance;
@@ -28,26 +24,22 @@ class ToolCalls{
      
      this.#tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100
      this.#overalTokenLimit = this.#user?.currentModel ? modelConfig[this.#user.currentModel]?.request_length_limit_in_tokens : null
-    
+     
     }
 
 toolConfigByFunctionName(functionName){
+
         return this.#available_tools.find(doc => doc.function?.name === functionName);
     }
-
-
-
-set tool_calls(value){
-    this.#toolCalls = value
-}
 
 get tool_choice(){
     return this.#tool_choice
 }
 
+async availableToolsForCompetion(){
 
+    this.#available_tools = await this.generateAvailableTools(this.#user)
 
-availableToolsForCompetion(){
     if(this.#available_tools){
         return this.#available_tools.map((doc) => ({ type:doc.type, function:doc.function}));
     } else {
@@ -55,87 +47,106 @@ availableToolsForCompetion(){
     }
 }
 
-async router(){
+async router(toolCalls = []){
 
-    const curentTokenLimit = (this.#overalTokenLimit-this.#dialogue.allDialogueTokens)*this.#tokenFetchLimitPcs;
-    const tokensLimitPerCall = curentTokenLimit/this.#toolCalls.length
+    try{
+    if(toolCalls.length === 0){
+        return;
+    }
 
-    const toolCallsPromiseList =  this.#toolCalls.map(async (toolCall, index) =>  {
+    const curentTokenLimit = (this.#overalTokenLimit- await this.#dialogue.metaGetTotalTokens())*this.#tokenFetchLimitPcs;
+    const tokensLimitPerCall = curentTokenLimit/toolCalls.length;
 
-        const toolConfig = this.toolConfigByFunctionName(toolCall?.function?.name)
-        
-        let toolCallResult = {
+    const toolCallsPromiseList =  toolCalls.map(async (toolCall, index) =>  {
+
+        const tool_config = this.toolConfigByFunctionName(toolCall?.function?.name)
+
+        //Here we change structure of the external object just in case it will chnage in future.
+        const toolCallExtended = {
             tool_call_id:toolCall.id,
+            tool_call_index:toolCall.index,
             tool_call_type:toolCall.type,
             function_name:toolCall?.function?.name,
-            functionFriendlyName: toolConfig.friendly_name
+            function_arguments:toolCall?.function?.arguments,
+            tool_config
         };
 
-        if(toolCall.type = "function"){
- 
-            const functionCall = new FunctionCall({
-                functionCall:toolCall,
+        let toolResult = {
+            tool_call_id:toolCall.id,
+            function_name:toolCall?.function?.name
+        }
+
+        await this.#dialogue.preCommitToolReply(toolCallExtended)
+
+        if(toolCallExtended.tool_call_type === "function"){
+            
+            const functionInstance = new FunctionCall({
+                functionCall:toolCallExtended,
                 replyMsgInstance:this.#replyMsg,
                 dialogueInstance:this.#dialogue,
                 requestMsgInstance:this.#requestMsg,
                 userInstance:this.#user,
-                functionConfig:toolConfig,
                 tokensLimitPerCall:tokensLimitPerCall
             });
 
-            let outcome = await functionCall.router()
-
-            if(outcome.image_url){
-            toolCallResult.image_url = outcome.image_url
-            delete outcome.image_url
-            };
-            toolCallResult.success = outcome.success
-            toolCallResult.duration = outcome.duration;
-            delete outcome.duration
-
-            toolCallResult.content = JSON.stringify(outcome)
+            let outcome = await functionInstance.router();
 
 
+            toolResult.content = JSON.stringify(outcome)
+            toolResult.success = outcome.success
+            toolResult.duration = outcome.duration
+            toolResult.image_url = outcome.image_url
+            toolResult.midjourney_prompt = outcome.midjourney_prompt
                            
         } else {
             const outcome = {success:0,error:"Non-function types cannot be processed for now.",instructions:"Rework into a function"}
-            toolCallResult.content = JSON.stringify(outcome)
-            toolCallResult.success = outcome.success
+            toolResult.content = JSON.stringify(outcome)
+            toolResult.success = outcome.success
+        }
+
+        await this.#dialogue.updateCommitToolReply(toolResult)
+
+        if(toolResult.function_name==="create_midjourney_image" && toolResult.image_url){
+            const fileComment = {
+                midjourney_prompt:toolResult.midjourney_prompt,
+                public_url:toolResult.image_url,
+                context:"Image has been generated by 'create_midjourney_image' function",
+            }
+            await this.#dialogue.commitImageToDialogue(toolResult.image_url,fileComment)
         }
                
         await mongo.insertFunctionUsagePromise({
             userInstance:this.#user,
-            tool_function:toolCallResult.function_name,
-            tool_reply:toolCallResult,
-            call_duration:toolCallResult.duration,
+            tool_function:toolResult.function_name,
+            tool_reply:toolResult,
+            call_duration:toolResult.duration,
             call_number:`${index}/${toolCallsPromiseList.length}`,
-            success:toolCallResult.success
+            success:toolResult.success
         })
 
-        return toolCallResult
-    })
+        return toolResult;
+    });
 
-        let results = []
         try{
             await this.#dialogue.metaSetAllFunctionsInProgressStatus(true)
-            results = await Promise.all(toolCallsPromiseList)
+            await Promise.all(toolCallsPromiseList)
         } finally{
             await this.#dialogue.metaSetAllFunctionsInProgressStatus(false)
         }
 
-        await this.#dialogue.commitToolCallResults({
-            userInstance:this.#user,
-            results:results
-        });
+        this.#dialogue.emit('callCompletion');
 
-        //Commit images
-        for (const result of results) {
-            if(result.function_name==="create_midjourney_image"){
-                await this.#dialogue.commitImageToDialogue(result.image_url)
+    } catch (err){
+      err.mongodblog = err.mongodblog || true
+      err.place_in_code = err.place_in_code || "toolcalls.router";
+      telegramErrorHandler.main(
+        {
+          replyMsgInstance:this.#replyMsg,
+          error_object:err
         }
+      );
+    
     }
-
-        this.#toolCalls =[];
 };
 
 async addMsgIdToToolCall(toolCallId,systemMsgId){
@@ -168,6 +179,69 @@ async generateAvailableTools(userClass){
         try_limit:3
     }
         );
+
+
+        functionList.push(
+            {type:"function",
+            function:{
+                name: "generate_text_file",
+                description: "Generates a text file. The file will be sent to the user as a document.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        filetext: {
+                            type: "string",
+                            description: "Text to be saved in the file."
+                        },
+                        filename:{
+                            type:"string",
+                            description:"Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
+                        },
+                        mimetype:{
+                            type:"string",
+                            description:"Mimetype of the file. For example, 'text/plain' or text/x-python."
+                        },
+                    },
+                    required: ["filename","mimetype","text"]
+                }
+
+            },
+            friendly_name:"Создание текстового файла",
+            timeout_ms:15000,
+            try_limit:3
+        }
+        );
+
+        functionList.push(
+            {type:"function",
+            function:{
+                name: "generate_pdf_file",
+                description: "Generates a PDF file. The file will be sent to the user as a document.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        htmltext: {
+                            type: "string",
+                            description: "Content for the file in html format. Table borders should be single. Images should have full public url. Urls to images should be in the format: <img src='https://example.com/image.png'/>. Urls may include parameters. Inline css sluses should be in the format: <div style='color:red;'>text</div>.",
+                        },
+                        filename:{
+                            type:"string",
+                            description:"Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
+                        }
+                    },
+                    required: ["filename","htmltext"]
+                }
+
+            },
+            friendly_name:"Создание PDF",
+            timeout_ms:45000,
+            try_limit:3,
+            long_wait_notes: [
+                {time_ms:15000,comment:"Если в файле должно быть изобраюение, то обычно требуется больше времени. Подождем ... ☕️"},
+                {time_ms:30000,comment:"Похоже, файл действительно болшой. Подождем еще немного ... Но если через 15 секунд не закончит, то придется отменить."},
+            ],
+        }
+        );
       /*  
         functionList.push(
             {type:"function",
@@ -191,28 +265,27 @@ async generateAvailableTools(userClass){
         }
     );*/
 
-    functionList.push(
-        {type:"function",
-        function:{
-            name: "run_python_code",
-            description: "You can use this function to execute a python code. Use this every time you need to do calculations to ensure their accuraсy.",
-            parameters: {
-                type: "object",
-                properties: {
-                    python_code: {
-                        type: "string",
-                        description: "Text of python code. In the code you must print the results to the console. Use syntax compatible with python 3.12. But you can use oly the following additional modules pandas, openpyxl, regex, PyPDF2 and python-docx."
+        functionList.push(
+                {type:"function",
+                function:{
+                    name: "run_python_code",
+                    description: "You can use this function to execute a python code. Use this every time you need to do calculations to ensure their accuraсy.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            python_code: {
+                                type: "string",
+                                description: "Text of python code. In the code you must print the results to the console. Use syntax compatible with python 3.12. But you can use oly the following additional modules pandas, openpyxl, regex, PyPDF2 and python-docx."
+                            }
+                        },
+                        required: ["python_code"]
                     }
                 },
-                required: ["python_code"]
+                friendly_name:"Вычисления Python",
+                timeout_ms:30000,
+                try_limit:3      
             }
-        },
-        friendly_name:"Вычисления Python",
-        timeout_ms:30000,
-        try_limit:3      
-    }
-);
-        
+        );
         
         functionList.push(
             {type:"function",
@@ -234,8 +307,8 @@ async generateAvailableTools(userClass){
         timeout_ms:45000,
         long_wait_notes: [
             {time_ms:10000,comment:"Иногда нужно больше времени. Подождем ... ☕️"},
-            {time_ms:20000,comment:"Хм ... 🤔 А вот это уже звоночек ... ",cancel_button:true},
-            {time_ms:30000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ...",cancel_button:true}
+            {time_ms:20000,comment:"Хм ... 🤔 А вот это уже звоночек ... "},
+            {time_ms:30000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ..."}
         ],
         try_limit: 3 }
         );
@@ -244,16 +317,36 @@ async generateAvailableTools(userClass){
             {type:"function",
             function:{
                 name: "create_midjourney_image",
-                description: "Use this function to create, modify or compile an image with Midjourney service. If you are given a midjourney text prompt - you must use it exactly AS IS, otherwise generate your own text prompt from the user's request considering the context of the dialogue.",
+                description: "Create an image with Midjourney service. ",
                 parameters: {
                     type: "object",
                     properties: {
-                        midjourney_query: {
+                        textprompt: {
                             type: "string",
-                            description: `A prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. Maximum length of the text prompt is 150 words.`
+                            description: `A text prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. Maximum length of the text prompt is 150 words. If you are given a midjourney text prompt - you must use it exactly AS IS.`
                         },
+                        aspectratio: {
+                            type: "string",
+                            description: `Defines the width-to-height ratio of the generated image and can be expressed both in pixels (e.g., 1500px × 2400px) or in abstract values (e.g., 5:4). Prioritise the presentation asked by the user. Use ratio to align with the style and purpose of the image.`
+                        },
+                        no: {
+                            type: "string",
+                            description: `You must use this param when you are asked to exclude particular elements from the image. Accepts both one and multiple words. Multiple words should be separated with commas. Example: flowers, tooth, river`
+                        },
+                        version: {
+                            type: "string", 
+                            description: `Version of Midjourney to be used. Restrictred to the list of: 6.1, 5.2, 5.1, 5.0, 4a, 4b, 4c.`
+                        },
+                        imageprompt: {
+                            type: "string",
+                            description: `Influence the composition, style, and color of the generated image. Images should have full public url. Urls may include parameters. More then one image url can be user separated by commas. If you are asked to modify an image, you must use its url as a reference image for a new generation.`
+                        },
+                        imageweight: {
+                            type: "number",
+                            description: `Weight of the imageprompt vs. textprompt. Value can be from 0 to 3. For example: 0.5, 1.75, 2, 2.5. Higher value means the image prompt will have more impact on the generated image. Imageweight must be used only along with imageprompt parameter.`
+                        }
                     },
-                    required: ["midjourney_query"]
+                    required: ["textprompt"]
                 }
             },
             friendly_name: "Генерация изображения",
@@ -266,19 +359,19 @@ async generateAvailableTools(userClass){
                 {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
             ],
             try_limit: 3 }
-            );
+        );
 
         functionList.push(
             {type:"function",
             function:{
                 name: "extract_text_from_file",
-                description: `Use this function to extract text from documents or images provided by user. The list of file mine types for which this function can be used is as follows: ${appsettings.file_options.allowed_mime_types.join(', ')}. Text extracted from the resources array is added to the output text in the order resources occur in the parameter. `,
+                description: `Extracts text from documents or images provided by user. This function usage is restricted to the following mime types: ${appsettings.file_options.allowed_mime_types.join(', ')}.`,
                 parameters: {
                     type: "object",
                     properties: {
                         resources:{
                             type: "string",
-                            description: `Fileids for extraction separated by commas. Example: 3356,4567,4567"`
+                            description: `List of fileid numbers for extraction separated by commas. Images that represent the same document should be included in one tool call. Example: 3356,4567,4567. Documents are processd in the order they are provided in the list.`
                         }
                     },
                     required: ["resources"]
@@ -287,7 +380,7 @@ async generateAvailableTools(userClass){
             friendly_name: "Чтение документа",
             timeout_ms:60000,
             try_limit: 3 }
-            );
+        );
 
         functionList.push(
             {type:"function",
@@ -325,7 +418,6 @@ async generateAvailableTools(userClass){
             timeout_ms:30000,
             try_limit: 3 }
             );
-        
         
         if (userClass.isAdmin) {
         
@@ -397,16 +489,13 @@ async generateAvailableTools(userClass){
         
         //Завершаем. Если ни одной функции нет, то передаем null
         if (functionList.length===0){
-            this.#available_tools = null;
-            return null
+            return []
         } else {
-            this.#available_tools = functionList;
             return functionList
         }
         
         } else {
-            this.#available_tools = null
-            return null
+            return []
         }
         };
 

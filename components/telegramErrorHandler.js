@@ -2,18 +2,16 @@ const mongo = require("./mongo");
 const msqTemplates = require("../config/telegramMsgTemplates");
 const otherFunctions = require("./other_func");
 
-
-
 async function main(obj){
 
-  const replyMsgInstance = obj.replyMsgInstance
+  const {replyMsgInstance} = obj
   let err = obj.error_object || {}
   err.mongodblog = err.mongodblog || true //Log to MongoDB by default
   
 try{
 
     err.userid = replyMsgInstance?.user?.userid || null;
-    err = enrichErrorObject(err)
+    err = enrichErrorObject(err,replyMsgInstance)
 
 //Log to mongodb
 const error_to_log  = createErrorObject(err);
@@ -21,7 +19,7 @@ if(err.mongodblog){
 const doc = await mongo.insert_error_logPromise(error_to_log)
 err.mongodblog_id = doc._id
 } else {
-err.mongodblog_id = "was not logges to mongodb  - not needed"  
+err.mongodblog_id = "was not logged to mongodb  - not needed"  
 }
 
 //Log to console
@@ -101,7 +99,7 @@ function msgShortener(text){
     return new_msg
 }
 
-function enrichErrorObject(err){
+function enrichErrorObject(err,replyMsgInstance){
 
     if(err.code==="ETELEGRAM"){
         //Handle Telegram errors
@@ -133,9 +131,30 @@ function enrichErrorObject(err){
         if (err.message.includes("run out of hours")) {
             err.internal_code = "MDJ_ERR1"
             err.user_message = msqTemplates.MDJ_ERR1
-        }  else if (err.message.includes("403")){
+        }   else if (err.message.includes("403 ")){
             err.internal_code = "MDJ_ERR2"
             err.user_message = msqTemplates.MDJ_ERR2
+            err.mongodblog = false //Don't log this error to MongoDB
+
+        } else if (err.message.includes("You have been temporarily blocked from accessing Midjourney")){
+            
+            const errorMessage = err.message
+            const timestampRegex = /<t:(\d+):R>/;
+            const match = errorMessage.match(timestampRegex);
+            let placeholders = []
+            if (match) {
+                const timestamp = parseInt(match[1], 10);
+                // Преобразование временной метки в дату
+                const date = new Date(timestamp * 1000); // умножаем на 1000 для преобразования в миллисекунды
+                // Форматирование даты в удобочитаемый формат
+                placeholders.push({key:"[timestamp]",filler:`недоступна до ${date.toLocaleString()} MSK`})
+            } else {
+                placeholders.push({key:"[timestamp]",filler:`временно недоступна`})
+            }
+
+            const userMEssage = otherFunctions.getLocalizedPhrase("MDJ_ERR3",replyMsgInstance.user.language_code,placeholders)
+            err.internal_code = "MDJ_ERR3"
+            err.user_message = userMEssage
             err.mongodblog = false //Don't log this error to MongoDB
         }
         //Ничего не меняем

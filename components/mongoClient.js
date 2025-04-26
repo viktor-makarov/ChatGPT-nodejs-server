@@ -18,8 +18,10 @@ if (process.env.PROD_RUN == "true") {
         global.appsettings.mongodb_connections.options
       );
     console.log(new Date,"Connected to mongo",connectionString)
-    return connection;
+
+    return mongoose.connection;
   };
+  
 
 module.exports = {
     connectToMongo

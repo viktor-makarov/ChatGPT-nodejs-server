@@ -1,7 +1,10 @@
 module.exports = {
     "chat":{
         "welcome_msg":"Это режим диалога! \nНапишите сообщение, чтобы начать диалог. \nТекущие настройки: t° = [temperature], модель = [model], стиль = [response_style]",
-        "incomplete_msg":"Это режим диалога! \nТекущие настройки: t° = [temperature], модель = [model], стиль = [response_style] \nВ диалоге использовано [previous_dialogue_tokens] из [request_length_limit_in_tokens] токенов. \nЧтобы начать новый диалог, нажмите здесь: /resetchat. ",
+        "incomplete_msg":"Это режим диалога!\n" +
+                        "Текущие настройки: t° = [temperature], модель = [model], стиль = [response_style]\n" +
+                        "Размер диалога = [previous_dialogue_tokens] токенов (из [request_length_limit_in_tokens]).\n" +
+                        "Чтобы начать новый диалог, нажмите здесь: /resetchat. ",
         "name":"Диалог",
         "options_desc":"Параметры работы Диалога:",
         "options":{
@@ -34,8 +37,11 @@ module.exports = {
                 "options_desc":"Выберите версию модели:",
                 "templateRespMsg":"Модель для функции Диалог изменена на [value].",
                 "options":{
-                    "gpt-4o":{
-                        "name":"GPT-4 Омни",
+                    "gpt-4.1":{
+                        "name":"GPT-4.1",
+                    },
+                    "gpt-4.1-mini":{
+                        "name":"GPT-4.1 mini",
                     },
                     "o1":{
                         "name":"O1",
@@ -82,6 +88,9 @@ module.exports = {
                     "neutral":{
                         "name":"Нейтральный",
                     },
+                    "friendly":{
+                        "name":"Приветливый",
+                    },
                     "back":{
                         "name":"<< Назад"
                     }
@@ -92,7 +101,7 @@ module.exports = {
             }
         },
         "hostname":`https://${process.env.OAI_URL}`,
-        "default_model":'gpt-4o',
+        "default_model":'gpt-4.1',
         "url_path":'/v1/chat/completions',
         "default_dialogue_ttl_ms":3600000,
     },
@@ -130,8 +139,8 @@ module.exports = {
                 "options_desc":"Выберите версию модели:",
                 "templateRespMsg":"Модель для режима Переводчик изменена на [value].",
                 "options":{
-                    "gpt-4o":{
-                        "name":"GPT-4 Омни",
+                    "gpt-4.1":{
+                        "name":"GPT-4.1",
                     },
                     "o1":{
                         "name":"O1",
@@ -186,8 +195,8 @@ module.exports = {
                 "options_desc":"Выберите версию модели:",
                 "templateRespMsg":"Модель для режима Редактор изменена на [value].",
                 "options":{
-                    "gpt-4o":{
-                        "name":"GPT-4 Омни",
+                    "gpt-4.1":{
+                        "name":"GPT-4.1",
                     },
                     "o1":{
                         "name":"O1",

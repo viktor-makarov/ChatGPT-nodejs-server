@@ -47,7 +47,7 @@ class RequestMsg{
 #msgIdsForDbCompletion =[];
 
 constructor(obj) {
- //   console.log(obj.requestMsg)
+   // console.log(obj.requestMsg)
  
     this.#user = obj.userInstance
     this.#botInstance = obj.botInstance
@@ -264,18 +264,6 @@ acceptHandler(){
 
   }
   
-regenerateCheckRegimeCoinsideness(){
-
-if( this.#user.currentRegime != this.#callback_data){
-    
-    return {success:0,response:{text:msqTemplates.wrong_regime.replace(
-        "[regime]",
-        modelSettings[this.#callback_data].name
-      )}}
- }
-
- return {success:1}
-}
 
 textToSpeechConstraintsCheck(){
     if(this.#text>appsettings.telegram_options.text_to_speach_limit){
@@ -349,6 +337,7 @@ async audioReadableStreamFromTelegram(){
 print(){
     console.log(
         "Request: ",
+        this.#inputType,
         "chatId",
         this.#chatId,
         "fromId",
@@ -358,9 +347,7 @@ print(){
         "timestemp",
         new Date(),
         "msg.lenght",
-        (this.#text || "").length,
-        "msg"
-        //,msg.text
+        (this.#text || "").length
       )
 
 }
@@ -487,8 +474,6 @@ get msgTS(){
 get refMsgId(){
     return this.#refMsgId
 }
-
-
 
 get inputType(){
     return this.#inputType

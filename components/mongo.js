@@ -25,7 +25,6 @@ async function createDialogueMeta(object){
     return await newDialogieMetaObject.save();
   } catch (err) {
       err.code = "MONGO_ERR";
-      err.place_in_code = arguments.callee.name;
       throw err;
   }
 }
@@ -35,7 +34,6 @@ async function deleteDialogueMeta(userid){
     return await dialog_meta_collection.deleteOne({ userid: userid });
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -49,7 +47,19 @@ async function updateDialogueMeta(userid,object){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+}
+
+async function resetAllInProgressDialogueMeta(){
+  try {
+    const result = await dialog_meta_collection.updateMany(
+      { "function_calls.inProgress": true },
+      { $set: { "function_calls.inProgress": false } }
+    );
+    return result.modifiedCount || 0
+  } catch (err) {
+    err.code = "MONGO_ERR";
     throw err;
   }
 }
@@ -59,7 +69,6 @@ async function readDialogueMeta(userid){
     return  await dialog_meta_collection.findOne({ userid: userid },{ _id: 0,__v:0})
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -76,7 +85,6 @@ async function getKwgItemBy(id){
     
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -95,7 +103,6 @@ async function getKwgItemsForUser(user){
     
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -114,7 +121,6 @@ async function saveHash(hash,json){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -137,7 +143,6 @@ async function getJsonBy(hash){
     
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -171,7 +176,6 @@ async function insert_mdj_msg(msg,userInstance){
 
 } catch (err) {
   err.code = "MONGO_ERR";
-  err.place_in_code = arguments.callee.name;
   throw err;
 }
 };
@@ -185,7 +189,6 @@ async function get_mdj_msg_byId(msgId){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -200,7 +203,6 @@ async function insert_details_logPromise(object,place_in_code) {
     return await newLog.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -213,7 +215,6 @@ async function insert_error_logPromise(errorJSON) {
     return await newLog.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -229,7 +230,7 @@ async function insert_reg_eventPromise(
   event,
   reason
 ) {
-  const func_name = arguments.callee.name;
+
   try {
 
     const newRegEvent = new reg_log_collection({
@@ -246,7 +247,7 @@ async function insert_reg_eventPromise(
     return await newRegEvent.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
+
     throw err;
   }
 }
@@ -271,7 +272,7 @@ async function insertFunctionUsagePromise(obj){
     return await newFunctionUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
+
     throw err;
   }
 };
@@ -282,7 +283,7 @@ const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
     return await token_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
+
     throw err;
   }
 };
@@ -293,7 +294,6 @@ const queryLogsErrorByAggPipeline = async (agg_pipeline) => {
     return await error_log_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -303,7 +303,6 @@ const functionsUsageByAggPipeline = async (agg_pipeline) => {
     return await function_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -325,7 +324,6 @@ async function insertTokenUsage(obj){
     return await newTokenUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -342,7 +340,6 @@ async function updateCompletionInDb(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -360,7 +357,6 @@ async function updateManyEntriesInDbById(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -379,23 +375,25 @@ async function addMsgIdToToolCall(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
+
+
+
+
 
 async function getUploadedFilesBySourceId(sourceid_list){
   try {
 
     const filter = { "fileId": { $in: sourceid_list}}
-
+    
     return await dialog_collection.find(
       filter
       ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,_id:0}
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -410,7 +408,6 @@ async function upsertPrompt(promptObj){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -426,7 +423,6 @@ async function updateInputMsgTokenUsage(documentId,tokens){
     
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -451,7 +447,6 @@ async function insertToolCallResult(obj){
     return result
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -467,7 +462,28 @@ const upsertCompletionPromise = async (CompletionObject) => {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
+
+async function  updateToolCallResult(result){
+  try {
+
+    const  {tool_call_id, content, duration, success} = result
+
+    return await dialog_collection.updateOne(
+      { sourceid: tool_call_id },
+      { 
+        $set: {
+          "tool_reply.content": content,
+          "tool_reply.duration": duration,
+          "tool_reply.success": success
+        }
+      }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
     throw err;
   }
 };
@@ -493,7 +509,6 @@ const upsertProfilePromise = async (msg) => {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -518,7 +533,6 @@ async function registerUser(requestMsgInstance,token) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -536,7 +550,6 @@ async function insert_blank_profile(newToken){
     return await newBlankProfile.save();
   } catch (err) {
       err.code = "MONGO_ERR";
-      err.place_in_code = arguments.callee.name;
       throw err;
   }
 }
@@ -560,7 +573,6 @@ const insert_profilePromise = async (msg) => {
       return err.keyValue;
     } else {
       err.code = "MONGO_ERR";
-      err.place_in_code = arguments.callee.name;
       throw err;
     }
   }
@@ -571,12 +583,28 @@ const updateOnePromise = async (model, filter, update, options) => {
     return await model.updateOne(filter, update, options);
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
 
+const getDocByTgmBtnsFlag = async (userid, regime) => {
 
+  try {
+    const filter = { userid: userid, regime: regime,telegramMsgBtns: true };
+    const result = await dialog_collection
+      .find(
+        filter,
+        { telegramMsgId: 1}
+      )
+      .lean()
+   //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
+      .exec();
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+};
 
 const getDialogueByUserId = async (userid, regime) => {
 
@@ -593,7 +621,45 @@ const getDialogueByUserId = async (userid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
+    throw err;
+  }
+};
+
+
+
+async function getLastCompletion(userid, regime) {
+  try {
+    const filter = { userid: userid, regime: regime, role: "assistant" };
+    const result = await dialog_collection
+      .findOne(
+        filter
+      )
+      .sort({ _id: -1 }) // Sort by _id in descending order to get the most recent document
+      .lean()
+      .exec();
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
+
+
+const getDialogueForCompletion = async (userid, regime) => {
+
+  try {
+    const filter = { userid: userid, regime: regime };
+    const result = await dialog_collection
+      .find(
+        filter,
+        { role: 1, content: 1, tool_calls: 1, tool_reply: 1,completion_version:1}
+      )
+      .lean()
+   //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
+      .exec();
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
     throw err;
   }
 };
@@ -629,7 +695,6 @@ async function insert_permissions_migrationPromise(msg) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -647,7 +712,6 @@ async function insert_adminRolePromise(requestMsgInstance) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -664,7 +728,6 @@ async function insert_read_sectionPromise(requestMsgInstance) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
@@ -681,48 +744,178 @@ async function insert_read_section_migrationPromise(msg) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
 
 const setDefaultVauesForNonExiting = async () => {
-  const func_name = arguments.callee.name;
-
   try {
-
-    const profiles = await telegram_profile_collection.find({});
-
-    for (const item of profiles) {
-      //сначала удаляем
-      await telegram_profile_collection.deleteOne({ id: item.id });
-
-      //потом вставляем дефолтные занчения
-      const newProfile = new telegram_profile_collection();
-      await telegram_profile_collection.updateOne(
-        { id: item.id },
-        { $setOnInsert: newProfile },
-        { upsert: true }
-      );
-
-      let plainItem = item.toObject();
-      delete plainItem._id;
-
-      //потом вставляем значения из удаленного профиля
-      await telegram_profile_collection.updateOne(
-        { id: plainItem.id },
-        { $set: plainItem }
-      );
+    const profiles = await telegram_profile_collection.find({}).lean();
+    const BATCH_SIZE = 100; // Process in smaller batches to avoid hitting limits
+    let processedCount = 0;
+    let totalModified = 0;
+    let totalMatched = 0;
+    
+    // Process profiles in batches
+    for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
+      const batch = profiles.slice(i, i + BATCH_SIZE);
+      const bulkOps = [];
+      
+      for (const profile of batch) {
+        // Create a new profile document with default values
+        const newProfile = new telegram_profile_collection().toObject();
+        
+        // Remove _id from new profile to avoid conflicts
+        delete newProfile._id;
+        
+        // Merge the existing profile data with default values
+        // This preserves existing data while adding any missing default fields
+        const mergedProfile = { ...newProfile, ...profile };
+        
+        // Add to bulk operations
+        bulkOps.push({
+          replaceOne: {
+            filter: { id: profile.id },
+            replacement: mergedProfile,
+            upsert: true
+          }
+        });
+      }
+      
+      // Execute operations for this batch
+      if (bulkOps.length > 0) {
+        const result = await telegram_profile_collection.bulkWrite(bulkOps);
+        totalModified += result.modifiedCount || 0;
+        totalMatched += result.matchedCount || 0;
+      }
+      
+      processedCount += batch.length;
     }
+    
+    return { modifiedCount: totalModified, matchedCount: totalMatched, processedCount };
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = func_name;
     throw err;
   }
 };
 
+async function replaceProfileValues(dry_run = true) {
+
+  const replacemant_lists = require("../config/replacement_lists.js");
+  const func = require("./other_func.js")
+
+  const replacementList = replacemant_lists.profile
+
+  try {
+    // Get all profiles
+    const profiles = await telegram_profile_collection.find({}).lean();
+    const BATCH_SIZE = 100; // Process in smaller batches to avoid hitting limits
+    let processedCount = 0;
+    let totalModified = 0;
+    let totalMatched = 0;
+    let changesRequired = [];
+    
+    // Create a dot notation path getter utility
+    const getValueByPath = (obj, path) => {
+      return path.split('.').reduce((prev, curr) => {
+        return prev && prev[curr] !== undefined ? prev[curr] : undefined;
+      }, obj);
+    };
+    
+    // Set value at path utility
+    const setValueByPath = (obj, path, value) => {
+      const parts = path.split('.');
+      let current = obj;
+      
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!current[parts[i]]) {
+          current[parts[i]] = {};
+        }
+        current = current[parts[i]];
+      }
+      
+      current[parts[parts.length - 1]] = value;
+      return obj;
+    };
+    
+    // Process profiles in batches
+    for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
+      const batch = profiles.slice(i, i + BATCH_SIZE);
+      const bulkOps = [];
+      
+      for (const profile of batch) {
+        let needsUpdate = false;
+        let updatedProfile = { ...profile };
+        let profileChanges = { userId: profile.id, datetime:new Date(),changes: [] };
+        
+        // Check each replacement path
+        for (const replacement of replacementList) {
+          const currentValue = getValueByPath(profile, replacement.path);
+          
+          // If the current value matches what we want to replace
+          if (currentValue === replacement.asis) {
+            // Record this change
+            profileChanges.changes.push({
+              path: replacement.path, 
+              from: currentValue, 
+              to: replacement.tobe
+            });
+            
+            // Update the value if not in dry run mode
+            if (!dry_run) {
+              updatedProfile = setValueByPath(updatedProfile, replacement.path, replacement.tobe);
+              needsUpdate = true;
+            }
+          }
+        }
+        
+        // Add to changes log if any changes planned
+        if (profileChanges.changes.length > 0) {
+          changesRequired.push(profileChanges);
+        }
+        
+        // Add to bulk operations if there are changes and not in dry run
+        if (needsUpdate && !dry_run) {
+          bulkOps.push({
+            replaceOne: {
+              filter: { id: profile.id },
+              replacement: updatedProfile
+            }
+          });
+        }
+      }
+      
+      // Execute operations for this batch if not in dry run mode
+      if (bulkOps.length > 0 && !dry_run) {
+        const result = await telegram_profile_collection.bulkWrite(bulkOps);
+        totalModified += result.modifiedCount || 0;
+        totalMatched += result.matchedCount || 0;
+      }
+      
+      processedCount += batch.length;
+    }
+    
+    let filePath = null;
+    if(changesRequired.length>0){
+    filePath = func.saveTextToTempFile(JSON.stringify(changesRequired,null,4),"prifiles_replacement_details.json")
+    }
+    
+    return { 
+      dryRun: dry_run,
+      profilesProcessed: processedCount,
+      changesRequired: dry_run ? changesRequired.length : totalMatched, 
+      modifiedInDB: totalModified,
+      changesRequiredDetails: filePath 
+    };
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "replaceProfileValues";
+    throw err;
+  }
+}
+
 const get_tokenUsageByRegimes = () => {
-  const func_name = arguments.callee.name;
+
   return new Promise(async (resolve, reject) => {
     try {
       token_collection
@@ -741,7 +934,6 @@ const get_tokenUsageByRegimes = () => {
           function (err, res) {
             if (err) {
               err.code = "MONGO_ERR";
-              err.place_in_code = func_name;
               reject(err);
             } else {
               resolve(res);
@@ -750,13 +942,13 @@ const get_tokenUsageByRegimes = () => {
         )
         .sort({ requests: "desc" });
     } catch (err) {
-      err.place_in_code = func_name;
       reject(err);
     }
   });
 };
 
 async function profileMigrationScript(path) {
+  
   try {
     const profileArray = JSON.parse(await fs.readFile(path, "utf8"));
 
@@ -785,13 +977,13 @@ async function profileMigrationScript(path) {
       console.log(result);
     }
   } catch (err) {
-    err.place_in_code = arguments.callee.name;
+    err.place_in_code = "profileMigrationScript";
     throw err;
   }
 }
 
 const get_tokenUsageByDates = () => {
-  const func_name = arguments.callee.name;
+  const func_name = "get_tokenUsageByDates";
   return new Promise(async (resolve, reject) => {
     try {
       const tenDaysAgo = moment().subtract(10, "days").startOf("day").toDate();    
@@ -846,7 +1038,7 @@ const get_tokenUsageByDates = () => {
 };
 
 const get_errorsByMessages = () => {
-  const func_name = arguments.callee.name;
+  const func_name = "get_errorsByMessages";
   return new Promise(async (resolve, reject) => {
     try {
 
@@ -879,7 +1071,6 @@ const get_errorsByMessages = () => {
 };
 
 const get_tokenUsageByUsers = () => {
-  const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
       token_collection
@@ -902,7 +1093,6 @@ const get_tokenUsageByUsers = () => {
           function (err, res) {
             if (err) {
               err.code = "MONGO_ERR";
-              err.place_in_code = func_name;
               reject(err);
             } else {
               resolve(res);
@@ -911,7 +1101,6 @@ const get_tokenUsageByUsers = () => {
         )
         .sort({ requests: "desc" });
     } catch (err) {
-      err.place_in_code = func_name;
       reject(err);
     }
   });
@@ -928,7 +1117,6 @@ const getCompletionById = async (sourceid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -944,7 +1132,6 @@ async function getUserProfileByid(userid){
       .lean();
 
   } catch(err){
-    err.place_in_code = arguments.callee.name;
     throw err
   }
 }
@@ -957,7 +1144,6 @@ async function getUserProfileByToken(token){
       .lean();
 
   } catch(err){
-    err.place_in_code = arguments.callee.name;
     throw err
   }
 }
@@ -973,7 +1159,6 @@ async function UpdateSettingPromise(requestMsgInstance, pathString, value){
     return res;
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -989,7 +1174,6 @@ async function updateCurrentRegimeSetting(requestMsgInstance){
       );
       return result;
   } catch (err) {
-      err.place_in_code = arguments.callee.name;
       if (!err.code) { // Only override code if it's not already set
           err.code = "MONGO_ERR";
       }
@@ -999,7 +1183,6 @@ async function updateCurrentRegimeSetting(requestMsgInstance){
 
 
 async function get_all_profiles(){
-  try {
 
     const docs = await telegram_profile_collection
     .find({})
@@ -1008,10 +1191,7 @@ async function get_all_profiles(){
     .exec()
 
     return docs
-  } catch (err) {
-    err.place_in_code = arguments.callee.name;
-    throw err;
-  }
+
 };
 
 async function get_all_registeredPromise() {
@@ -1025,13 +1205,11 @@ async function get_all_registeredPromise() {
 
     return result;
   } catch (err) {
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 }
 
 const get_all_adminPromise = () => {
-  const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
  
@@ -1047,14 +1225,12 @@ const get_all_adminPromise = () => {
         })
         .lean();
     } catch (err) {
-      err.place_in_code = func_name;
       reject(err);
     }
   });
 };
 
 const get_all_readPromise = () => {
-  const func_name = arguments.callee.name;
   return new Promise(async (resolve, reject) => {
     try {
   
@@ -1062,7 +1238,7 @@ const get_all_readPromise = () => {
         .find({ "permissions.readInfo": true }, function (err, doc) {
           if (err) {
             err.code = "MONGO_ERR";
-            err.place_in_code = func_name;
+
             reject(err);
           } else {
            // console.log(doc.length);
@@ -1071,7 +1247,7 @@ const get_all_readPromise = () => {
         })
         .lean();
     } catch (err) {
-      err.place_in_code = func_name;
+
       reject(err);
     }
   });
@@ -1088,7 +1264,6 @@ async function deleteMsgFromDialogById (requestMsgInstance){
     return res;
   } catch (err) {
     err.code = "MONGO_ERR";
-    err.place_in_code = arguments.callee.name;
     throw err;
   }
 };
@@ -1096,7 +1271,7 @@ async function deleteMsgFromDialogById (requestMsgInstance){
 
 
 const deleteDialogByUserPromise = (userid, regime) => {
-  const func_name = arguments.callee.name;
+
   return new Promise(async (resolve, reject) => {
     try {
 
@@ -1110,21 +1285,19 @@ const deleteDialogByUserPromise = (userid, regime) => {
       dialog_collection.deleteMany(filter, (err, res) => {
         if (err) {
           err.code = "MONGO_ERR";
-          err.place_in_code = func_name;
           reject(err);
         } else {
           resolve(res);
         }
       });
     } catch (err) {
-      err.place_in_code = func_name;
       reject(err);
     }
   });
 };
 
 const delete_profile_by_id_arrayPromise = (profileIdArray) => {
-  const func_name = arguments.callee.name;
+
   return new Promise(async (resolve, reject) => {
     try {
 
@@ -1133,7 +1306,6 @@ const delete_profile_by_id_arrayPromise = (profileIdArray) => {
         (err, res) => {
           if (err) {
             err.code = "MONGO_ERR";
-            err.place_in_code = func_name;
             reject(err);
           } else {
             resolve(res);
@@ -1141,7 +1313,7 @@ const delete_profile_by_id_arrayPromise = (profileIdArray) => {
         }
       );
     } catch (err) {
-      err.place_in_code = func_name;
+
       reject(err);
     }
   });
@@ -1203,5 +1375,11 @@ module.exports = {
   createDialogueMeta,
   deleteDialogueMeta,
   updateDialogueMeta,
-  readDialogueMeta
+  readDialogueMeta,
+  replaceProfileValues,
+  resetAllInProgressDialogueMeta,
+  updateToolCallResult,
+  getDialogueForCompletion,
+  getDocByTgmBtnsFlag,
+  getLastCompletion
 };

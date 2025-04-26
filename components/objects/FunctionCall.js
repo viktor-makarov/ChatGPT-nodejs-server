@@ -4,7 +4,6 @@ const mongo = require("../mongo.js");
 const func = require("../other_func.js");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
 
-
 class FunctionCall{
 
     #replyMsg;
@@ -23,13 +22,13 @@ class FunctionCall{
     #timeout_ms;
     #isCanceled;
     #functionConfig;
-
+    #long_wait_notes;
     #telegramCmdHandler;
    
 constructor(obj) {
     this.#functionCall = obj.functionCall;
-    this.#functionName = this.#functionCall.function.name;
-    this.#functionConfig = obj.functionConfig;
+    this.#functionName = this.#functionCall.function_name;
+    this.#functionConfig = obj.functionCall?.tool_config;
     this.#replyMsg = obj.replyMsgInstance;
     this.#dialogue = obj.dialogueInstance;
     this.#requestMsg = obj.requestMsgInstance;
@@ -47,12 +46,11 @@ async router(){
 
     let functionOutcome = {success:0,error:"No outcome from the function returned"}
     const statusMessageId = await this.sendStatusMessage()
-    this.triggerLongWaitNotes(statusMessageId)
+    this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId)
 
     const callExecutionStart = new Date();
     const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
     
-
     if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
         functionOutcome = {success:0, error: `function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`,instructions:"Try to find another solution."}
     } else {
@@ -66,7 +64,7 @@ async router(){
     } else {
         const failedRunsAfterFunctionRun = await this.#dialogue.metaIncrementFailedFunctionRuns(this.#functionName)
         if(failedRunsAfterFunctionRun === this.#functionConfig.try_limit){
-            functionOutcome.stop_calls = "Limit of unsuccessful calls is reached. Stop sending toll calls on this function, report the problem to the user and try to find another solution."
+            functionOutcome.stop_calls = "Limit of unsuccessful calls is reached. Stop sending toll calls on this function, report the problem to the user and try to find another solution. To clean the limit the dialog should be reset."
         }
     }
 
@@ -74,6 +72,8 @@ async router(){
 
     const ultimateResult = { ...functionOutcome, duration }
     
+    this.clearLongWaitNotes()
+
     await this.finalizeStatusMessage(ultimateResult,statusMessageId)
     
     return ultimateResult;
@@ -89,25 +89,35 @@ async sendStatusMessage(){
 triggerLongWaitNotes(tgmMsgId){
 
     const long_wait_notes = this.#functionConfig.long_wait_notes
-
+    let timeouts =[];
     if(long_wait_notes && long_wait_notes.length >0){
+        
         for (const note of long_wait_notes){
-
+           
             let options = {
                 chat_id:this.#replyMsg.chatId,
                 message_id:tgmMsgId,
             }
 
-            setTimeout(() => {
+            const timeoutInstance = setTimeout(() => {
                 if(this.#inProgress){
                 const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.\n${note.comment}`
                 this.#replyMsg.simpleMessageUpdate(MsgText,options)
             }
             }, note.time_ms);
+            timeouts.push(timeoutInstance)
+
         }
     }
+    return timeouts
 };
 
+clearLongWaitNotes() {
+    if (this.#long_wait_notes && this.#long_wait_notes.length > 0) {
+        this.#long_wait_notes.forEach(timeout => clearTimeout(timeout));
+        this.#long_wait_notes = [];
+    }
+}
 
 async finalizeStatusMessage(functionResult,statusMessageId){
 
@@ -138,7 +148,7 @@ async finalizeStatusMessage(functionResult,statusMessageId){
 }
 
 buildFunctionResultHtml(functionResult){
-    const argsJson = JSON.parse(this.#functionCall?.function?.arguments);
+    const argsJson = JSON.parse(this.#functionCall?.function_arguments);
     const argsText = func.formatObjectToText(argsJson)
 
     const request = `<pre>${func.wireHtml(argsText)}</pre>`
@@ -146,7 +156,7 @@ buildFunctionResultHtml(functionResult){
     const resultText = func.formatObjectToText(functionResult)
     const reply = `<pre><code class="json">${func.wireHtml(resultText)}</code></pre>`
 
-    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
+    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
 
     return htmlToSend
 }
@@ -161,6 +171,8 @@ async functionWraper(){
     else if(this.#functionName==="get_user_guide"){targetFunction = this.get_user_guide()} 
     else if(this.#functionName==="run_javasctipt_code"){targetFunction = this.runJavascriptCode()}
     else if(this.#functionName==="run_python_code"){targetFunction = this.runPythonCode()}
+    else if(this.#functionName==="generate_text_file"){targetFunction = this.generateTextFile()}
+    else if(this.#functionName==="generate_pdf_file"){targetFunction = this.generatePDFFile()}
     else if(this.#functionName==="fetch_url_content"){targetFunction = this.fetchUrlContentRouter()}
     else if(this.#functionName==="create_midjourney_image"){targetFunction = this.CreateMdjImageRouter()} 
     else if(this.#functionName==="get_users_activity"){targetFunction = this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
@@ -181,7 +193,7 @@ async functionHandler(){
         try{
             const validationResult = this.validateFunctionCallObject(this.#functionCall)
             if(validationResult.valid){
-                this.#argumentsText = this.#functionCall?.function?.arguments
+                this.#argumentsText = this.#functionCall?.function_arguments
 
                 const timeoutPromise = new Promise((_, reject) =>
                     setTimeout(() => {
@@ -228,7 +240,7 @@ async functionHandler(){
 
 
 validateFunctionCallObject(callObject){
-    const requiredFields = ['index', 'id', 'type', 'function'];
+    const requiredFields = ['tool_call_index', 'tool_call_id', 'tool_call_type', 'function_name', 'function_arguments'];
     const missingFields = [];
 
     // Check for top-level fields
@@ -237,19 +249,6 @@ validateFunctionCallObject(callObject){
             missingFields.push(field);
         }
     });
-
-    // Check for nested 'function' field
-    if (callObject.hasOwnProperty('function')) {
-        const nestedRequiredFields = ['name', 'arguments'];
-        nestedRequiredFields.forEach(field => {
-            if (!callObject['function'].hasOwnProperty(field)) {
-                missingFields.push(`function.${field}`);
-            }
-        });
-    } else {
-        // If 'function' field is missing, add the nested fields as missing too
-        missingFields.push('function.name', 'function.arguments');
-    }
     
     // Return validation result
     if (missingFields.length === 0) {
@@ -269,7 +268,6 @@ async get_current_datetime(){
 async get_user_guide(){
 
         const url = appsettings.other_options.pdf_guide_url
-
 
         const extractedObject = await func.extractTextFromFile(url,"application/pdf")
         if(extractedObject.success===1){
@@ -347,6 +345,48 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 throw err;
             }
         };
+
+        
+
+        async generatePDFFile(){
+
+            this.validateRequiredFieldsFor_generatePDFFile()
+
+            const {filename,htmltext} = this.#argumentsJson
+
+            const formatedHtml = func.formatHtml(htmltext,filename)
+
+            const filebuffer = await func.htmlToPdfBuffer(formatedHtml)
+            const mimetype = "application/pdf"
+            
+            const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
+            
+            func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+            
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
+            await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+            
+            return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
+        }
+
+        async generateTextFile(){
+
+            this.validateRequiredFieldsFor_generateTextFile()
+
+            const {filename,filetext,mimetype} = this.#argumentsJson
+            
+            const filebuffer = func.generateTextBuffer(filetext)
+            const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
+            
+            func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
+            await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+            
+            return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
+        }
 
         async runPythonCode(){
 
@@ -440,12 +480,12 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
             try{
            
-            try{
-                this.validateRequiredFields()
-            } catch (err){
-                return {success:0,error: err.message + "" + err.stack}
-            }
-
+                try{
+                    this.validateRequiredFields()
+                } catch (err){
+                    return {success:0,error: err.message + "" + err.stack}
+                }
+                
             const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
 
             const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
@@ -552,7 +592,39 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
     craftPromptFromArguments(){
 
-        const prompt = this.#argumentsJson.midjourney_query;
+        const {textprompt,seed,aspectratio,no,version,imageprompt,imageweight} = this.#argumentsJson
+        let prompt = "";
+
+        let imageurls;
+        if(imageprompt && imageprompt !== ""){
+            imageurls = imageprompt.split(",").map(url => url.trim()).filter(url => url !== "");
+            prompt += imageurls.join(" ")
+            prompt += " "
+        }
+
+        prompt += textprompt.trim()
+
+        if(imageurls && imageurls.length >0){
+            prompt += ' --iw'
+            prompt += imageweight && imageweight !== "" ? ` ${String(imageweight)}` : " 1.75"
+        }
+
+        if(no && no !== ""){
+            const noItems = no.split(",").map(item => item.trim()).filter(item => item !== "");
+            prompt += ` --no ${noItems.join(", ")}`
+        }
+
+        if(aspectratio && aspectratio !== ""){
+            prompt += ` --ar ${aspectratio}`
+        }
+
+        if(version && version !== ""){
+            prompt += ` --v ${version}`
+        }
+
+        // Add seed parameter if available
+            prompt += " "
+            prompt += `--seed ${this.#dialogue.mdjSeed}`
 
         return prompt
     }
@@ -582,6 +654,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     result:"The image has been generated and successfully sent to the user with several options to handle the image.",
                     buttonsDescription: btnsDescription,
                     image_url:generate_result.mdjMsg.uri,
+                    midjourney_prompt:prompt,
                     instructions:"Show buttons description to the user only once."
                 };
             };
@@ -615,16 +688,74 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
     imageMdjFieldsValidation(){
 
-        if (this.#argumentsJson.midjourney_query === "" || this.#argumentsJson.midjourney_query === null || this.#argumentsJson.midjourney_query === undefined){
-            let err = new Error("midjourney_query param contains no text.")
-            err.instructions = "You should provide the text."
-            throw err;
-        } 
+        const {textprompt,seed,aspectratio,version,imageprompt,imageweight} = this.#argumentsJson
 
-        if (this.#argumentsJson.midjourney_query.split(" ").length > 150){
-            let err = new Error("midjourney_query length exceeds limit of 150 words.")
-            err.instructions = "You should reduce the prompt length."
+        if(textprompt === "" || textprompt === null || textprompt === undefined){
+            let err = new Error("textprompt param contains no text.")
+            err.instructions = "You should provide the text prompt."
             throw err;
+        } else {
+            if (textprompt.split(" ").length > 150){
+                let err = new Error("textprompt length exceeds the limit of 150 words.")
+                err.instructions = "You should reduce the prompt length."
+                throw err;
+            }
+
+            const paramPattern = new RegExp(/--([a-zA-Z]{2,})/,'gi');
+
+            const matches = textprompt.match(paramPattern);
+            if (matches) {
+                let err = new Error(`textprompt contains param ${matches}, but there should be no params in text prompt.`)
+                err.instructions = "You should remove all params from the text prompt."
+                throw err;
+              }
+        }
+        
+        if (aspectratio && aspectratio !== ""){
+            const aspectratioClean = aspectratio.trim().toLowerCase();
+            const pxPattern = /^\d+\s*px\s*[x×]\s*\d+\s*px$/;
+            const ratioPattern = /^\d+\s*:\s*\d+$/;
+
+            if(!(pxPattern.test(aspectratioClean) || ratioPattern.test(aspectratioClean))){
+                let err = new Error(`aspectratio param ${aspectratio} is not valid.`)
+                err.instructions = "You should provide the aspect ratio in the format 16px x 9px or 16:9."
+                throw err;
+            }
+        }
+
+        if (version && version !== ""){
+            if(!["6.1","5.2","5.1","5.0","4a","4b","4c"].includes(version)){
+                let err = new Error(`version param ${version} is not valid.`)
+                err.instructions = "You should provide the version param in accordance with the following restricted list 6.1, 5.2, 5.1, 5.0, 4a, 4b or 4c."
+                throw err;
+            }
+        }
+        
+        if (imageprompt && imageprompt !== ""){
+            const imagepromptClean = imageprompt.trim().toLowerCase();
+            const urls = imagepromptClean.split(",").map(url => url.trim());
+            
+            for (const url of urls) {
+                if (!url.match(/^https?:\/\/.+/)) {
+                    let err = new Error(`imageprompt param contains invalid URL: ${url}`)
+                    err.instructions = "You should provide the image prompt as one or more valid URLs separated by commas."
+                    throw err;
+                }
+            }
+        };
+
+        if (imageweight && imageweight !== ""){
+            if (typeof imageweight !== "number"){
+                let err = new Error("imageweight param is not a number.")
+                err.instructions = "You should provide the imageweight param. A number between 0 and 3. E.g. 0.5, 1, 1.75, 2, 2.5."
+                throw err;
+            } else {
+                if (imageweight < 0 || imageweight > 3){
+                    let err = new Error("imageweight param is out of range.")
+                    err.instructions = "You should provide the imageweight param in the range between 0 and 3. E.g. 0.5, 1, 1.75, 2, 2.5."
+                    throw err;
+                }
+            }
         }
     }
 
@@ -654,6 +785,35 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             this.#argumentsJson.resources = JSON.parse(this.#argumentsJson.resources)
         } catch(err){
             throw new Error(`Received 'resources' object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+        }
+
+    }
+
+    validateRequiredFieldsFor_generatePDFFile(){    
+
+        const {htmltext,filename} = this.#argumentsJson
+        
+        if(!filename || filename === ""){
+            throw new Error(`'filename' parameter is missing. Provide the value for the agrument.`)
+        }
+        if(!htmltext || htmltext === ""){
+            throw new Error(`'htmltext' parameter is missing. Provide the value for the agrument.`)
+        }
+
+    }
+
+    validateRequiredFieldsFor_generateTextFile(){
+
+        const {filename,filetext,mimetype} = this.#argumentsJson
+        
+        if(!filename || filename === ""){
+            throw new Error(`'filename' parameter is missing. Provide the value for the agrument.`)
+        }
+        if(!filetext || filetext === ""){
+            throw new Error(`'filetext' parameter is missing. Provide the value for the agrument.`)
+        }
+        if(!mimetype || mimetype === ""){
+            throw new Error(`'mimetype' parameter is missing. Provide the value for the agrument.`)
         }
 
     }

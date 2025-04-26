@@ -10,6 +10,7 @@ const mongo = require("./mongo");
 const google = require("./google_func");
 const path = require('path');
 
+
 function extractSystemRolesFromEnd(documents) {
   const result = [];
   for (let i = documents.length - 1; i >= 0; i--) {
@@ -47,6 +48,7 @@ async function fileDownload(url){
     responseType: 'arraybuffer',
     timeout: 5000
   });
+
 return response.data
 }
 
@@ -325,9 +327,71 @@ function wireHtml(text){
   .replace(/</g,"&lt;")
   .replace(/>/g,"&gt;")
   .replace(/&/g,"&amp;")
-  
+
   return wiredText
 }
+
+
+
+
+  function generateTextBuffer(text) {
+    // Convert the text to a buffer using UTF-8 encoding
+    const buffer = Buffer.from(text, 'utf-8');
+    return buffer;
+  }
+
+
+
+  async function htmlToPdfBuffer(htmlString, pdfOptions = {}) {
+
+    const page = await global.chromeBrowserHeadless.newPage();
+    
+    // Загружаем “на лету” HTML-контент
+    await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(htmlString)}`, {
+      waitUntil: 'networkidle0'
+    });
+  
+    // Генерируем PDF и возвращаем буфер
+    const buffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin:{top: 20, right: 20, bottom: 20, left: 20},
+      ...pdfOptions
+    });
+
+    return Buffer.from(buffer);
+}
+
+
+  function checkFileSizeToTgmLimit(fileSizeBites,fileLimitBites){
+
+    if(fileSizeBites>fileLimitBites){
+      throw new Error("File size exceeds the limit of " + fileLimitBites + " bytes")
+    }
+  }
+
+  function calculateFileSize(buffer) {
+    // Get the size in bytes
+    const bytes = buffer.length;
+    
+    // Convert to appropriate units for human-readable format
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+    
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    
+    // Format with two decimal places if not in bytes
+    const formattedSize = unitIndex === 0 ? size : size.toFixed(2);
+    
+    return {
+      sizeBytes: bytes,
+      sizeString: `${formattedSize} ${units[unitIndex]}`
+    };
+  }
 
 async function countTokensLambda(text,model){
 
@@ -335,11 +399,15 @@ async function countTokensLambda(text,model){
   const start = performance.now();
 
   const result = await aws.lambda_invoke("R2D2-countTokens",requestObj)
-  
+
   const endTime = performance.now();
   const executionTime = endTime - start;
   console.log(`countTokensLambda execution time: ${executionTime.toFixed(2)} ms`);
   const resultJSON = JSON.parse(result)
+
+  if(resultJSON.body.warning){
+    console.log("countTokensLambda warning:",resultJSON.body.warning)
+  }
 
   if(resultJSON.statusCode === 200){
     return resultJSON.body.tokens_count
@@ -878,7 +946,9 @@ function throttlePromise(fn, delay) {
   };
 }
 
-
+async function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 
 function jsonToText(obj, indent = '') {
@@ -924,6 +994,34 @@ function saveTextToTempFile(text, filename) {
     const error = new Error(`Directory ${tempDir} does not exist`);
     throw error;
   }
+
+  return path.join(tempDir, filename)
+}
+
+function saveBufferToTempFile(buffer, filename) {
+  const tempDir = path.join(__dirname, '../tempfiles');
+  // Create directory if it doesn't exist
+  if (fs.existsSync(tempDir)) {
+    // Save buffer to the specified filename
+    fs.writeFileSync(path.join(tempDir, filename), buffer);
+  } else {
+    const error = new Error(`Directory ${tempDir} does not exist`);
+    throw error;
+  }
+
+  return path.join(tempDir, filename);
+}
+
+function formatHtml(html,filename){
+
+  return `<html>
+          <head>
+          <title>${filename}</title>
+          </head>
+          <body>
+          ${html}
+          </body>
+      </html>`
 }
 
 function commentSymbolForLanguage(language){
@@ -1015,6 +1113,7 @@ module.exports = {
   throttlePromise,
   optionsToButtons,
   saveTextToTempFile,
+  saveBufferToTempFile,
   jsonToText,
   replaceNewDate,
   replaceISOStr,
@@ -1041,5 +1140,11 @@ module.exports = {
   getLocalizedPhrase,
   startDeveloperPrompt,
   findBrokenTags,
-  commentSymbolForLanguage
+  commentSymbolForLanguage,
+  delay,
+  generateTextBuffer,
+  calculateFileSize,
+  checkFileSizeToTgmLimit,
+  htmlToPdfBuffer,
+  formatHtml
 };

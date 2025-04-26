@@ -245,7 +245,6 @@ const TelegramDialogSheema = new Schema(
     completion_ended:{type: Boolean},
     content_ending: { type: String },
     finish_reason: { type: String },
-    tokens: { type: Number },
     regime: { type: String },
   },
   { collection: appsettings.mongodb_names.tokens_log }
@@ -263,8 +262,8 @@ const TelegramDialogMetaSheema = new Schema(
   {
 
     userid: { type: Number, index: true },
+    total_tokens: { type: Number},
     function_calls: {type: Object},
-    
   },
   { collection: appsettings.mongodb_names.col_dialogue_meta }
 );
