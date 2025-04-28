@@ -133,6 +133,10 @@ module.exports = {
         "en": "User has pushed the button [choosenBtnDsc] and now has the following further options [btnsDsc]",
         "ru": "Пользователь нажал кнопку [choosenBtnDsc] и теперь имеет следующие опции для выбора [btnsDsc]."
     },
+    "imagine":{
+        "en": "User has used '/imagine' command to generate a Midjourney image with his own prompt. and now has the following further options [btnsDsc]",
+        "ru": "Пользователь использовал команду /imagine для генерации изображения Midjourney и теперь имеет следующие опции для выбора [btnsDsc]."
+    },
     "file_upload_failed":{
         "en":"User tried to upload file named [fileName], but failed with the following error: [uploadFileError].",
         "ru":"Пользователь попытался загрузить файл с именем [fileName], но не удалось из-за следующей ошибки: [uploadFileError]."

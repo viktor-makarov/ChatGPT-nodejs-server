@@ -111,9 +111,8 @@ class Dialogue extends EventEmitter {
             return newDoc;
 
          })
-
     }
-
+    
     get toolCallsInstance(){
         return this.#toolCallsInstance
     }

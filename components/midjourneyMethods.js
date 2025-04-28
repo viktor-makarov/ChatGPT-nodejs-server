@@ -17,8 +17,32 @@ const func = require("./other_func.js");
 async function generateHandler(prompt){
 
     let mdjMsg;
-    try{
+    try {
         mdjMsg = await executeImagine(prompt);
+    } catch(err){
+      err.code = "MDJ_ERR"
+      if(err.message.includes("429")){
+        err.message ="The image failed to generate due to the limit of concurrent generations. Try again later."
+        err.instructions = "Communicate the reason of the failure to the user."
+      } else {
+        err.user_message = err.message
+      }
+      throw err;
+    }
+    
+    const imageBuffer = await func.getImageByUrl(mdjMsg.uri)
+      
+        return {
+        imageBuffer:imageBuffer,
+        mdjMsg:mdjMsg
+        }
+    }
+
+    async function customHandler(obj){
+
+      let mdjMsg;
+    try {
+        mdjMsg = await executeCustom(obj);
     } catch(err){
       err.code = "MDJ_ERR"
       if(err.message.includes("429")){
@@ -41,7 +65,7 @@ async function generateHandler(prompt){
 async function executeCustom(obj) {
 
     const progressFunction = function(uri,progress) {  // Use standard function syntax
-        console.log("зкщпкуыы",new Date(), progress); 
+        console.log("Progress",new Date(), progress); 
         console.log("loading custom",new Date(), uri);
     }
 
@@ -69,5 +93,6 @@ module.exports = {
     executeImagine,
     executeCustom,
     executeInfo,
-    generateHandler
+    generateHandler,
+    customHandler
 }

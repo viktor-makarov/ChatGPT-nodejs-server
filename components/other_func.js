@@ -11,6 +11,26 @@ const google = require("./google_func");
 const path = require('path');
 
 
+function generateButtonDescription(buttonLabels,buttonsShownBefore){
+
+  let description ={};
+  let lables = buttonLabels;
+  const descriptionSource = appsettings.mdj_options.buttons_description
+  const exclude_buttons = appsettings.mdj_options.exclude_buttons;
+  lables = lables.filter(label => !exclude_buttons.includes(label));
+  if(buttonsShownBefore){
+  lables = lables.filter(label => !buttonsShownBefore.includes(label));
+  }
+  
+  for (const label of lables){
+
+      description[label] = descriptionSource[label]
+  }
+
+  return description
+  }
+
+
 function extractSystemRolesFromEnd(documents) {
   const result = [];
   for (let i = documents.length - 1; i >= 0; i--) {
@@ -915,6 +935,22 @@ async function optionsToButtons(object,requestMsgInstance){
 }
 }
 
+function extractTextBetweenDoubleAsterisks(text) {
+  const matches = text.match(/\*\*(.*?)\*\*/);
+  return matches ? matches[1] : null;
+}
+
+function throttleNew(func, delay) {
+  let throttleTimeout = null
+  return (...args)=> {
+     if(!throttleTimeout) {
+         func(...args)
+         throttleTimeout = setTimeout(()=> {
+             throttleTimeout = null
+         }, delay)
+     } 
+  }
+
 function throttlePromise(fn, delay) {
   let timerId;
   let lastExecutedTime = 0;
@@ -965,6 +1001,7 @@ function jsonToText(obj, indent = '') {
 
 
 function formatObjectToText(obj) {
+
   let formattedText = "";
 
   function iterate(obj, depth = 0) {
@@ -1146,5 +1183,7 @@ module.exports = {
   calculateFileSize,
   checkFileSizeToTgmLimit,
   htmlToPdfBuffer,
-  formatHtml
+  formatHtml,
+  generateButtonDescription,
+  extractTextBetweenDoubleAsterisks
 };

@@ -7,6 +7,8 @@ const modelConfig = require("../config/modelConfig");
 const openAIApiHandler = require("./openAI_API_Handler.js");
 const MdjMethods = require("./midjourneyMethods.js");
 const aws = require("./aws_func.js")
+const FunctionCall  = require("./objects/FunctionCall.js");
+const toolsCollection  = require("./objects/toolsCollection.js");
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -281,29 +283,46 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   } else if(cmpName==="imagine"){
 
-    const statusMsg = await replyMsgInstance.simpleSendNewMessage(`Imagine. Выполняется.`,null,null,null)
-
     const prompt = getPromptFromMsg(requestMsgInstance)
 
     if(prompt){
 
-    const generate_result = await MdjMethods.generateHandler(prompt)
+    const functionName = "imagine_midjourney"
+    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogueInstance.userInstance)
+    const functionArguments = {prompt}    
 
-    const sent_result = await  replyMsgInstance.sendMdjImage(generate_result,prompt)
+    const toolCallExtended = {
+      tool_call_id:requestMsgInstance.msgId,
+      tool_call_index:1,
+      tool_call_type:'function',
+      function_name:functionName,
+      function_arguments:JSON.stringify(functionArguments),
+      tool_config
+    };
+
+    const functionInstance = new FunctionCall({
+      functionCall:toolCallExtended,
+      replyMsgInstance:replyMsgInstance,
+      dialogueInstance:dialogueInstance,
+      requestMsgInstance:requestMsgInstance,
+      tokensLimitPerCall:0
+    });
+
+    const outcome = await functionInstance.router();
+
+    const placeholders = [{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
     
     const fileComment = {
       midjourney_prompt:prompt,
-      public_url:sent_result.mdjMsg.uri,
-      context:"User has user '/imagine' command to generate a midjourney image with his own prompt."
+      public_url:outcome.image_url,
+      context:otherFunctions.getLocalizedPhrase("imagine",requestMsgInstance.user.language_code,placeholders)
     }
 
-    await dialogueInstance.commitImageToDialogue(generate_result.mdjMsg.uri,fileComment)
+    await dialogueInstance.commitImageToDialogue(outcome.image_url,fileComment)
     
     } else {
       responses.push({text:msqTemplates.mdj_lacks_prompt})
     }
-
-    await replyMsgInstance.deleteMsgByID(statusMsg.message_id)
 
   } else if(cmpName==="reports"){
     if (!isAdmin) {
@@ -360,6 +379,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   const callback_event = requestMsg.callback_event;
   const callback_data_input = requestMsg.callback_data;
 
+  await replyMsg.sendTypingStatus()
+  
   if (callback_event === "info_accepted"){
 
     const response = await infoacceptHandler(requestMsg);
@@ -401,7 +422,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const doc = await dialogue.getLastCompletionDoc()
     await replyMsg.deleteMsgsByIDs(doc?.telegramMsgId)
 
-    await replyMsg.sendTypingStatus()
+    
     const choosenVersionIndex = callback_data_input
     const choosenContent = doc.content[choosenVersionIndex-1]
     const choosenContentFormulas = doc.content_latex_formula[choosenVersionIndex-1]
@@ -420,7 +441,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
     const lastdoc = await dialogue.getLastCompletionDoc()
     
-    await replyMsg.sendTypingStatus()
+   
 
     const letexObject = lastdoc.content_latex_formula[lastdoc.completion_version-1]
     let pngBuffer;
@@ -546,23 +567,50 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   }
 
   } else if(callback_event === "mdjbtn"){
-    const resultMdj = await mdj_custom_handler(requestMsg,replyMsg)
-    const buttons = resultMdj.replymsg.options
-    const labels = buttons.map(button => button.label)
-    
-    const btnsDescription = generateButtonDescription(labels,[])
 
-    await dialogue.metaSetMdjButtonsShown(labels)
-    const choosenButton = resultMdj.buttonPushed
-    const choosenBtnsDescription = generateButtonDescription([choosenButton],[])
-    const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(btnsDescription)}]
+    const jsonDecoded = await otherFunctions.decodeJson(requestMsg.callback_data)
+
+    const functionName = "custom_midjourney"
+    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance)
+    const functionArguments = {
+      buttonPushed : jsonDecoded.label,
+      msgId: jsonDecoded.id,
+      customId: jsonDecoded.custom,
+      content: jsonDecoded.content,
+      flags: jsonDecoded.flags
+    }
+    
+    const toolCallExtended = {
+      tool_call_id:requestMsg.refMsgId,
+      tool_call_index:1,
+      tool_call_type:'function',
+      function_name:functionName,
+      function_arguments:JSON.stringify(functionArguments),
+      tool_config
+    };
+
+    const functionInstance = new FunctionCall({
+      functionCall:toolCallExtended,
+      replyMsgInstance:replyMsg,
+      dialogueInstance:dialogue,
+      requestMsgInstance:requestMsg,
+      tokensLimitPerCall:0
+    });
+
+    const outcome = await functionInstance.router();
+    
+    const choosenButton = jsonDecoded.label
+    const choosenBtnsDescription = otherFunctions.generateButtonDescription([choosenButton],[])
+    const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
+    
     const fileComment = {
       context: otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders),
-      public_url:resultMdj.replymsg.uri,
-      midjourney_prompt: resultMdj.prompt
+      public_url:outcome.image_url,
+      midjourney_prompt: outcome.midjourney_prompt
     };
-    await dialogue.commitImageToDialogue(resultMdj.replymsg.uri,fileComment)
+    await dialogue.commitImageToDialogue(outcome.image_url,fileComment)
               
+    
   } else {
     responses = [{text:msqTemplates.unknown_callback}]
   }
@@ -619,8 +667,6 @@ async function handleCancelCommand(call_id){
 function noMessageText() {
   return msqTemplates.no_text_msg;
 }
-
-
 
 async function infoacceptHandler(requestMsgInstance) {
     const result = await mongo.insert_read_sectionPromise(requestMsgInstance); // Вставляем новую секцию в базу данных
@@ -692,7 +738,6 @@ return uploadResult
   return uploadResult
 }
 }
-
 
 function sendtomeHandler(requestMsgInstance) {
     const pattern = /\[(.*?)\]/gm; // Regular expression pattern to match strings inside []
@@ -1268,71 +1313,9 @@ async function tokenValidation(requestMsgInstance) {
     }
 }
 
-function extractTextBetweenDoubleAsterisks(text) {
-  const matches = text.match(/\*\*(.*?)\*\*/);
-  return matches ? matches[1] : null;
-}
 
-async function mdj_custom_handler(requestInstance,replyInstance){
 
-  const jsonDecoded = await otherFunctions.decodeJson(requestInstance.callback_data)
 
-  const buttonPushed = jsonDecoded.label
-
-  const statusMsg = await replyInstance.simpleSendNewMessage(`${buttonPushed}. Выполняется.`,null,null,null)
-  let msg;
-  try{
-    msg = await MdjMethods.executeCustom({
-    msgId:jsonDecoded.id,
-    customId:jsonDecoded.custom,
-    content:jsonDecoded.content,
-    flags:jsonDecoded.flags
-    });
-  } catch(err){
-    err.code = "MDJ_ERR"
-    err.user_message = err.message
-    throw err
-  }
- 
-  const reply_markup = await replyInstance.generateMdjButtons(msg);
-  const imageBuffer = await otherFunctions.getImageByUrl(msg.uri);
-  
-  await replyInstance.deleteMsgByID(statusMsg.message_id)
-  const prompt = extractTextBetweenDoubleAsterisks(jsonDecoded.content)
-  await replyInstance.simpleSendNewImage({
-    caption:extractTextBetweenDoubleAsterisks(jsonDecoded.content),
-    reply_markup:reply_markup,
-    contentType:"image/jpeg",
-    fileName:`mdj_image_custom_${msg.id}.jpeg`,
-    imageBuffer:imageBuffer
-});
-
-return {
-  imageBuffer:imageBuffer,
-  replymsg:msg,
-  buttonPushed:buttonPushed,
-  prompt: prompt
-}
-};
-
-function generateButtonDescription(buttonLabels,buttonsShownBefore){
-
-  let description ={};
-  let lables = buttonLabels;
-  const descriptionSource = appsettings.mdj_options.buttons_description
-  const exclude_buttons = appsettings.mdj_options.exclude_buttons;
-  lables = lables.filter(label => !exclude_buttons.includes(label));
-  if(buttonsShownBefore){
-  lables = lables.filter(label => !buttonsShownBefore.includes(label));
-  }
-  
-  for (const label of lables){
-
-      description[label] = descriptionSource[label]
-  }
-
-  return description
-  }
 
 
 module.exports = {
@@ -1349,11 +1332,9 @@ module.exports = {
   textCommandRouter,
   fileRouter,
   textMsgRouter,
-  mdj_custom_handler,
   pdfdownloadHandler,
   messageBlock,
   callbackBlock,
   handleCancelCommand,
-  generateButtonDescription,
   callbackRouter
 };

@@ -273,7 +273,7 @@ class Completion extends Transform {
       this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
 
       const completionId = this.#dialogue.regenerateCompletionFlag ?  this.#completionPreviousVersionsDoc?.sourceid : this.#completionId
-      console.log("this.#dialogue.regenerateCompletionFlag",this.#dialogue.regenerateCompletionFlag,this.#completionPreviousVersionsDoc?.sourceid,this.#completionId )
+      
       return {
             //Формируем сообщение completion
             sourceid: completionId,

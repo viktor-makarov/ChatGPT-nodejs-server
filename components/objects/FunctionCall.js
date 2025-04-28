@@ -3,28 +3,25 @@ const MdjMethods = require("../midjourneyMethods.js");
 const mongo = require("../mongo.js");
 const func = require("../other_func.js");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
+const otherFunctions = require("../other_func.js");
 
 class FunctionCall{
-
     #replyMsg;
     #requestMsg;
     #dialogue
     #user;
-    #other_functions
-    #inProgress;
+    #inProgress = false;
     #tokensLimitPerCall;
-
     #functionCall;
     #functionName;
     #functionResult="";
-    #argumentsText;
     #argumentsJson;
     #timeout_ms;
-    #isCanceled;
+    #isCanceled = false;
     #functionConfig;
     #long_wait_notes;
-    #telegramCmdHandler;
-   
+    #timeoutId
+    
 constructor(obj) {
     this.#functionCall = obj.functionCall;
     this.#functionName = this.#functionCall.function_name;
@@ -32,21 +29,17 @@ constructor(obj) {
     this.#replyMsg = obj.replyMsgInstance;
     this.#dialogue = obj.dialogueInstance;
     this.#requestMsg = obj.requestMsgInstance;
-    this.#user = obj.userInstance;
+    this.#user = obj.dialogueInstance.userInstance;
     this.#tokensLimitPerCall = obj.tokensLimitPerCall
-    this.#other_functions = require("../other_func.js");
     this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
-    this.#isCanceled = false;
-    this.abortController = null;
-    this.#inProgress = false;
-    this.#telegramCmdHandler = require("../telegramCmdHandler.js");
+    
 };
 
 async router(){
 
     let functionOutcome = {success:0,error:"No outcome from the function returned"}
     const statusMessageId = await this.sendStatusMessage()
-    this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId)
+    this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId,this.#functionConfig.long_wait_notes)
 
     const callExecutionStart = new Date();
     const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
@@ -55,6 +48,7 @@ async router(){
         functionOutcome = {success:0, error: `function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`,instructions:"Try to find another solution."}
     } else {
         functionOutcome = await this.functionHandler()
+        this.clearLongWaitNotes()
     }
 
     if(functionOutcome?.success === 1 ){
@@ -72,7 +66,7 @@ async router(){
 
     const ultimateResult = { ...functionOutcome, duration }
     
-    this.clearLongWaitNotes()
+    
 
     await this.finalizeStatusMessage(ultimateResult,statusMessageId)
     
@@ -86,30 +80,22 @@ async sendStatusMessage(){
     return result.message_id
 }
 
-triggerLongWaitNotes(tgmMsgId){
+triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
 
-    const long_wait_notes = this.#functionConfig.long_wait_notes
-    let timeouts =[];
-    if(long_wait_notes && long_wait_notes.length >0){
-        
-        for (const note of long_wait_notes){
+    return long_wait_notes.map(note => {        
            
-            let options = {
+            const options = {
                 chat_id:this.#replyMsg.chatId,
                 message_id:tgmMsgId,
             }
 
-            const timeoutInstance = setTimeout(() => {
+            return setTimeout(() => {
                 if(this.#inProgress){
                 const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.\n${note.comment}`
                 this.#replyMsg.simpleMessageUpdate(MsgText,options)
             }
             }, note.time_ms);
-            timeouts.push(timeoutInstance)
-
-        }
-    }
-    return timeouts
+        })
 };
 
 clearLongWaitNotes() {
@@ -148,8 +134,8 @@ async finalizeStatusMessage(functionResult,statusMessageId){
 }
 
 buildFunctionResultHtml(functionResult){
-    const argsJson = JSON.parse(this.#functionCall?.function_arguments);
-    const argsText = func.formatObjectToText(argsJson)
+
+    const argsText = func.formatObjectToText(this.#argumentsJson)
 
     const request = `<pre>${func.wireHtml(argsText)}</pre>`
 
@@ -161,67 +147,72 @@ buildFunctionResultHtml(functionResult){
     return htmlToSend
 }
 
-async functionWraper(){
-
-    let targetFunction;
-
-    this.handleInputArguments()
-                
-    if(this.#functionName==="get_current_datetime"){targetFunction = this.get_current_datetime()} 
-    else if(this.#functionName==="get_user_guide"){targetFunction = this.get_user_guide()} 
-    else if(this.#functionName==="run_javasctipt_code"){targetFunction = this.runJavascriptCode()}
-    else if(this.#functionName==="run_python_code"){targetFunction = this.runPythonCode()}
-    else if(this.#functionName==="generate_text_file"){targetFunction = this.generateTextFile()}
-    else if(this.#functionName==="generate_pdf_file"){targetFunction = this.generatePDFFile()}
-    else if(this.#functionName==="fetch_url_content"){targetFunction = this.fetchUrlContentRouter()}
-    else if(this.#functionName==="create_midjourney_image"){targetFunction = this.CreateMdjImageRouter()} 
-    else if(this.#functionName==="get_users_activity"){targetFunction = this.get_data_from_mongoDB_by_pipepine("tokens_logs")} 
-    else if(this.#functionName==="get_functions_usage"){targetFunction = this.get_data_from_mongoDB_by_pipepine("functions_log")} 
-    else if(this.#functionName==="get_chatbot_errors") {targetFunction = this.get_data_from_mongoDB_by_pipepine("errors_log")}
-    else if(this.#functionName==="get_knowledge_base_item") {targetFunction = this.get_knowledge_base_item()} 
-    else if(this.#functionName==="extract_text_from_file") {targetFunction = this.extract_text_from_file_router()}    
-    else {
-        let err = new Error(`Function ${this.#functionName} does not exist`)
-        err.instructions = "Provide a valid function."
+async selectEndExecuteFunction() {
+    
+    // Function map for cleaner dispatch
+    const functionMap = {
+        "create_midjourney_image": () => this.CreateMdjImageRouter(),
+        "imagine_midjourney": () => this.ImagineMdjRouter(),
+        "custom_midjourney": () => this.CustomQueryMdjRouter(),
+        "extract_text_from_file": () => this.extract_text_from_file_router(),
+        "fetch_url_content": () => this.fetchUrlContentRouter(),
+        "generate_pdf_file": () => this.generatePDFFile(),
+        "generate_text_file": () => this.generateTextFile(),
+        "get_chatbot_errors": () => this.get_data_from_mongoDB_by_pipepine("errors_log"),
+        "get_current_datetime": () => this.get_current_datetime(),
+        "get_functions_usage": () => this.get_data_from_mongoDB_by_pipepine("functions_log"),
+        "get_knowledge_base_item": () => this.get_knowledge_base_item(),
+        "get_user_guide": () => this.get_user_guide(),
+        "get_users_activity": () => this.get_data_from_mongoDB_by_pipepine("tokens_logs"),
+        "run_javasctipt_code": () => this.runJavascriptCode(),
+        "run_python_code": () => this.runPythonCode()
+    };
+    
+    const targetFunction = functionMap[this.#functionName];
+    
+    if (!targetFunction) {
+        let err = new Error(`Function ${this.#functionName} does not exist`);
+        err.instructions = "Provide a valid function.";
         throw err;
     }
-    return targetFunction
+    
+    return targetFunction();
+}
+
+async triggerFunctionTimeout() {
+    return new Promise((_, reject) => {
+        this.#timeoutId = setTimeout(() => {
+            this.#isCanceled = true;
+            let error = new Error(`Timeout exceeded. The function is allowed ${this.#timeout_ms / 1000} seconds for completion.`);
+            error.code = "FUNC_TIMEOUT";
+            reject(error);
+        }, this.#timeout_ms);
+    });
+}
+
+clearFunctionTimeout() {
+    this.#timeoutId && clearTimeout(this.#timeoutId)
 }
 
 async functionHandler(){
     //This function in any case should return a JSON object with success field.
         try{
-            const validationResult = this.validateFunctionCallObject(this.#functionCall)
-            if(validationResult.valid){
-                this.#argumentsText = this.#functionCall?.function_arguments
+            this.validateFunctionCallObject(this.#functionCall)
+            this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
 
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => {
-                        this.#isCanceled = true
-                        let error = new Error(`Timeout exceeded. The function is allowed ${this.#timeout_ms / 1000} seconds.`)
-                        error.code = "FUNC_TIMEOUT"
-                        reject(error)
-                    }, this.#timeout_ms)
-                );
-
-                    try{
-                        this.#inProgress = true
-                        this.#functionResult = await Promise.race([this.functionWraper(), timeoutPromise]);
-                        
-                        if(this.#isCanceled){
-                            return {success:0,error: "Function is canceled by timeout."}
-                        }
-                    } finally{
-                        this.#inProgress = false
-                    }
-
-                    return this.#functionResult;
-
-            } else {
-                let err = new Error(`Call is malformed. ${validationResult.error}`)
-                err.instructions = "Fix the function and retry. But undertake no more than three attempts to recall the function."
-                throw err;
+            const timeoutPromise = this.triggerFunctionTimeout();
+            
+            try {
+                this.#inProgress = true;
+                this.#functionResult = await Promise.race([this.selectEndExecuteFunction(), timeoutPromise]);
+            } finally {
+                this.clearFunctionTimeout(); // Ensure timeout is cleared in all cases
+                this.#inProgress = false;
             }
+
+                return this.#functionResult;
+
+            
         } catch(err){
             //Here is the main error handler for functions.
             err.instructions = err.instructions || "Server internal error occured. Try to find other ways to fulfill the user's task.";
@@ -254,9 +245,10 @@ validateFunctionCallObject(callObject){
     if (missingFields.length === 0) {
         return { valid: true };
     } else {
-        return { valid: false, error: `Missing fields: ${missingFields.join(', ')}` };
+        let err = new Error(`Call is malformed. Missing fields: ${missingFields.join(', ')}`)
+        err.instructions = "Fix the function and retry. But undertake no more than three attempts to recall the function."
+        throw err;
     }
-
 }
 
 async get_current_datetime(){
@@ -398,7 +390,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
         
             
             try{
-            result = await this.#other_functions.executePythonCode(codeToExecute)
+            result = await otherFunctions.executePythonCode(codeToExecute)
 
             } catch(err) {
 
@@ -646,7 +638,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             const labels = buttons.map(button => button.label)
             const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
             
-            const btnsDescription = this.#telegramCmdHandler.generateButtonDescription(labels,buttonsShownBefore)
+            const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
             await this.#dialogue.metaSetMdjButtonsShown(labels)
 
             return {
@@ -658,31 +650,81 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     instructions:"Show buttons description to the user only once."
                 };
             };
+
+            async CustomQueryMdjRouter() {
+
+                const {buttonPushed,msgId,customId,content,flags} = this.#argumentsJson
+
+                const generate_result = await MdjMethods.customHandler({msgId,customId,content,flags})
+
+                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+                
+                const prompt = otherFunctions.extractTextBetweenDoubleAsterisks(content)
+
+                const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
+                
+                const buttons = generate_result.mdjMsg?.options || [];
+                const labels = buttons.map(button => button?.label)
+                const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
+                const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
+                await this.#dialogue.metaSetMdjButtonsShown(labels)
+
+                return {
+                        success:1,
+                        result:"The command was executed and sent to the user with several options to handle further.",
+                        buttonsDescription: btnsDescription,
+                        image_url:generate_result.mdjMsg.uri,
+                        midjourney_prompt:content
+                    };
+            }
+
+            async ImagineMdjRouter(){
+       
+                const {prompt} = this.#argumentsJson
+                
+                const generate_result = await MdjMethods.generateHandler(prompt)
+                
+                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
     
+                const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
+                
+                const buttons = generate_result.mdjMsg.options
+                const labels = buttons.map(button => button.label)
+                const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
+                const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
 
-    
+                return {
+                        success:1,
+                        result:"The image has been generated and successfully sent to the user with several options to handle the image.",
+                        image_url:generate_result.mdjMsg.uri,
+                        buttonsDescription: btnsDescription,
+                        midjourney_prompt:prompt
+                    };
+                };
 
-    handleInputArguments(){
+    argumentsToJson(argumentsText){
 
-        if(this.#argumentsText === "" || this.#argumentsText === null || this.#argumentsText === undefined){
+        if(argumentsText === "" || argumentsText === null || argumentsText === undefined){
             let err = new Error("No arguments provided.")
             err.instructions = "You should provide at least required arguments"
-            err.place_in_code = "handleInputArguments"
+            err.place_in_code = "argumentsToJson"
             throw err;
-        } else {
-            try{
-                this.#argumentsJson=JSON.parse(this.#argumentsText)
-                } catch(err){
-                    try{
-                        this.#argumentsText = this.escapeJSONString(this.#argumentsText)
-                        this.#argumentsJson=JSON.parse(this.#argumentsText)
-                    } catch(err){
-                        let error =  new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
-                        error.instructions = "Inform the user about the error details in simple and understandable for ordinary users words."
-                        throw error
-                    }
-                }
         }
+        
+        try{
+            const argumentsJson=JSON.parse(argumentsText)
+            return argumentsJson
+            } catch(err){
+                try{
+                    const escapedArgumentsText = this.escapeJSONString(argumentsText)
+                    const argumentsJson=JSON.parse(escapedArgumentsText)
+                    return argumentsJson
+                } catch(err){
+                    let error =  new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+                    error.instructions = "Inform the user about the error details in simple and understandable for ordinary users words."
+                    throw error
+                }
+            }
     }
 
 
@@ -690,7 +732,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
         const {textprompt,seed,aspectratio,version,imageprompt,imageweight} = this.#argumentsJson
 
-        if(textprompt === "" || textprompt === null || textprompt === undefined){
+        if(!textprompt){
             let err = new Error("textprompt param contains no text.")
             err.instructions = "You should provide the text prompt."
             throw err;

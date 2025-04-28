@@ -136,6 +136,10 @@ class User{
         return this.#isAdmin
     }
 
+    get groups(){
+        return this.#groups
+    }
+
     get settings(){
         return this.#settings
     }
