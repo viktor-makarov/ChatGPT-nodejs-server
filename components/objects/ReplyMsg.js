@@ -179,6 +179,34 @@ return await this.#botInstance.sendPhoto(
 )
 }
 
+
+async simpleSendNewImageByUrl(obj){
+  console.log("obj",obj)
+
+  const url = obj.url
+  const caption = obj.caption
+  const reply_markup = obj.reply_markup
+
+  let options = {}
+  
+  if(caption){
+    options.caption = caption
+  }
+
+  if(reply_markup){
+    options.reply_markup = JSON.stringify(reply_markup)
+  }
+
+
+return await this.#botInstance.sendPhoto(
+  this.#chatId,
+  url,
+  options
+)
+}
+
+
+
 async simpleSendNewMessage(text,reply_markup,parse_mode,add_options){
 
 let options = {}  
@@ -398,6 +426,8 @@ return seconds_to_wait
 
 async sendMdjImage(generateResult,prompt){
 
+  
+  console.time("sending image")
   const reply_markup = await this.generateMdjButtons(generateResult.mdjMsg);
 
   let sent_result = await this.simpleSendNewImage({
@@ -407,13 +437,17 @@ async sendMdjImage(generateResult,prompt){
     fileName:`mdj_imagine_${generateResult.mdjMsg.id}.jpeg`,
     imageBuffer:generateResult.imageBuffer
   });
+
   
   sent_result.tgm_url = await this.getUrlByTgmFileId(sent_result.photo.at(-1).file_id)
-  
+
+  console.timeEnd("sending image")
   return sent_result
 }
 
 async generateMdjButtons(msg){
+
+
 
   let version_row_buttons =[]
 
@@ -453,6 +487,13 @@ async generateMdjButtons(msg){
     }
     i++; 
   };
+
+  const big_picture_url = msg.uri
+
+  if(big_picture_url){
+    const btnText = otherFunctions.getLocalizedPhrase(`full_size_image`,this.#user.language)
+    reply_markup.inline_keyboard.push([{text:btnText, url:big_picture_url}])
+  }
 
   return reply_markup
 }

@@ -110,7 +110,7 @@ async router(){
         this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId,this.#functionConfig.long_wait_notes)
        
         functionOutcome = await this.functionHandler()
-
+        
     } catch(error){
         //Here is the main error handler for functions.
         err = error
@@ -187,6 +187,8 @@ async backExecutingStatusMessage(statusMessageId){
 
 async finalizeStatusMessage(functionResult,statusMessageId){
 
+
+
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
     const msgText = `${this.#functionConfig.friendly_name}. ${resultIcon}`
 
@@ -215,14 +217,18 @@ async finalizeStatusMessage(functionResult,statusMessageId){
 
 buildFunctionResultHtml(functionResult){
 
+    const duration = functionResult?.supportive_data?.duration
+    const functionResultCopy = structuredClone(functionResult)
+    functionResultCopy.supportive_data && delete functionResultCopy.supportive_data
+    
     const argsText = func.formatObjectToText(this.#argumentsJson)
 
     const request = `<pre>${func.wireHtml(argsText)}</pre>`
 
-    const resultText = func.formatObjectToText(functionResult)
+    const resultText = func.formatObjectToText(functionResultCopy)
     const reply = `<pre><code class="json">${func.wireHtml(resultText)}</code></pre>`
 
-    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
+    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
 
     return htmlToSend
 }
@@ -294,7 +300,13 @@ async functionHandler(){
                 
                  let result = await Promise.race([this.selectAndExecuteFunction(), timeoutPromise]);
                  
-                 result.duration = ((new Date() - toolExecutionStart) / 1000).toFixed(2);
+                 if(result?.supportive_data){
+                    result.supportive_data.duration = ((new Date() - toolExecutionStart) / 1000).toFixed(2);
+                 } else {
+                    result.supportive_data = {duration: ((new Date() - toolExecutionStart) / 1000).toFixed(2)};
+                 }
+
+                
                  
                  return result
             } finally {
@@ -705,6 +717,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
 
             const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
+            
             const buttons = generate_result.mdjMsg.options
             const labels = buttons.map(button => button.label)
             const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -716,10 +729,11 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     success:1,
                     result:"The image has been generated and successfully sent to the user with several options to handle the image.",
                     buttonsDescription: btnsDescription,
-                    image_url:generate_result.mdjMsg.uri,
-                    small_image_url:sent_result.tgm_url,
-                    midjourney_prompt:prompt,
-                    instructions:"Show buttons description to the user only once."
+                    instructions:"Show buttons description to the user only once.",
+                    supportive_data:{
+                        midjourney_prompt:prompt,
+                        image_url:sent_result.tgm_url,
+                    }
                 };
             };
 
@@ -744,9 +758,10 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                         success:1,
                         result:"The command was executed and sent to the user with several options to handle further.",
                         buttonsDescription: btnsDescription,
-                        image_url:generate_result.mdjMsg.uri,
-                        small_image_url:sent_result.tgm_url,
-                        midjourney_prompt:content
+                        supportive_data:{
+                            midjourney_prompt:content,
+                            image_url:sent_result.tgm_url,
+                        }
                     };
             }
 
@@ -757,7 +772,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 const generate_result = await MdjApi.generateHandler(prompt)
                 
                 if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
-    
+                
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
                 const buttons = generate_result.mdjMsg.options
                 const labels = buttons.map(button => button.label)
@@ -767,10 +782,11 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 return {
                         success:1,
                         result:"The image has been generated and successfully sent to the user with several options to handle the image.",
-                        image_url:generate_result.mdjMsg.uri,
-                        small_image_url:sent_result.tgm_url,
                         buttonsDescription: btnsDescription,
-                        midjourney_prompt:prompt
+                        supportive_data:{
+                            midjourney_prompt:prompt,
+                            image_url:sent_result.tgm_url,
+                        }
                     };
                 };
 

@@ -312,12 +312,12 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     const placeholders = [{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
     
     const fileComment = {
-      midjourney_prompt:prompt,
-      public_url:outcome.small_image_url,
+      midjourney_prompt:outcome.supportive_data.midjourney_prompt,
+      public_url:outcome.supportive_data.image_url,
       context:otherFunctions.getLocalizedPhrase("imagine",requestMsgInstance.user.language_code,placeholders)
     }
 
-    await dialogueInstance.commitImageToDialogue(outcome.small_image_url,fileComment)
+    await dialogueInstance.commitImageToDialogue(outcome.supportive_data.image_url,fileComment)
     
     } else {
       responses.push({text:msqTemplates.mdj_lacks_prompt})
@@ -604,10 +604,10 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     
     const fileComment = {
       context: otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders),
-      public_url:outcome.small_image_url,
-      midjourney_prompt: outcome.midjourney_prompt
+      public_url:outcome.supportive_data.image_url,
+      midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
-    await dialogue.commitImageToDialogue(outcome.small_image_url,fileComment)
+    await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,fileComment)
               
     
   } else {

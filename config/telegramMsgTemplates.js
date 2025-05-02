@@ -200,5 +200,9 @@ module.exports = {
     "function_in_progress": {
         "en": "Processing will continue once the execution of the previous function is complete. ⏳",
         "ru": "Обработка продолжится, как только завершится выполнение предыдущей функции. ⏳"
+    },
+    "full_size_image":{
+        "en": "Full size image",
+        "ru": "Полноразмерное изображение"
     }
 };

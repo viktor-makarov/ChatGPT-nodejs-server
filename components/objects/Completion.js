@@ -212,7 +212,7 @@ class Completion extends Transform {
 
       this.#responseErrorRaw = value;
 
-      this.#response_status = this.#responseErrorRaw.response.status 
+      this.#response_status = this.#responseErrorRaw?.response?.status 
       this.#responseReceived = true;
 
       try{

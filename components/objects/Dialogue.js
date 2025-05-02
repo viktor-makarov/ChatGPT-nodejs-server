@@ -72,8 +72,6 @@ class Dialogue extends EventEmitter {
         await this.#completionInstance.router()
     }
 
-
-
     async getLastCompletionDoc(){
 
         const lastCompletionDoc = await mongo.getLastCompletion(this.#user.userid,this.#user.currentRegime)

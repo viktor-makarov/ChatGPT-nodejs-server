@@ -19,7 +19,9 @@ async function generateHandler(prompt){
 
     let mdjMsg;
     try {
+        console.time("mdj generate")  
         mdjMsg = await executeImagine(prompt);
+        console.timeEnd("mdj generate")  
     } catch(err){
       err.code = "MDJ_ERR"
       if(err.message.includes("429")){
@@ -31,7 +33,9 @@ async function generateHandler(prompt){
       throw err;
     }
     
+    console.time("generate buffer")
     const imageBuffer = await func.getImageByUrl(mdjMsg.uri)
+    console.timeEnd("generate buffer")
       
         return {
         imageBuffer:imageBuffer,
