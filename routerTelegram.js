@@ -1,5 +1,5 @@
 const telegramCmdHandler = require("./components/telegramCmdHandler.js");
-const openAIApiHandler = require("./components/openAI_API_Handler.js");
+const openAIApi = require("./components/openAI_API.js");
 const telegramErrorHandler = require("./components/telegramErrorHandler.js");
 const mongo = require("./components/mongo");
 const msqTemplates = require("./config/telegramMsgTemplates.js");
@@ -7,11 +7,10 @@ const ReplyMsg = require("./components/objects/ReplyMsg.js");
 const RequestMsg  = require("./components/objects/RequestMsg.js");
 const User = require("./components/objects/User.js");
 const Dialogue = require("./components/objects/Dialogue.js");
-const MdjMethods = require("./components/midjourneyMethods.js");
-
+const MdjApi = require("./components/midjourney_API.js");
 
 async function MdjAccountInfo(){
-  const info = await MdjMethods.executeInfo()
+  const info = await MdjApi.executeInfo()
    console.log(new Date(),"Midjournet account info",info)
 }
 
@@ -19,12 +18,12 @@ async function UpdateGlobalVariables() {
 
     await mongo.setDefaultVauesForNonExiting(); //Должно быть перед get_all_registeredPromise
     console.log(new Date(), "Success! Default values setted");
-    const replaceResult = await mongo.replaceProfileValues(true);
+    const replaceResult = await mongo.replaceProfileValues(false);
     console.log(new Date(), "Success! Replacements performed" ,replaceResult);
 }
 
 async function GetModelsFromAPI() {
-    const models_array = await openAIApiHandler.getModels(); //обновляем список моделей в базе
+    const models_array = await openAIApi.getModels(); //обновляем список моделей в базе
     const write_result = await mongo.update_models_listPromise(models_array.data);
     console.log(new Date(), `Success! OpenAI models updated: ${write_result}`);
 };
@@ -81,7 +80,7 @@ async function eventRouter(event,botInstance){
     })
     
     await dialogue.getMetaFromDB()
-    
+
     if (process.env.PROD_RUN != "true") {
       requestMsg.print()
     }

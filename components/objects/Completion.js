@@ -2,11 +2,10 @@ const { StringDecoder } = require('string_decoder');
 const { Transform } = require('stream');
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const otherFunctions = require("../other_func");
-const aws = require("../aws_func.js")
 const mongo = require("../mongo");
 const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
-const openAIApiHandler = require("../openAI_API_Handler.js");
+const openAIApi = require("../openAI_API.js");
 
 class Completion extends Transform {
 
@@ -51,6 +50,7 @@ class Completion extends Transform {
     #completionCurrentVersionNumber = 1;
     #long_wait_notes;
     #timeout;
+    #throttledDeliverCompletionToTelegram
 
     #toolCallsInstance;
     #tool_calls=[];
@@ -88,7 +88,7 @@ class Completion extends Transform {
         );
 
         this.#timeout = modelConfig[this.#user.currentModel]?.timeout_ms || 120000;
-            
+        this.#throttledDeliverCompletionToTelegram = otherFunctions.throttleNew(this.#replyMsg.deliverCompletionToTelegram.bind(this.#replyMsg) ,appsettings.telegram_options.send_throttle_ms)
       };
 
       async router(){
@@ -103,7 +103,7 @@ class Completion extends Transform {
           await this.#replyMsg.sendStatusMsg()
           this.#long_wait_notes = this.triggerLongWaitNotes()
 
-          await openAIApiHandler.chatCompletionStreamAxiosRequest(
+          await openAIApi.chatCompletionStreamAxiosRequest(
             this.#requestMsg,
             this.#replyMsg,
             this.#dialogue
@@ -316,11 +316,26 @@ class Completion extends Transform {
         let err = new Error(error.message);
         err.message_from_response = this.#responseErrorMsg
         err.place_in_code = err.place_in_code || "Completion.UnSuccessResponseHandle";
+
+
+
         if (this.#response_status === 400 || error.message.includes("400")) {
-          if(this.#responseErrorMsg.includes("context_length_exceeded")){
+
+          const contentExceededPattern = new RegExp(/context_length_exceeded/);
+          const contentIsExceeded = contentExceededPattern.test(this.#responseErrorMsg)
+          const imageSizeExceededPattern = new RegExp(/image size is (\d+(?:\.\d+)?[KMG]B), which exceeds the allowed limit of (\d+(?:\.\d+)?[KMG]B)/);
+          const imageSizeIsExceededMatch = this.#responseErrorMsg.match(imageSizeExceededPattern)
+          
+          if(contentIsExceeded){
             await this.#replyMsg.sendToNewMessage(msqTemplates.token_limit_exceeded,null,null)
             const response = await this.#dialogue.resetDialogue()
             await this.#replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode)
+          } else if (imageSizeIsExceededMatch){
+            const placeholders = [{key:"[actualsize]",filler:imageSizeIsExceededMatch[1]},{key:"[limit]",filler:imageSizeIsExceededMatch[2]}]
+            const devPrompt = otherFunctions.getLocalizedPhrase("image_size_exceeded",this.#replyMsg.user.language_code,placeholders)
+            await this.#replyMsg.sendToNewMessage(devPrompt,null,null)
+            const response = await this.#dialogue.resetDialogue()
+            await this.#replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode)            
           } else {
             err.code = "OAI_ERR_400";
             err.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response ?? "отсутствует");
@@ -417,6 +432,8 @@ class Completion extends Transform {
     //  console.log(JSON.stringify(this.currentCompletionObj,null,4))
     }
 
+  
+
     async processChunksBatch(chunksToProcess){
 
         this.#countChunks +=  chunksToProcess.length
@@ -428,6 +445,8 @@ class Completion extends Transform {
 
         await this.extractData(jsonChunks)
         this.#replyMsg.deliverCompletionToTelegramThrottled(this)
+       // this.#throttledDeliverCompletionToTelegram(this)
+
         this.#isProcessingChunk = false;
     }
 

@@ -1,5 +1,5 @@
-const MdjClient = require("./midjourneyClient.js").MdjClient
 const func = require("./other_func.js");
+const MdjClient = require("./midjourneyClient.js").mdjClient;
 
   async function executeImagine(prompt) {
     
@@ -7,9 +7,10 @@ const func = require("./other_func.js");
             console.log("Progress",new Date(), progress);
             console.log("loading imagine",new Date(), uri);
         };
-       // await MdjClient.init();
+        
         const msg = await MdjClient.Imagine(prompt, progressFunction);
-
+        
+        //console.log("msg",msg)
         return msg
 };
 
@@ -83,7 +84,7 @@ async function executeCustom(obj) {
 };
 
 async function executeInfo(){
-    const msg = await MdjClient.Info() 
+    const msg = await global.mdjClient.Info() 
     return msg
 }
 

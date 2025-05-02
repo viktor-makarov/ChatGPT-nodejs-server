@@ -1,7 +1,7 @@
 const mongo = require("../mongo");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
-const aws = require("../aws_func.js")
+const awsApi = require("../AWS_API.js")
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const ToolCalls  = require("./ToolCalls.js");
 const Completion = require("./Completion.js");
@@ -112,7 +112,7 @@ class Dialogue extends EventEmitter {
 
          })
     }
-    
+
     get toolCallsInstance(){
         return this.#toolCallsInstance
     }
@@ -167,22 +167,19 @@ class Dialogue extends EventEmitter {
                 console.log("Error in deletePreviousRegenerateButtons",err.message)
             }
         }
-
             await mongo.updateCompletionInDb({
                 filter: {telegramMsgId:{"$in":Array.from(lastTgmMsgIdsFromCompletions)}},
                 updateBody:{telegramMsgBtns:false}
         })
-        
         }
     
-
     async resetDialogue(){
 
 
         await this.deletePreviousRegenerateButtons()
         await mongo.deleteDialogByUserPromise([this.#userid], "chat");
-        await aws.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
-        const deleteS3Results = await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)),this.#user.currentRegime)
+        await awsApi.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
+        const deleteS3Results = await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)),this.#user.currentRegime)
         const deletedFiles = deleteS3Results.Deleted
         await this.commitDevPromptToDialogue(otherFunctions.startDeveloperPrompt(this.#user))
 
@@ -202,8 +199,6 @@ class Dialogue extends EventEmitter {
         } else {
             return { text: msqTemplates.dialogresetsuccessfully,buttons:buttons};
         }
-
-        
     }
 
     async getMetaFromDB(){

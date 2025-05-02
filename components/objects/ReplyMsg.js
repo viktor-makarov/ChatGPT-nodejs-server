@@ -1,7 +1,7 @@
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
-
+const ErrorHandler = require("../telegramErrorHandler");
 
 class ReplyMsg extends EventEmitter {
 
@@ -16,7 +16,6 @@ class ReplyMsg extends EventEmitter {
 #waitMsgInProgress = false;
 #sentTextIndex = 0;
 #user;
-#errorHandler;
 #chatId;
 #lastMsgSentId
 #msgIdsForDbCompletion =[];
@@ -33,6 +32,7 @@ class ReplyMsg extends EventEmitter {
   one_time_keyboard: true,
   inline_keyboard: [],
 };
+
 #msgThreshold = appsettings.telegram_options.big_outgoing_message_threshold;
 
 constructor(obj) {
@@ -51,7 +51,6 @@ constructor(obj) {
         callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
       };
 
-    this.#errorHandler = require("../telegramErrorHandler");
 };
 
 set text(value){
@@ -117,6 +116,10 @@ async sendTypingStatus(){
 
 async sendAudioListenMsg(){
  return  await this.sendToNewMessage(msqTemplates.audio_dowload_progess)
+}
+
+async getUrlByTgmFileId(fileId){
+  return await this.#botInstance.getFileLink(fileId)
 }
 
 async sendStatusMsg(){
@@ -397,14 +400,16 @@ async sendMdjImage(generateResult,prompt){
 
   const reply_markup = await this.generateMdjButtons(generateResult.mdjMsg);
 
-  const sent_result = await this.simpleSendNewImage({
+  let sent_result = await this.simpleSendNewImage({
     caption:prompt,
     reply_markup:reply_markup,
     contentType:"image/jpeg",
     fileName:`mdj_imagine_${generateResult.mdjMsg.id}.jpeg`,
     imageBuffer:generateResult.imageBuffer
   });
-
+  
+  sent_result.tgm_url = await this.getUrlByTgmFileId(sent_result.photo.at(-1).file_id)
+  
   return sent_result
 }
 
@@ -519,7 +524,7 @@ async deliverCompletionToTelegram(completionInstance){
           console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 3.")
         }
             let oneMsgText;
-
+            
             const isValidTextToSend = this.#textToSend && this.#textToSendLength>0
             if(!isValidTextToSend){
               return
@@ -640,7 +645,7 @@ async deliverCompletionToTelegram(completionInstance){
             }
           }  catch(err){
             
-            this.#errorHandler.main(
+            ErrorHandler.main(
             {
               replyMsgInstance:this,
               error_object:err

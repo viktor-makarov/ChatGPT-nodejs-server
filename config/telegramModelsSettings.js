@@ -37,6 +37,9 @@ module.exports = {
                 "options_desc":"Выберите версию модели:",
                 "templateRespMsg":"Модель для функции Диалог изменена на [value].",
                 "options":{
+                    "gpt-4o":{
+                        "name":"gpt-4o",
+                    },
                     "gpt-4.1":{
                         "name":"GPT-4.1",
                     },

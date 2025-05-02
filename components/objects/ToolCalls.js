@@ -74,8 +74,8 @@ async router(toolCalls = []){
 
             toolResult.content = JSON.stringify(outcome)
             toolResult.success = outcome.success
-            toolResult.duration = outcome.duration
-            toolResult.image_url = outcome.image_url
+            toolResult.duration = outcome.duration || 0;
+            toolResult.image_url = outcome.small_image_url
             toolResult.midjourney_prompt = outcome.midjourney_prompt
                            
         } else {

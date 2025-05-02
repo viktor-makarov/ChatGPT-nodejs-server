@@ -258,7 +258,7 @@ TelegramDialogSheema.index({ regime: -1 });
 TelegramDialogSheema.index({ userid: -1 });
 
 
-const TelegramDialogMetaSheema = new Schema(
+const DialogMetaSheema = new Schema(
   {
 
     userid: { type: Number, index: true },
@@ -267,7 +267,22 @@ const TelegramDialogMetaSheema = new Schema(
   },
   { collection: appsettings.mongodb_names.col_dialogue_meta }
 );
-TelegramDialogMetaSheema.index({ userid: -1 });
+DialogMetaSheema.index({ userid: -1 });
+
+const FunctionQueueSheema = new Schema(
+  {
+    name: { type: String, index: true },
+    function_id: { type: String},
+    timestamp: {
+      type: Date,
+      default: Date.now,
+      expires: 300 // 6 minute expiration time for the document
+    }
+  },
+  { collection: appsettings.mongodb_names.col_function_queue }
+);
+FunctionQueueSheema.index({ name: -1 });
+FunctionQueueSheema.index({ function_id: -1 });
 
 module.exports = {
   ProfileSheema,
@@ -281,5 +296,6 @@ module.exports = {
   MdjImages,
   HashStorage,
   KnowledgeBaseSheema,
-  TelegramDialogMetaSheema
+  DialogMetaSheema,
+  FunctionQueueSheema
 };

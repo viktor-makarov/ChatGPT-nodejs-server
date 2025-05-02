@@ -1,11 +1,11 @@
 //Подключаем и настраиваем OpenAI
 
 const FormData = require("form-data");
-const msqTemplates = require("../config/telegramMsgTemplates");
-const modelSettings = require("../config/telegramModelsSettings");
-const modelConfig = require("../config/modelConfig");
+const msqTemplates = require("../config/telegramMsgTemplates.js");
+const modelSettings = require("../config/telegramModelsSettings.js");
+const modelConfig = require("../config/modelConfig.js");
 const { Readable } = require("stream");
-const mongo = require("./mongo");
+const mongo = require("./mongo.js");
 const toolsCollection = require("./objects/toolsCollection.js");
 
 const axios = require("axios");
@@ -186,7 +186,6 @@ async function chatCompletionStreamAxiosRequest(
     };
     
     const available_tools =  await toolsCollection.getAvailableToolsForCompletion(dialogueClass.userInstance)
-    
     const canUseTools = modelConfig[requestMsg.user.currentModel].canUseTool
     const canUseTemperature = modelConfig[requestMsg.user.currentModel].canUseTemperature
     

@@ -10,14 +10,62 @@ const reg_log_collection = global.mongoConnection.model(global.appsettings.mongo
 const token_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_tokens_log,scheemas.TokensLogSheema);
 const function_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_functions_log,scheemas.FunctionUsageLogSheema);
 const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
-const dialog_meta_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_dialogue_meta,scheemas.TelegramDialogMetaSheema);
-
+const dialog_meta_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_dialogue_meta,scheemas.DialogMetaSheema);
+const function_queue_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_function_queue,scheemas.FunctionQueueSheema);
 const telegram_profile_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_profiles,scheemas.ProfileSheema);
 const telegram_model_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_models,scheemas.ModelsSheema);
 const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
 const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_names.coll_hash_storage,scheemas.HashStorage);
 const knowledge_base_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_knowledge_base,scheemas.KnowledgeBaseSheema);
 
+async function getFunctionQueueByName(queue_name){
+
+  try {
+    return await function_queue_collection.findOne({ name: queue_name }, { _id: 0, __v: 0 }).lean()
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
+
+async function removeFunctionFromQueue(function_id){
+
+  try {
+    return await function_queue_collection.deleteOne({ function_id: function_id });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+
+}
+
+
+async function addFunctionToQueue(queue_name,function_id,max_concurrent){
+
+  const session = await mongoose.startSession();
+
+  let result  = null;
+  try {
+    await session.withTransaction(async () => {
+      const count = await function_queue_collection.countDocuments({ name: queue_name }).session(session);
+    
+      if (count < max_concurrent) {
+        result = await function_queue_collection.create([{
+          name: queue_name,
+          function_id: function_id, // замените на нужный id
+        }], { session });
+      }
+    });
+    return result
+
+  } catch(err){
+    err.code = "MONGO_ERR";
+    throw err;
+  } finally {
+    session.endSession();
+  }
+
+}
 
 async function createDialogueMeta(object){
   try {
@@ -66,7 +114,7 @@ async function resetAllInProgressDialogueMeta(){
 
 async function readDialogueMeta(userid){
   try {
-    return  await dialog_meta_collection.findOne({ userid: userid },{ _id: 0,__v:0})
+    return  await dialog_meta_collection.findOne({ userid: userid },{ _id: 0,__v:0}).lean()
   } catch (err) {
     err.code = "MONGO_ERR";
     throw err;
@@ -79,7 +127,7 @@ async function getKwgItemBy(id){
      const filter = { id: id }
      const result =  await knowledge_base_collection.find(
        filter
-     );
+     ).lean();
 
      return result
     
@@ -97,7 +145,7 @@ async function getKwgItemsForUser(user){
      const result =  await knowledge_base_collection.find(
       filter,
       { _id: 0, id: 1, name: 1,description:1,instructions:1}
-     );
+     ).lean();
      
      return result
     
@@ -132,7 +180,7 @@ async function getJsonBy(hash){
      const filter = { hash: hash }
      const result =  await hash_storage.find(
        filter
-     );
+     ).lean();
 
      if(result.length===0){
       return null
@@ -186,7 +234,7 @@ async function get_mdj_msg_byId(msgId){
     const filter = { id: msgId }
     return await mdj_image_msg.find(
       filter
-    );
+    ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
     throw err;
@@ -391,7 +439,7 @@ async function getUploadedFilesBySourceId(sourceid_list){
     return await dialog_collection.find(
       filter
       ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,_id:0}
-    );
+    ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
     throw err;
@@ -1381,5 +1429,8 @@ module.exports = {
   updateToolCallResult,
   getDialogueForCompletion,
   getDocByTgmBtnsFlag,
-  getLastCompletion
+  getLastCompletion,
+  getFunctionQueueByName,
+  addFunctionToQueue,
+  removeFunctionFromQueue
 };

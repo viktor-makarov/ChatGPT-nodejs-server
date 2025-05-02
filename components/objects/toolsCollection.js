@@ -1,6 +1,8 @@
 
+const { timeout } = require("puppeteer");
 const mongo = require("../mongo.js");
 const scheemas = require("../mongo_Schemas.js");
+const { queue } = require("sharp");
 
 const list = [
     {
@@ -26,6 +28,7 @@ const list = [
         availableForGroups: ["admin"],
         availableForToolCalls: true,
         depricated:false,
+        
         addDescriptions: async function (){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
@@ -206,9 +209,8 @@ const list = [
             friendly_name: "Генерация изображения",
             timeout_ms:180000,
             long_wait_notes: [
-                {time_ms:30000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
-                {time_ms:60000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
-                {time_ms:90000,comment:"Хм ... 🤔 А вот это уже звоночек ... "},
+                {time_ms:60000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
+                {time_ms:90000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
                 {time_ms:120000,comment:"Совсем никуда не годится!😤 Но надо дать еще шанс!"},
                 {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
             ],
@@ -216,7 +218,9 @@ const list = [
             availableInRegimes: ["chat"],
             availableForGroups: ["admin","basic"],
             availableForToolCalls: true,
-            depricated:false
+            depricated:false,
+            queue_name:"midjourney"
+
         },
         {
             type:"function",
@@ -237,9 +241,8 @@ const list = [
             friendly_name: "Генерация изображения",
             timeout_ms:180000,
             long_wait_notes: [
-                {time_ms:30000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
-                {time_ms:60000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
-                {time_ms:90000,comment:"Хм ... 🤔 А вот это уже звоночек ... "},
+                {time_ms:60000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
+                {time_ms:90000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
                 {time_ms:120000,comment:"Совсем никуда не годится!😤 Но надо дать еще шанс!"},
                 {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
             ],
@@ -247,7 +250,9 @@ const list = [
             availableInRegimes: ["chat","translator","texteditor"],
             availableForGroups: ["admin","basic"],
             availableForToolCalls: false,
-            depricated:false
+            depricated:false,
+            queue_name:"midjourney"
+            
         },
         {
             type:"function",
@@ -294,7 +299,8 @@ const list = [
             availableInRegimes: ["chat","translator","texteditor"],
             availableForGroups: ["admin","basic"],
             availableForToolCalls: false,
-            depricated:false
+            depricated:false,
+            queue_name:"midjourney"
         },
         {
             type:"function",
@@ -322,6 +328,7 @@ const list = [
             try_limit: 3,
             availableInRegimes: ["chat"],
             availableForGroups: ["admin","basic"],
+            availableForToolCalls: true,
             depricated:false
     },
     {
@@ -453,10 +460,23 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:false
+        depricated:false,
+        queue_name:"test"
     }
 ]
 
+const queueConfig = {
+    "midjourney":{
+        max_concurrent: 2,
+        timeout_ms: 180000,
+        interval_ms: 3000
+    },
+    "test":{
+        max_concurrent: 3,
+        timeout_ms: 30000,
+        interval_ms: 3000
+    }
+};
 
 async function getAvailableTools(userClass){
 
@@ -493,5 +513,6 @@ async function toolConfigByFunctionName(functionName,userClass){
 
 module.exports = {
     getAvailableToolsForCompletion,
-    toolConfigByFunctionName
+    toolConfigByFunctionName,
+    queueConfig
 }

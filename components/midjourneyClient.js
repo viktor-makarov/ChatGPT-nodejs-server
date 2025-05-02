@@ -1,6 +1,7 @@
 const { Midjourney } = require('midjourney')
 
-  const MdjClient = new Midjourney({
+
+  const mdjClient  = new Midjourney({
     ServerId: process.env.DISCORD_SERVER_ID,
     ChannelId: process.env.DISCORD_CHANNEL_ID,
     SalaiToken: process.env.DISCORD_SALAI_TOKEN,
@@ -9,9 +10,9 @@ const { Midjourney } = require('midjourney')
     ApiInterval: 700,
     SessionId:"b9f92e3e5c2c4169866d325fd5e1d2ad",
     Debug: false,
-    Ws:true
+    Ws:false
   });
 
 module.exports = {
-  MdjClient
+  mdjClient
 }

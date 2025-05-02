@@ -1,9 +1,10 @@
 const UrlResource = require("./UrlResource.js");
-const MdjMethods = require("../midjourneyMethods.js");
+const MdjApi = require("../midjourney_API.js");
 const mongo = require("../mongo.js");
 const func = require("../other_func.js");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
 const otherFunctions = require("../other_func.js");
+const toolsCollection = require("./toolsCollection.js");
 
 class FunctionCall{
     #replyMsg;
@@ -35,42 +36,102 @@ constructor(obj) {
     
 };
 
+async removeFunctionFromQueue(){
+    
+    this.#functionConfig.queue_name && await mongo.removeFunctionFromQueue(this.#functionCall.tool_call_id)
+}
+
+async addFunctionToQueue(statusMessageId){
+
+    const queue_name = this.#functionConfig.queue_name
+   
+    if(!queue_name){
+        return
+    }
+
+    await func.delay(500*this.#functionCall.tool_call_index)
+
+    const queueConfig = toolsCollection.queueConfig[queue_name] || {max_concurrent:3,timeout_ms:30000,interval_ms:3000}
+    const {max_concurrent, timeout_ms, interval_ms} = queueConfig
+    const startTime = Date.now();
+
+    let statusMessage = 'execution';
+    while (Date.now() - startTime < timeout_ms) {
+
+        const result = await mongo.addFunctionToQueue(queue_name,this.#functionCall.tool_call_id,max_concurrent)
+        
+        if(result){
+            
+            if(statusMessage === `in queue`){
+                await this.backExecutingStatusMessage(statusMessageId)
+                statusMessage = `execution`
+            }
+            return true
+        } else {
+
+            if(statusMessage === `execution`){
+              await this.inQueueStatusMessage(statusMessageId)
+              statusMessage = `in queue`
+            }
+            await func.delay(interval_ms)
+        }
+    }
+
+    let error = new Error(`Timeout in queue exceeded. The function spent in the queue ${timeout_ms / 1000} seconds and was revoked.`);
+    error.instructions = "Tell the user that the attempt should be repeated later."
+    error.code = "FUNC_QUEUE_TIMEOUT";
+    error.queue_timeout = true;
+    throw error;
+}
+
+async handleFailedFunctionsStatus(success,functionName,queue_timeout){
+
+    if(!success && !queue_timeout){
+        const failedRuns = await this.#dialogue.metaIncrementFailedFunctionRuns(functionName)
+        if(failedRuns === this.#functionConfig.try_limit){
+            return {success:0,error:`Limit of unsuccessful calls is reached. Stop sending toll calls on this function, report the problem to the user and try to find another solution. To clean the limit the dialog should be reset.`}
+        }
+    } else {
+        await this.#dialogue.metaResetFailedFunctionRuns(functionName)
+    }
+}
+
 async router(){
 
-    let functionOutcome = {success:0,error:"No outcome from the function returned"}
-    const statusMessageId = await this.sendStatusMessage()
-    this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId,this.#functionConfig.long_wait_notes)
+       let functionOutcome = {success:0,error:"No outcome from the function returned"}
+       let statusMessageId;
+       let err;
+    try{
 
-    const callExecutionStart = new Date();
-    const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
-    
-    if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
-        functionOutcome = {success:0, error: `function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`,instructions:"Try to find another solution."}
-    } else {
+        statusMessageId = await this.sendStatusMessage()
+
+        await this.addFunctionToQueue(statusMessageId)
+
+        this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId,this.#functionConfig.long_wait_notes)
+       
         functionOutcome = await this.functionHandler()
+
+    } catch(error){
+        //Here is the main error handler for functions.
+        err = error
+        err.instructions = err.instructions || "Server internal error occured. Try to find other ways to fulfill the user's task.";
+        err.place_in_code = err.place_in_code || "FunctionCall.router";
+        err.user_message = null //Functions have their own pattern to communicate errors to the user
+        telegramErrorHandler.main(
+                {
+                replyMsgInstance:this.#replyMsg,
+                error_object:err
+                }
+            );
+        
+        functionOutcome =  {success:0,error:err.message + (err.stack ? "\n" + err.stack : ""),instructions:err.instructions}
+    } finally {
         this.clearLongWaitNotes()
+        await this.removeFunctionFromQueue()
+        await this.handleFailedFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
+        statusMessageId && await this.finalizeStatusMessage(functionOutcome,statusMessageId)
+        return functionOutcome;
     }
-
-    if(functionOutcome?.success === 1 ){
-        if(failedRunsBeforeFunctionRun>0){
-        await this.#dialogue.metaResetFailedFunctionRuns(this.#functionName)
-        }
-    } else {
-        const failedRunsAfterFunctionRun = await this.#dialogue.metaIncrementFailedFunctionRuns(this.#functionName)
-        if(failedRunsAfterFunctionRun === this.#functionConfig.try_limit){
-            functionOutcome.stop_calls = "Limit of unsuccessful calls is reached. Stop sending toll calls on this function, report the problem to the user and try to find another solution. To clean the limit the dialog should be reset."
-        }
-    }
-
-    const duration = ((new Date() - callExecutionStart) / 1000).toFixed(2);
-
-    const ultimateResult = { ...functionOutcome, duration }
-    
-    
-
-    await this.finalizeStatusMessage(ultimateResult,statusMessageId)
-    
-    return ultimateResult;
 }
 
 async sendStatusMessage(){
@@ -83,7 +144,6 @@ async sendStatusMessage(){
 triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
 
     return long_wait_notes.map(note => {        
-           
             const options = {
                 chat_id:this.#replyMsg.chatId,
                 message_id:tgmMsgId,
@@ -105,10 +165,30 @@ clearLongWaitNotes() {
     }
 }
 
+async inQueueStatusMessage(statusMessageId){
+
+    const msgText = `${this.#functionConfig.friendly_name}. В очереди ... ⏳`
+
+    const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:statusMessageId
+    })
+
+}
+
+async backExecutingStatusMessage(statusMessageId){
+    const msgText = `${this.#functionConfig.friendly_name}. Выполняется.`
+
+    const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:statusMessageId
+    })
+}
+
 async finalizeStatusMessage(functionResult,statusMessageId){
 
-    const resultImage = functionResult.success === 1 ? "✅" : "❌";
-    const msgText = `${this.#functionConfig.friendly_name}. ${resultImage}`
+    const resultIcon = functionResult.success === 1 ? "✅" : "❌";
+    const msgText = `${this.#functionConfig.friendly_name}. ${resultIcon}`
 
     const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
 
@@ -147,7 +227,7 @@ buildFunctionResultHtml(functionResult){
     return htmlToSend
 }
 
-async selectEndExecuteFunction() {
+async selectAndExecuteFunction() {
     
     // Function map for cleaner dispatch
     const functionMap = {
@@ -196,39 +276,32 @@ clearFunctionTimeout() {
 
 async functionHandler(){
     //This function in any case should return a JSON object with success field.
-        try{
+           
+            const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
+   
+            if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
+                return {success:0, error: `function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`,instructions:"Try to find another solution."}
+            };
+            
             this.validateFunctionCallObject(this.#functionCall)
             this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
 
             const timeoutPromise = this.triggerFunctionTimeout();
-            
+
             try {
                 this.#inProgress = true;
-                this.#functionResult = await Promise.race([this.selectEndExecuteFunction(), timeoutPromise]);
+                 const toolExecutionStart = new Date();
+                
+                 let result = await Promise.race([this.selectAndExecuteFunction(), timeoutPromise]);
+                 
+                 result.duration = ((new Date() - toolExecutionStart) / 1000).toFixed(2);
+                 
+                 return result
             } finally {
                 this.clearFunctionTimeout(); // Ensure timeout is cleared in all cases
                 this.#inProgress = false;
             }
-
-                return this.#functionResult;
-
-            
-        } catch(err){
-            //Here is the main error handler for functions.
-            err.instructions = err.instructions || "Server internal error occured. Try to find other ways to fulfill the user's task.";
-            err.place_in_code = err.place_in_code || "FunctionCall.functionHandler";
-            err.user_message = null //Functions have their own pattern to communicate errors to the user
-            telegramErrorHandler.main(
-                    {
-                      replyMsgInstance:this.#replyMsg,
-                      error_object:err
-                    }
-                  );
-            
-            return {success:0,error:err.message + (err.stack ? "\n" + err.stack : ""),instructions:err.instructions}
-        }
     }
-
 
 validateFunctionCallObject(callObject){
     const requiredFields = ['tool_call_index', 'tool_call_id', 'tool_call_type', 'function_name', 'function_arguments'];
@@ -274,7 +347,6 @@ async get_data_from_mongoDB_by_pipepine(table_name){
     let pipeline = [];
 
     try{
-
         pipeline =  func.replaceNewDate(this.#argumentsJson.aggregate_pipeline) 
     } catch(err){
         return {success:0,error: err.message + "" + err.stack}
@@ -628,12 +700,11 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
             const prompt = this.craftPromptFromArguments()
 
-            const generate_result = await MdjMethods.generateHandler(prompt)
+            const generate_result = await MdjApi.generateHandler(prompt)
 
             if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
 
             const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
-
             const buttons = generate_result.mdjMsg.options
             const labels = buttons.map(button => button.label)
             const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -646,6 +717,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     result:"The image has been generated and successfully sent to the user with several options to handle the image.",
                     buttonsDescription: btnsDescription,
                     image_url:generate_result.mdjMsg.uri,
+                    small_image_url:sent_result.tgm_url,
                     midjourney_prompt:prompt,
                     instructions:"Show buttons description to the user only once."
                 };
@@ -655,14 +727,13 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
                 const {buttonPushed,msgId,customId,content,flags} = this.#argumentsJson
 
-                const generate_result = await MdjMethods.customHandler({msgId,customId,content,flags})
+                const generate_result = await MdjApi.customHandler({msgId,customId,content,flags})
 
                 if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
                 
                 const prompt = otherFunctions.extractTextBetweenDoubleAsterisks(content)
 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
-                
                 const buttons = generate_result.mdjMsg?.options || [];
                 const labels = buttons.map(button => button?.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -674,6 +745,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                         result:"The command was executed and sent to the user with several options to handle further.",
                         buttonsDescription: btnsDescription,
                         image_url:generate_result.mdjMsg.uri,
+                        small_image_url:sent_result.tgm_url,
                         midjourney_prompt:content
                     };
             }
@@ -682,12 +754,11 @@ async get_data_from_mongoDB_by_pipepine(table_name){
        
                 const {prompt} = this.#argumentsJson
                 
-                const generate_result = await MdjMethods.generateHandler(prompt)
+                const generate_result = await MdjApi.generateHandler(prompt)
                 
                 if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
     
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
-                
                 const buttons = generate_result.mdjMsg.options
                 const labels = buttons.map(button => button.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -697,6 +768,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                         success:1,
                         result:"The image has been generated and successfully sent to the user with several options to handle the image.",
                         image_url:generate_result.mdjMsg.uri,
+                        small_image_url:sent_result.tgm_url,
                         buttonsDescription: btnsDescription,
                         midjourney_prompt:prompt
                     };

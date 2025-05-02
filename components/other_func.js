@@ -3,11 +3,11 @@ const modelConfig = require("../config/modelConfig");
 const { Script } = require('vm');
 const cryptofy = require('crypto');
 const axios = require("axios");
-const aws = require("./aws_func.js")
+const awsApi = require("./AWS_API.js")
 const unicodeit = require('unicodeit');
 const mjAPI = require('mathjax-node');
 const mongo = require("./mongo");
-const google = require("./google_func");
+const googleApi = require("./google_API.js");
 const path = require('path');
 
 
@@ -418,7 +418,7 @@ async function countTokensLambda(text,model){
   const requestObj = {"text":text,"model":model}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2-countTokens",requestObj)
+  const result = await awsApi.lambda_invoke("R2D2-countTokens",requestObj)
 
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -438,7 +438,7 @@ async function countTokensLambda(text,model){
     const err = new Error("countTokensLambda: " + resultJSON.errorMessage)
     throw err
   } else {
-    const err = new Error('unspecified error in aws.lambda_invoke function')
+    const err = new Error('unspecified error in awsApi.lambda_invoke function')
     throw err
   }
 }
@@ -447,7 +447,7 @@ async function extractTextFromFile(url,mine_type){
 
   try{
     if(mine_type==="image/jpeg" || mine_type ==="image/gif"){
-    const text =  await google.ocr_document(url,mine_type)
+    const text =  await googleApi.ocr_document(url,mine_type)
     console.log(text)
       return {success:1,text:text}
 
@@ -456,7 +456,7 @@ async function extractTextFromFile(url,mine_type){
       if(result.text.length>10){
         return {success:1,text:result.text}
       } else {
-        const text =  await google.ocr_document(url,mine_type)
+        const text =  await googleApi.ocr_document(url,mine_type)
         return {success:1,text:text}  
       }
     } else if (mine_type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
@@ -477,7 +477,7 @@ async function extractTextLambdaPDFFile(url){
   const requestObj = {"file_url":url}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2-extractTextFromPDF",requestObj)
+  const result = await awsApi.lambda_invoke("R2D2-extractTextFromPDF",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -493,7 +493,7 @@ async function extractTextLambdaPDFFile(url){
     const err = new Error("extractTextLambdaPDFFile: " + resultJSON.errorType + " " + resultJSON.errorMessage)
     throw err
   } else {
-    const err = new Error('unspecified error in aws.lambda_invoke function')
+    const err = new Error('unspecified error in awsApi.lambda_invoke function')
     throw err
   }
 }
@@ -505,7 +505,7 @@ async function executePythonCode(codeToExecute){
   const requestObj = {"code":codeToExecute}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2-executePythonCode",requestObj)
+  const result = await awsApi.lambda_invoke("R2D2-executePythonCode",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -521,7 +521,7 @@ async function executePythonCode(codeToExecute){
     const err = new Error("executePythonCode: " + resultJSON.errorType + " " + resultJSON.errorMessage)
     throw err
   } else {
-    const err = new Error('unspecified error in aws.lambda_invoke function')
+    const err = new Error('unspecified error in awsApi.lambda_invoke function')
     throw err
   }
 }
@@ -531,7 +531,7 @@ async function extractTextLambdaExcelFile(url){
   const requestObj = {"file_url":url}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2-extractTextFromExcelFile",requestObj)
+  const result = await awsApi.lambda_invoke("R2D2-extractTextFromExcelFile",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -547,7 +547,7 @@ async function extractTextLambdaExcelFile(url){
     const err = new Error("extractTextLambdaExcelFile: " + resultJSON.errorMessage)
     throw err
   } else {
-    const err = new Error('unspecified error in aws.lambda_invoke function')
+    const err = new Error('unspecified error in awsApi.lambda_invoke function')
     throw err
   }
 }
@@ -557,7 +557,7 @@ async function extractTextLambdaOtherFiles(url,mine_type){
   const requestObj = {"file_url":url,"file_mime_type":mine_type}
   const start = performance.now();
 
-  const result = await aws.lambda_invoke("R2D2-extractTextFromOtherFiles",requestObj)
+  const result = await awsApi.lambda_invoke("R2D2-extractTextFromOtherFiles",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -573,7 +573,7 @@ async function extractTextLambdaOtherFiles(url,mine_type){
     const err = new Error("extractTextLambdaOtherFiles: " + resultJSON.errorMessage)
     throw err
   } else {
-    const err = new Error('unspecified error in aws.lambda_invoke function')
+    const err = new Error('unspecified error in awsApi.lambda_invoke function')
     throw err
   }
 }
@@ -944,12 +944,25 @@ function throttleNew(func, delay) {
   let throttleTimeout = null
   return (...args)=> {
      if(!throttleTimeout) {
+      
          func(...args)
          throttleTimeout = setTimeout(()=> {
              throttleTimeout = null
          }, delay)
      } 
   }
+}
+
+function debounceNew(func, delay) {
+  let debounceTimer
+  return (...args)=> {
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(()=> {
+          func(...args)
+      }, delay)
+  }
+}
+
 
 function throttlePromise(fn, delay) {
   let timerId;
@@ -1185,5 +1198,7 @@ module.exports = {
   htmlToPdfBuffer,
   formatHtml,
   generateButtonDescription,
-  extractTextBetweenDoubleAsterisks
+  extractTextBetweenDoubleAsterisks,
+  throttleNew,
+  debounceNew
 };

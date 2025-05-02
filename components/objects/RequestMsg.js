@@ -128,7 +128,7 @@ constructor(obj) {
             this.#inputType = "file"
             this.#fileType = "image"
             const photoParts = obj.requestMsg.photo
-            const lastPart = photoParts[photoParts.length-1]
+            const lastPart = photoParts.at(-1)
             this.#fileId = lastPart.file_id
             this.#fileUniqueId = lastPart.file_unique_id
             this.#fileSize = lastPart.file_size

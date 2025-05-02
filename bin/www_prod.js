@@ -16,6 +16,8 @@ const mongoClient = require("../components/mongoClient")
 global.mongoConnection = await mongoClient.connectToMongo()
 const chromeBrowser = require("../components/chromeBrowser")
 global.chromeBrowserHeadless = await chromeBrowser.launchBrowserHeadless()
+//const mdjCLient = require("../components/midjourneyClient")
+//await mdjCLient.initClient()
 const TelegramBot = require('node-telegram-bot-api');
 const telegramRouter = require("../routerTelegram")
 
@@ -72,6 +74,10 @@ process.on('uncaughtException', async (error) => {
             await global.chromeBrowserHeadless.close()
             console.log(new Date(),'Chrome browser closed.');
         }
+        // if(mdjCLient){
+        //     await global.mdjClient.close()
+        //     console.log(new Date(),'Midjourney client closed.');
+        // }
         if (global.mongoConnection) {
             setTimeout(() => {
                 global.mongoConnection.close();

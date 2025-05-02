@@ -4,9 +4,8 @@ const modelSettings = require("../config/telegramModelsSettings");
 const reports = require("../config/telegramReportsConfig.js");
 const otherFunctions = require("./other_func");
 const modelConfig = require("../config/modelConfig");
-const openAIApiHandler = require("./openAI_API_Handler.js");
-const MdjMethods = require("./midjourneyMethods.js");
-const aws = require("./aws_func.js")
+const openAIApi = require("./openAI_API.js");
+const awsApi = require("./AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
 const toolsCollection  = require("./objects/toolsCollection.js");
 
@@ -35,7 +34,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
             return
           }
           const result = await replyMsgInstance.sendAudioListenMsg()
-          const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
+          const transcript = await openAIApi.VoiceToText(requestMsgInstance)
           replyMsgInstance.text = transcript;
           await replyMsgInstance.simpleMessageUpdate(transcript,
             {
@@ -68,7 +67,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
           return responses;
       }
         const result = await replyMsgInstance.sendAudioListenMsg()
-        const transcript = await openAIApiHandler.VoiceToText(requestMsgInstance)
+        const transcript = await openAIApi.VoiceToText(requestMsgInstance)
         replyMsgInstance.text = transcript;
         await replyMsgInstance.simpleMessageUpdate(transcript,
           {
@@ -163,7 +162,7 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
       }
 
       const result = await replyMsgInstance.sendTextToSpeachWaiterMsg()
-      await openAIApiHandler.TextToVoice(requestMsgInstance);
+      await openAIApi.TextToVoice(requestMsgInstance);
       await replyMsgInstance.deleteMsgByID(result.message_id)
       
     break;
@@ -293,7 +292,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     const toolCallExtended = {
       tool_call_id:requestMsgInstance.msgId,
-      tool_call_index:1,
+      tool_call_index:0,
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
@@ -314,11 +313,11 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     
     const fileComment = {
       midjourney_prompt:prompt,
-      public_url:outcome.image_url,
+      public_url:outcome.small_image_url,
       context:otherFunctions.getLocalizedPhrase("imagine",requestMsgInstance.user.language_code,placeholders)
     }
 
-    await dialogueInstance.commitImageToDialogue(outcome.image_url,fileComment)
+    await dialogueInstance.commitImageToDialogue(outcome.small_image_url,fileComment)
     
     } else {
       responses.push({text:msqTemplates.mdj_lacks_prompt})
@@ -380,7 +379,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   const callback_data_input = requestMsg.callback_data;
 
   await replyMsg.sendTypingStatus()
-  
+
   if (callback_event === "info_accepted"){
 
     const response = await infoacceptHandler(requestMsg);
@@ -462,7 +461,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   } else if (callback_event === "readaloud"){
 
     const result = await replyMsg.sendTextToSpeachWaiterMsg()
-    await openAIApiHandler.TextToVoice(requestMsg);
+    await openAIApi.TextToVoice(requestMsg);
     await replyMsg.deleteMsgByID(result.message_id)
 
   } else if(callback_event === "un_f_up") {
@@ -569,7 +568,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   } else if(callback_event === "mdjbtn"){
 
     const jsonDecoded = await otherFunctions.decodeJson(requestMsg.callback_data)
-
+    
     const functionName = "custom_midjourney"
     const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance)
     const functionArguments = {
@@ -582,7 +581,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     
     const toolCallExtended = {
       tool_call_id:requestMsg.refMsgId,
-      tool_call_index:1,
+      tool_call_index:0,
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
@@ -605,10 +604,10 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     
     const fileComment = {
       context: otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders),
-      public_url:outcome.image_url,
+      public_url:outcome.small_image_url,
       midjourney_prompt: outcome.midjourney_prompt
     };
-    await dialogue.commitImageToDialogue(outcome.image_url,fileComment)
+    await dialogue.commitImageToDialogue(outcome.small_image_url,fileComment)
               
     
   } else {
@@ -723,7 +722,7 @@ try{
 const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
 const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
-let uploadResult  = await aws.uploadFileToS3(downloadStream,filename)
+let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
 uploadResult.success = 1
 
 return uploadResult
@@ -968,8 +967,8 @@ async function unregisterHandler(requestMsgInstance) {
     );
 
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
-    await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
-    await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
+    await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
+    await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
@@ -986,15 +985,15 @@ async function createNewFreeAccount(){
 
 async function resetTranslatorDialogHandler(requestMsgInstance) {
   await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "translator");
-  await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid,"translator") //to delete tater
-  await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"translator")
+  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,"translator") //to delete tater
+  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"translator")
   return;
 }
 
 async function resetTexteditorDialogHandler(requestMsgInstance) {
   await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "texteditor");
-  await aws.deleteS3FilesByPefix(requestMsgInstance.user.userid,"texteditor") //to delete tater
-  await aws.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"texteditor")
+  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,"texteditor") //to delete tater
+  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"texteditor")
   return;
 }
 
