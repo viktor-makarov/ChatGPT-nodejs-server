@@ -180,7 +180,7 @@ const list = [
                     properties: {
                         textprompt: {
                             type: "string",
-                            description: `A text prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. Maximum length of the text prompt is 150 words. If you are given a midjourney text prompt - you must use it exactly AS IS.`
+                            description: `A text prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. If you are given a midjourney text prompt - you must use it exactly AS IS. To embed text into the image it should be put into double quotes`
                         },
                         aspectratio: {
                             type: "string",

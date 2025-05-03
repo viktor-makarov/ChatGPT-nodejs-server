@@ -81,7 +81,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
         
         const fileCaption =  requestMsgInstance.fileCaption
 
-        const tgmFileLnk = await requestMsgInstance.getFileLinkFromTgm()
+        await requestMsgInstance.getFileLinkFromTgm()
 
         const isAllowedFileType = requestMsgInstance.isAllowedFileType()
 
@@ -112,25 +112,30 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
         const fileCaption =  requestMsgInstance.fileCaption
 
-        const tgmFileLnk = await requestMsgInstance.getFileLinkFromTgm()
+        await requestMsgInstance.getFileLinkFromTgm()
 
+        const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+        
         const isAllowedFileType = requestMsgInstance.isAllowedFileType()
 
-        if(!isAllowedFileType){
+        if(s3UploadResult.success === 0 || !isAllowedFileType){
           //Add info to the dialogue and notify user about problems with the file upload
           await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
 
         } else {
+
+             const url = s3UploadResult.Location
+
             const fileComment = {
               fileid:requestMsgInstance.msgId,
               context:"User has sent the image to the bot.",
-              public_url:tgmFileLnk
+              public_url:url
             }
             if(fileCaption){
               fileComment.user_prompt = fileCaption
             }
-            await dialogueInstance.commitImageToDialogue(tgmFileLnk,fileComment)
+            await dialogueInstance.commitImageToDialogue(url,fileComment)
         }
 
         if(fileCaption){
@@ -378,7 +383,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   const callback_event = requestMsg.callback_event;
   const callback_data_input = requestMsg.callback_data;
 
-  await replyMsg.sendTypingStatus()
+  replyMsg.sendTypingStatus()
+  replyMsg.answerCallbackQuery(requestMsg.callbackId)
 
   if (callback_event === "info_accepted"){
 
@@ -387,6 +393,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     responses.push(response)
     requestMsg.user.hasReadInfo = true
 
+    
   } else if (callback_event === "dwnld_hash") {
 
     const content = await otherFunctions.decodeJson(callback_data_input)
@@ -613,6 +620,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   } else {
     responses = [{text:msqTemplates.unknown_callback}]
   }
+
+  
   return responses
 
 }

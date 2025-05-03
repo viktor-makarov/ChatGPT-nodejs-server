@@ -1153,6 +1153,26 @@ function commentSymbolForLanguage(language){
     return symbol;
 }
 
+function extractFileExtention(fileName){
+
+  const parts = fileName.split('.');
+  if (parts.length < 2 || (parts.length === 2 && parts[0] === '')) {
+      return '';
+  };
+
+  return parts[parts.length-1];
+}
+
+function extractFileNameFromURL(fileLink){
+
+  const parts = fileLink.split('/');
+  if (parts.length < 2 || (parts.length === 2 && parts[0] === '')) {
+      return '';
+  };
+
+  return parts[parts.length-1]
+}
+
 module.exports = {
   formatObjectToText,
   countTokens,
@@ -1200,5 +1220,7 @@ module.exports = {
   generateButtonDescription,
   extractTextBetweenDoubleAsterisks,
   throttleNew,
-  debounceNew
+  debounceNew,
+  extractFileExtention,
+  extractFileNameFromURL
 };

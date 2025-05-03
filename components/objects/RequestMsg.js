@@ -141,7 +141,7 @@ constructor(obj) {
             this.#fileType = "document"
 
             this.#fileName = obj.requestMsg.document?.file_name
-            this.#fileExtention = this.extractFileExtention(this.#fileName)
+            this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
             this.#fileMimeType = obj.requestMsg.document?.mime_type
             this.#fileId = obj.requestMsg.document?.file_id
             this.#fileUniqueId = obj.requestMsg.document?.file_unique_id
@@ -284,8 +284,8 @@ async getFileLinkFromTgm(){
         this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",this.#user.language_code,placeholders)
         return null
     }
-    this.#fileName = this.#fileName ? this.#fileName : this.extractFileNameFromURL(this.#fileLink)
-    this.#fileExtention = this.extractFileExtention(this.#fileName)
+    this.#fileName = this.#fileName ? this.#fileName : otherFunctions.extractFileNameFromURL(this.#fileLink)
+    this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
     this.#fileMimeType = this.#fileMimeType ? this.#fileMimeType : mime.lookup(this.#fileName)
     
     return this.#fileLink

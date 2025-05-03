@@ -220,7 +220,7 @@ buildFunctionResultHtml(functionResult){
     const duration = functionResult?.supportive_data?.duration
     const functionResultCopy = structuredClone(functionResult)
     functionResultCopy.supportive_data && delete functionResultCopy.supportive_data
-    
+
     const argsText = func.formatObjectToText(this.#argumentsJson)
 
     const request = `<pre>${func.wireHtml(argsText)}</pre>`
@@ -732,7 +732,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     instructions:"Show buttons description to the user only once.",
                     supportive_data:{
                         midjourney_prompt:prompt,
-                        image_url:sent_result.tgm_url,
+                        image_url:sent_result.aws_url,
                     }
                 };
             };
@@ -760,7 +760,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                         buttonsDescription: btnsDescription,
                         supportive_data:{
                             midjourney_prompt:content,
-                            image_url:sent_result.tgm_url,
+                            image_url:sent_result.aws_url,
                         }
                     };
             }
@@ -778,14 +778,14 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 const labels = buttons.map(button => button.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
                 const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
-
+                
                 return {
                         success:1,
                         result:"The image has been generated and successfully sent to the user with several options to handle the image.",
                         buttonsDescription: btnsDescription,
                         supportive_data:{
                             midjourney_prompt:prompt,
-                            image_url:sent_result.tgm_url,
+                            image_url:sent_result.aws_url,
                         }
                     };
                 };

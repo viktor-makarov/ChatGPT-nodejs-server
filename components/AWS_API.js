@@ -51,7 +51,7 @@ async function lambda_invoke(funcName, payload){
   }
 
   async function uploadFileToS3(downloadStream,filename){
-
+    
     const key = process.env.S3_STORAGE_INCOMINGFILES_FOLDER+"/"+filename
     const bucketName = process.env.S3_BUCKET_NAME
     
