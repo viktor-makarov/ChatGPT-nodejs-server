@@ -414,7 +414,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   } else if (callback_event === "pdf_download"){
 
     await pdfdownloadHandler(replyMsg);
-    
+
   } else if (callback_event === "regenerate"){
 
     if(requestMsg.user.currentRegime != callback_data_input){
@@ -450,25 +450,20 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if (callback_event === "latex_formula"){
 
+    const msgSent = await replyMsg.sendLatexFormulaWaiterMsg()
     const lastdoc = await dialogue.getLastCompletionDoc()
     
-   
-
     const letexObject = lastdoc.content_latex_formula[lastdoc.completion_version-1]
     let pngBuffer;
-    try{
     pngBuffer  = await otherFunctions.generateCanvasPNG(letexObject);
-    } catch(err){
-      let error = new Error(`Error in generating PNG from LaTeX formula: ${err}`)
-      error.place_in_code = error.place_in_code || "routerTelegram.on.callback_query.latex_formula.pngBuffer"
-      throw error;
-    }
+    
     await replyMsg.simpleSendNewImage({
       imageBuffer:pngBuffer,
       fileName: `Формулы.png`,
       contentType: 'image/png',
-      caption:`Формулы для ${currentVersionIndex} версии ответа`
+      caption:`Формулы для ${lastdoc.completion_version} версии ответа`
     })
+    await replyMsg.deleteMsgByID(msgSent.message_id)
 
   } else if (callback_event === "readaloud"){
 

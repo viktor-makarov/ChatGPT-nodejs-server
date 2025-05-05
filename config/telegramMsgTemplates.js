@@ -108,6 +108,11 @@ module.exports = {
         "en":"Preparing document...",
         "ru":"Готовлю документ..."
         },
+
+    "latexFormula_progress":{
+        "en":"Preparing formulas...",
+        "ru":"Готовлю формулы..."
+        },
     "readaloud":"Преобразуй в голос",
     "mdj_lacks_prompt":"Промпт не найден. Добавьте промт после /imagine.",
     "texttospeech_length_error":"Текст для преобразования в голос не должен превышать [limit] символов. Сократите текст и повторите запрос.",

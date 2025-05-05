@@ -98,36 +98,46 @@ async function decodeJson(hash){
   return await mongo.getJsonBy(hash)
 };
 
-async function createTextImage(text) {
-  const fontSize = 10;
+async function createTextImage(text,options = {}) {
+
+  if (!text) {
+    throw new Error('Text input is required');
+  }
+
+  const { 
+    fontSize = 10, 
+    fontFamily = 'Arial',
+    background = { r: 255, g: 255, b: 255, alpha: 1 }
+  } = options;
+
   const estimatedWidth = Math.round(text.length * (fontSize * 0.6));
   const height = Math.round(fontSize * 1.5);
 
-  const svgText = `<svg width="${estimatedWidth}" height="${height}">
-    <text x="0" y="${fontSize}" font-family="Arial" font-size="${fontSize}">${text}</text></svg>`;
-  return {
-    pngBufferText: await sharp(Buffer.from(svgText)).png().toBuffer(),
+  const svgText = `<svg width="${estimatedWidth}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+      <text 
+        x="0" 
+        y="${fontSize}" 
+        font-family="${fontFamily}" 
+        font-size="${fontSize}"
+        fill="black"
+      >${text}</text>
+    </svg>`;
+
+    const sharpInstance = sharp(Buffer.from(svgText));
+    
+    // Apply background if specified
+    if (!background) {
+      sharpInstance.ensureAlpha();
+    }
+
+    const pngBufferText = await sharpInstance.png().toBuffer();
+
+    return {
+    pngBufferText,
     widthText: estimatedWidth,
     heightText: height,
   };
 }
-
-function latexToSvg(latex) {
-  return new Promise((resolve, reject) => {
-    mjAPI.typeset({
-      math: latex,
-      format: "TeX",      // Input format
-      svg: true
-    }, function (data) {
-      if (data.errors) {
-        reject(data.errors);
-      } else {
-        resolve(data.svg);
-      }
-    });
-  });
-}
-
 
 async function getImageByUrl(url){
 
@@ -141,30 +151,98 @@ async function getImageByUrl(url){
    return binaryImage
 };
 
+function latexToSvg(latex, options = {}) {
 
-async function convertLatexToPNG(latex){
-  const svg = await latexToSvg(latex);
+  if (!latex || typeof latex !== 'string') {
+    return Promise.reject(new Error('Invalid LaTeX input: must be a non-empty string'));
+  }
+
+  const { displayMode = false, fontSize = 1.0 } = options;
+
+  return new Promise((resolve, reject) => {
+    mjAPI.typeset({
+      math: latex,
+      format: "TeX",      // Input format
+      svg: true,
+      displayMode: displayMode,
+      ex: 6 * fontSize,
+      linebreaks: true 
+    }, function (data) {
+      if (data.errors) {
+        reject(new Error(`MathJax failed to convert LaTeX: ${data.errors.join(', ')}`));
+      } else {
+        resolve(data.svg);
+      }
+    });
+  });
+}
+
+async function convertLatexToPNG(latex, options = {}){
+  if (!latex || typeof latex !== 'string') {
+    throw new Error('Invalid LaTeX input: must be a non-empty string');
+  }
+
+  const { 
+    transparent = false, 
+    scale = 1,
+    displayMode = false,
+    fontSize = 1.0,
+    quality = 6
+  } = options;
+
+  const svg = await latexToSvg(latex, { displayMode, fontSize });
 
   const { widthLatex, heightLatex } = await getSvgDimensions(svg);
   const svgBuffer = Buffer.from(svg);
-  const pngBufferLatex = await sharp(svgBuffer)
-  .png()
+
+  const sharpInstance = sharp(svgBuffer);
+    
+  // Configure output options
+  const outputOptions = { quality };
+  
+  // Apply transparency if requested
+  if (transparent) {
+    sharpInstance.ensureAlpha();
+  }
+
+  if (scale !== 1) {
+    sharpInstance.resize({
+      width: Math.round(widthLatex * scale),
+      height: Math.round(heightLatex * scale),
+      fit: 'contain'
+    });
+  }
+
+  const pngBufferLatex = await sharpInstance
+  .png(outputOptions)
   .toBuffer();
 
-  return {pngBufferLatex,widthLatex,heightLatex}
+  return {pngBufferLatex,
+          widthLatex: scale !== 1 ? Math.round(widthLatex * scale) : widthLatex,
+          heightLatex: scale !== 1 ? Math.round(heightLatex * scale) : heightLatex
+        }
 }
 
-async function generateCanvasPNG(letexObject){
+async function generateCanvasPNG(latexObject, options = {}){
+
+  if (!latexObject || typeof latexObject !== 'object' || Object.keys(latexObject).length === 0) {
+    throw new Error('Invalid latexObject: must be a non-empty object');
+  }
+
+  try {
+  const {
+    majorMargin = 10,
+    minorMargin = 5,
+    initialOffset = 10
+  } = options;
+
+  
+  const latexArray = Object.entries(latexObject)
 
   let compositeImages = [];
-  const latexArray = Object.entries(letexObject)
-  
-  const majorMargin = 10;
-  const minorMargin = 5;
 
-  for (let i = 0; i < latexArray.length; i++) {
-    const number = latexArray[i][0]
-    const latexText = latexArray[i][1]
+  // Step 1: Generate all images first
+  for (const [number, latexText] of latexArray) {
 
     const { pngBufferText,widthText,heightText} = await createTextImage(`# ${number}`);
     const { pngBufferLatex,widthLatex,heightLatex} = await convertLatexToPNG(latexText);
@@ -173,54 +251,66 @@ async function generateCanvasPNG(letexObject){
       png:pngBufferText,
       width:widthText,
       height:heightText,
-      marginDown:minorMargin
+      marginDown:minorMargin,
+      type: 'label'
+
     });
     compositeImages.push({
       png:pngBufferLatex,
       width:widthLatex,
       height:heightLatex,
-      marginDown: majorMargin 
+      marginDown: majorMargin,
+      type: 'formula'
     });
   }
-  let totalCompositeHeight = compositeImages.reduce((accumulator, currentItem) => {
-    return accumulator + currentItem.height;
-  }, 0);
-  totalCompositeHeight = totalCompositeHeight + majorMargin*compositeImages.length + minorMargin*compositeImages.length;
-  const compositeWidths = compositeImages.map(item => item.width);
-  const maxCompositeWidth = Math.max(...compositeWidths);
 
-  let initialYOffset = 10;
-  let initialXOffset = 10;
-  let compositeObject = [];
-  let currentYOffset = initialYOffset;
-  for (let i = 0; i < compositeImages.length; i++) {
+  // Step 2: Calculate layout dimensions
+  const maxWidth = Math.max(...compositeImages.map(item => item.width));
 
-    const { png, height,marginDown } = compositeImages[i];
+  const totalHeight = compositeImages.reduce((total, item) => {
+    return total + item.height + item.marginDown;
+  }, initialOffset);
+  
 
-    compositeObject.push({
-      input: png,
-      top: currentYOffset,
-      left: initialXOffset
-    });
-    currentYOffset += height + marginDown;
-  };
+ // Step 3: Create positioning layout
+ const canvasWidth = maxWidth + 2 * initialOffset;
+ const canvasHeight = totalHeight;
 
-  const canvasHight = totalCompositeHeight + initialYOffset;
- // const canvasWidth = Math.max(Math.round(canvasHight*1.5),maxCompositeWidth+initialXOffset)
-  const canvasWidth = maxCompositeWidth+initialXOffset
+  // Position all elements
+  let currentY = initialOffset;
+  const compositionLayout = compositeImages.map(item => {
+    const position = {
+      input: item.png,
+      top: currentY,
+      left: initialOffset
+    };
+
+    // Update Y position for next item
+    currentY += item.height + item.marginDown; 
+    return position;
+  });
+
+
+  // Step 4: Generate final image
   let pngBuffer = await sharp({
     create: {
       width: canvasWidth,
-      height: canvasHight,
+      height: canvasHeight,
       channels: 4,
       background: { r: 255, g: 255, b: 255, alpha: 1 }
     }
   })
-  .composite(compositeObject)
+  .composite(compositionLayout)
   .png()
   .toBuffer();
 
   return pngBuffer
+
+
+} catch (error) {
+  error.place_in_code = "otherfunctions.generateCanvasPNG"
+  throw new Error(`Error in generating PNG from LaTeX formula: ${error}`);
+}
 }
 
 
@@ -341,7 +431,7 @@ function convertMarkdownToLimitedHtml(text){
 }
 
 function wireHtml(text){
-
+  
   let wiredText = text ? text: "";
   wiredText = wiredText
   .replace(/&/g,"&amp;")//this should be first
@@ -350,9 +440,6 @@ function wireHtml(text){
 
   return wiredText
 }
-
-
-
 
   function generateTextBuffer(text) {
     // Convert the text to a buffer using UTF-8 encoding

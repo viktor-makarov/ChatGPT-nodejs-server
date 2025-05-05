@@ -146,6 +146,12 @@ async sendDocumentDownloadWaiterMsg(){
   return await this.sendToNewMessage(text)
 };
 
+
+async sendLatexFormulaWaiterMsg(){
+  const text = otherFunctions.getLocalizedPhrase(`latexFormula_progress`,this.#user.language)
+  return await this.sendToNewMessage(text)
+};
+
 async simpleSendNewImage(obj){
 
   const imageBuffer = obj.imageBuffer
