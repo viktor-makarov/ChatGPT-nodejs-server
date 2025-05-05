@@ -48,7 +48,6 @@ async function generateHandler(prompt){
       let mdjMsg;
     try {
         mdjMsg = await executeCustom(obj);
-        console.log("customHandler mdjMsg",mdjMsg)
     } catch(err){
       err.code = "MDJ_ERR"
       if(err.message.includes("429")){

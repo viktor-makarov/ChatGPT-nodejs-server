@@ -215,20 +215,40 @@ async finalizeStatusMessage(functionResult,statusMessageId){
     })
 }
 
+modifyStringify(key,value){
+
+    if (key === 'supportive_data') {
+        return undefined; // Exclude this key from the JSON stringification
+    }
+return value
+}
+
+unWireText(text =''){
+
+const newText = text.replace(/\\r\\n/g, '\n')
+.replace(/\\n/g, '\n')
+.replace(/\\t/g, '\t')
+.replace(/\\'/g, "'")
+.replace(/\\"/g, '"')
+.replace(/\\\\/g, '\\')
+.replace(/\\\//g, '/')
+
+ return newText
+}
+
+
 buildFunctionResultHtml(functionResult){
 
-    const duration = functionResult?.supportive_data?.duration
-    const functionResultCopy = structuredClone(functionResult)
-    functionResultCopy.supportive_data && delete functionResultCopy.supportive_data
-
-    const argsText = func.formatObjectToText(this.#argumentsJson)
-
+    let argsText = JSON.stringify(this.#argumentsJson,this.modifyStringify,2)
+    argsText = this.unWireText(argsText)
     const request = `<pre>${func.wireHtml(argsText)}</pre>`
 
-    const resultText = func.formatObjectToText(functionResultCopy)
-    const reply = `<pre><code class="json">${func.wireHtml(resultText)}</code></pre>`
+    let stringifiedFunctionResult = JSON.stringify(functionResult,this.modifyStringify,2)
+    stringifiedFunctionResult = this.unWireText(stringifiedFunctionResult)
+    
+    const reply = `<pre><code class="json">${func.wireHtml(stringifiedFunctionResult)}</code></pre>`
 
-    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
+    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult?.supportive_data?.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
 
     return htmlToSend
 }
@@ -429,7 +449,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             this.validateRequiredFieldsFor_generatePDFFile()
 
             const {filename,htmltext} = this.#argumentsJson
-
+            
             const formatedHtml = func.formatHtml(htmltext,filename)
 
             const filebuffer = await func.htmlToPdfBuffer(formatedHtml)
@@ -778,7 +798,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 const labels = buttons.map(button => button.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
                 const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
-                
+
                 return {
                         success:1,
                         result:"The image has been generated and successfully sent to the user with several options to handle the image.",

@@ -136,12 +136,15 @@ async sendTelegramWaitMsg(seconds){
        return await this.simpleSendNewMessage(text,null,null,null)
 };
 
-async sendTextToSpeachWaiterMsg(seconds){
+async sendTextToSpeachWaiterMsg(){
   const text = msqTemplates.texttospeech_progress
   return await this.sendToNewMessage(text)
 };
 
-
+async sendDocumentDownloadWaiterMsg(){
+  const text = otherFunctions.getLocalizedPhrase(`documentDownload_progress`,this.#user.language)
+  return await this.sendToNewMessage(text)
+};
 
 async simpleSendNewImage(obj){
 
@@ -433,7 +436,7 @@ async uploadFileToS3FromTgm(tgmFileId,userInstance){
   const filename = otherFunctions.valueToMD5(String(userInstance.userid))+ "_" + userInstance.currentRegime + "_" + otherFunctions.valueToMD5(String(fileName)) + "." + fileExtension;  
 
   let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
-  
+
   return uploadResult.Location
 }
 
@@ -451,11 +454,8 @@ async sendMdjImage(generateResult,prompt){
     imageBuffer:generateResult.imageBuffer
   });
 
-  console.time("getting readable stream")
 
   sent_result.aws_url = await this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user)
-
-  console.timeEnd("getting readable stream")
 
   console.timeEnd("sending image")
   return sent_result

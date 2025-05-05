@@ -344,9 +344,9 @@ function wireHtml(text){
 
   let wiredText = text ? text: "";
   wiredText = wiredText
+  .replace(/&/g,"&amp;")//this should be first
   .replace(/</g,"&lt;")
   .replace(/>/g,"&gt;")
-  .replace(/&/g,"&amp;")
 
   return wiredText
 }
@@ -366,9 +366,8 @@ function wireHtml(text){
 
     const page = await global.chromeBrowserHeadless.newPage();
     
-    // Загружаем “на лету” HTML-контент
-    await page.goto(`data:text/html;charset=utf-8,${encodeURIComponent(htmlString)}`, {
-      waitUntil: 'networkidle0'
+      await page.setContent(htmlString, {
+        waitUntil: 'networkidle0',
     });
   
     // Генерируем PDF и возвращаем буфер
@@ -1000,17 +999,6 @@ async function delay(ms) {
 }
 
 
-function jsonToText(obj, indent = '') {
-  let text = '';
-  for (let key in obj) {
-      if(typeof obj[key] === 'object' && obj[key] !== null) {
-          text += `${indent}${key}:\n${jsonToText(obj[key], indent + '    ')}`;
-      } else {
-          text += `${indent}${key}: ${obj[key]}\n`;
-      }
-  }
-  return text;
-}
 
 
 function formatObjectToText(obj) {
@@ -1064,12 +1052,28 @@ function saveBufferToTempFile(buffer, filename) {
 
 function formatHtml(html,filename){
 
-  return `<html>
+  
+  html = html.split('\n').map(line =>
+    line.replace(/^[ ]+/, m => '&nbsp;'.repeat(m.length))
+  ).join('\n')
+  html = html.replace(/<pre>/gi, '<div>').replace(/<\/pre>/gi, '</div>')
+
+  return `<style>
+
+          body {
+            white-space: pre-line; /* Ensures text wraps and preserves whitespace */
+            font-family: Arial, sans-serif;
+            font-size: 12pt;
+          }
+          </style>
+          <html>
           <head>
           <title>${filename}</title>
           </head>
           <body>
+          <div>
           ${html}
+          </div>
           </body>
       </html>`
 }
@@ -1184,7 +1188,6 @@ module.exports = {
   optionsToButtons,
   saveTextToTempFile,
   saveBufferToTempFile,
-  jsonToText,
   replaceNewDate,
   replaceISOStr,
   countTokensProportion,

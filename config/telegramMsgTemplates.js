@@ -104,6 +104,10 @@ module.exports = {
     "system_msg_show":"Задание: [task]",
     "too_long_message":"... \n\n\nСообщение сокращено, т.к. превысило допустимый размер сообщения Телеграмм.",
     "texttospeech_progress":"Генерирую аудио запись...",
+    "documentDownload_progress":{
+        "en":"Preparing document...",
+        "ru":"Готовлю документ..."
+        },
     "readaloud":"Преобразуй в голос",
     "mdj_lacks_prompt":"Промпт не найден. Добавьте промт после /imagine.",
     "texttospeech_length_error":"Текст для преобразования в голос не должен превышать [limit] символов. Сократите текст и повторите запрос.",

@@ -314,15 +314,17 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     const outcome = await functionInstance.router();
 
+    if(outcome.success === 1){
     const placeholders = [{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
     
     const fileComment = {
-      midjourney_prompt:outcome.supportive_data.midjourney_prompt,
-      public_url:outcome.supportive_data.image_url,
+      midjourney_prompt:outcome?.supportive_data?.midjourney_prompt,
+      public_url:outcome.supportive_data?.image_url,
       context:otherFunctions.getLocalizedPhrase("imagine",requestMsgInstance.user.language_code,placeholders)
     }
 
-    await dialogueInstance.commitImageToDialogue(outcome.supportive_data.image_url,fileComment)
+    await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,fileComment)
+    }
     
     } else {
       responses.push({text:msqTemplates.mdj_lacks_prompt})
@@ -396,20 +398,23 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     
   } else if (callback_event === "dwnld_hash") {
 
+    const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
     const content = await otherFunctions.decodeJson(callback_data_input)
     const date = new Date()
     const filename = (content?.folded_text || "file") + "_" + date.toISOString() + ".pdf"
     const formatedHtml =  otherFunctions.formatHtml(content.unfolded_text,filename)
     const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
+
     const mimetype = "application/pdf"
     const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
     otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
     await  replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+    await replyMsg.deleteMsgByID(msgSent.message_id)
 
   } else if (callback_event === "pdf_download"){
 
     await pdfdownloadHandler(replyMsg);
-
+    
   } else if (callback_event === "regenerate"){
 
     if(requestMsg.user.currentRegime != callback_data_input){
@@ -605,6 +610,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
     const outcome = await functionInstance.router();
     
+    if(outcome.success === 1){
     const choosenButton = jsonDecoded.label
     const choosenBtnsDescription = otherFunctions.generateButtonDescription([choosenButton],[])
     const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
@@ -615,7 +621,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
     await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,fileComment)
-              
+    }
     
   } else {
     responses = [{text:msqTemplates.unknown_callback}]
@@ -1207,7 +1213,7 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
     }
 
     if(callback_data_array.includes("currentsettings")){
-      return {operation:"insert", text: msqTemplates.current_settings.replace("[settings]",otherFunctions.jsonToText(requestMsgInstance.user.settings)) };
+      return {operation:"insert", text: msqTemplates.current_settings.replace("[settings]",JSON.stringify(requestMsgInstance.user.settings,null,2)) };
     } else if (callback_data_array.includes("back")) {
       callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
