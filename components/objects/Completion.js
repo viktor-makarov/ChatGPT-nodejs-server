@@ -160,8 +160,6 @@ class Completion extends Transform {
         this.#completionPreviousVersionsContentCount = this.#completionPreviousVersionsContent.length
         this.#completionPreviousVersionNumber = lastCompletionDoc.completion_version;
         this.#completionCurrentVersionNumber = this.#completionPreviousVersionsContentCount + 1
-
-      
       }
 
 

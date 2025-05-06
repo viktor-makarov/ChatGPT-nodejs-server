@@ -438,7 +438,7 @@ async function getUploadedFilesBySourceId(sourceid_list){
     
     return await dialog_collection.find(
       filter
-      ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,_id:0}
+      ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,fileName:1,_id:0}
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";

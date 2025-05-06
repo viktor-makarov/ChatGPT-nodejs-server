@@ -108,7 +108,6 @@ module.exports = {
         "en":"Preparing document...",
         "ru":"Готовлю документ..."
         },
-
     "latexFormula_progress":{
         "en":"Preparing formulas...",
         "ru":"Готовлю формулы..."

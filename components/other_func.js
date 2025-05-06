@@ -9,7 +9,8 @@ const mjAPI = require('mathjax-node');
 const mongo = require("./mongo");
 const googleApi = require("./google_API.js");
 const path = require('path');
-
+const pdf = require('pdf-parse');
+const { PDFDocument } = require('pdf-lib');
 
 function generateButtonDescription(buttonLabels,buttonsShownBefore){
 
@@ -61,6 +62,50 @@ async function startFileDownload(url){
 return response
 }
 
+async function getPDFPageNumber(pdfBuffer){
+
+  const pdfData = await pdf(pdfBuffer, { max: 0 }); // max: 0 to avoid parsing content
+
+  return pdfData.numpages
+}
+
+
+async function splitPDFByPageChunks(pdfBuffer, limit) {
+  if (!pdfBuffer || !Buffer.isBuffer(pdfBuffer)) {
+    throw new Error('Invalid PDF buffer provided');
+  }
+
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error('Page limit must be a positive integer');
+  }
+
+    const srcPdfDoc = await PDFDocument.load(pdfBuffer);
+    const totalPages = srcPdfDoc.getPageCount(); // Using direct page count instead of separate function call
+    const chunks = [];
+
+    for (let startPage = 0; startPage < totalPages; startPage += limit) {
+      const endPage = Math.min(startPage + limit, totalPages);
+      const pageIndicesToCopy = Array.from(
+        { length: endPage - startPage }, 
+        (_, i) => i + startPage
+      );
+      
+      const chunkPdfDoc = await PDFDocument.create();
+      const copiedPages = await chunkPdfDoc.copyPages(srcPdfDoc, pageIndicesToCopy);
+      
+      copiedPages.forEach(page => chunkPdfDoc.addPage(page));
+      
+      const chunkBuffer = await chunkPdfDoc.save({ 
+        useObjectStreams: false // Improves compatibility with some PDF readers
+      });
+      
+      chunks.push(Buffer.from(chunkBuffer));
+    }
+
+    return chunks;
+
+}
+
 async function fileDownload(url){
   const response = await axios({
     url,
@@ -69,7 +114,7 @@ async function fileDownload(url){
     timeout: 5000
   });
 
-return response.data
+return Buffer.from(response.data)
 }
 
 mjAPI.start();
@@ -476,6 +521,14 @@ function wireHtml(text){
     }
   }
 
+  function filenameWoExtention(fullfilename){
+
+    const fileNameParts = fullfilename.split('.')
+    fileNameParts.pop()
+    return fileNameParts.join('.')
+
+  }
+
   function calculateFileSize(buffer) {
     // Get the size in bytes
     const bytes = buffer.length;
@@ -533,17 +586,46 @@ async function extractTextFromFile(url,mine_type){
 
   try{
     if(mine_type==="image/jpeg" || mine_type ==="image/gif"){
-    const text =  await googleApi.ocr_document(url,mine_type)
-    console.log(text)
-      return {success:1,text:text}
+     
+      const fileBuffer = await fileDownload(url)
+      const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
+      const text = ocrResult.text
+    
+      return {success:1,text:text,was_extracted:1}
 
     } else if (mine_type === "application/pdf") {
+
       const result = await extractTextLambdaPDFFile(url)
+
       if(result.text.length>10){
         return {success:1,text:result.text}
       } else {
-        const text =  await googleApi.ocr_document(url,mine_type)
-        return {success:1,text:text}  
+
+        const fileBuffer = await fileDownload(url)
+        
+        const pageNumber = await getPDFPageNumber(fileBuffer)
+
+        let text ="";
+        if(pageNumber <= appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk){
+          const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
+          text = ocrResult.text
+        } else {
+
+          const pageChunks = await splitPDFByPageChunks(fileBuffer,appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk)
+          
+          const ocrPromiseArr = pageChunks.map((chunk,index) => {
+            return googleApi.ocr_document(chunk,mine_type,index)
+          })
+
+          const ocrResults = await Promise.all(ocrPromiseArr)
+          ocrResults.sort((a, b) => a.index - b.index);
+
+          ocrResults.forEach( result => {
+            text += result.text
+          })
+        }
+
+        return {success:1,text:text,was_extracted:1}
       }
     } else if (mine_type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
     
@@ -1030,9 +1112,8 @@ function throttleNew(func, delay) {
   let throttleTimeout = null
   return (...args)=> {
      if(!throttleTimeout) {
-      
-         func(...args)
          throttleTimeout = setTimeout(()=> {
+             func(...args)
              throttleTimeout = null
          }, delay)
      } 
@@ -1312,5 +1393,8 @@ module.exports = {
   throttleNew,
   debounceNew,
   extractFileExtention,
-  extractFileNameFromURL
+  extractFileNameFromURL,
+  filenameWoExtention,
+  getPDFPageNumber,
+  splitPDFByPageChunks
 };

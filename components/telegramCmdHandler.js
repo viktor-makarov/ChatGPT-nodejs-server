@@ -395,7 +395,6 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     responses.push(response)
     requestMsg.user.hasReadInfo = true
 
-    
   } else if (callback_event === "dwnld_hash") {
 
     const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
@@ -404,7 +403,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const filename = (content?.folded_text || "file") + "_" + date.toISOString() + ".pdf"
     const formatedHtml =  otherFunctions.formatHtml(content.unfolded_text,filename)
     const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
-
+    
     const mimetype = "application/pdf"
     const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
     otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
@@ -483,7 +482,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       callback_data: JSON.stringify(new_callback_data),
     };
     const downloadPDF_button = {
-      text: "Скачать PDF",
+      text: "Отчет о выполнии в PDF",
       callback_data: JSON.stringify({e:"dwnld_hash",d:callback_data_input}),
     };
 

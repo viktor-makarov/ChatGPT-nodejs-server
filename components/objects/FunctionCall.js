@@ -539,6 +539,8 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     throw err;
                 }
         };
+
+
     async extract_text_from_file(url,mine_type,index){
 
             try{
@@ -546,7 +548,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 const extractedObject = await func.extractTextFromFile(url,mine_type)
 
                 if(extractedObject.success===1){
-                    return {success:1,index:index,resource_url:url,resource_mine_type:mine_type,text:extractedObject.text}
+                    return {success:1,index:index,resource_url:url,resource_mine_type:mine_type,text:extractedObject.text,was_extracted:extractedObject.was_extracted}
                 } else {
                     return {success:0,index:index,resource_url:url,resource_mine_type:mine_type, error:extractedObject.error}
                 }
@@ -581,49 +583,76 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 } catch (err){
                     return {success:0,error: err.message + "" + err.stack}
                 }
-                
-            const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
+                    
+                const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
+                const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
 
-            const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
-
-            if(resources.length===0){
-                return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
-            }
-
-            resources.sort((a, b) => {
-                return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
-              });
-
-            const extractFunctions = resources.map((resource,index) => this.extract_text_from_file(resource.fileUrl,resource.fileMimeType,index))
-              
-            let results = await Promise.all(extractFunctions)
-            
-            results.sort((a, b) => a.index - b.index);
-
-            for (const result of results){
-                if(result.success === 0){
-                    return {success:0,resource_index:result.index,resource_url:result.resource_url,resource_mine_type:result.resource_mine_type,error: result.error,instructions:"Fix the error in the respective resource and re-call the entire function."}
+                if(resources.length===0){
+                    return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
                 }
-            };
 
-            const concatenatedText = results.map(obj => obj.text).join(' ');
-            
-            const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
+                resources.sort((a, b) => {
+                    return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
+                });
 
-            console.log("numberOfTokens",numberOfTokens)
-            console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)    
-            if(numberOfTokens >this.#tokensLimitPerCall){
-                return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the file content is too big to fit into the dialogue", instructions:"Inform the user that file size exeeds dialog limits and therefore can not be downloaded."}
-            }
+                const extractFunctions = resources.map((resource,index) => this.extract_text_from_file(resource.fileUrl,resource.fileMimeType,index))
+                
+                let results = await Promise.all(extractFunctions)
+                
+                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
+                results.sort((a, b) => a.index - b.index);
+
+                for (const result of results){
+                    if(result.success === 0){
+                        return {success:0,resource_index:result.index,resource_url:result.resource_url,resource_mine_type:result.resource_mine_type,error: result.error,instructions:"Fix the error in the respective resource and re-call the entire function."}
+                    }
+                };
+
+                const concatenatedText = results.map(obj => obj.text).join(' ');
+                const wasExtracted = results.some(doc => doc.was_extracted);
+
+                let extractedTextsent = false;
+                let extractedTextsendError;
+
+                if(wasExtracted){
+                    
+                    const filenameShort = resources.length === 1 ? func.filenameWoExtention(resources[0].fileName) : "text" ;
+                    
+                    const filebuffer = func.generateTextBuffer(concatenatedText)
+                    const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
+                    
+                    try{
+                        func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)                  
+                        const date = new Date()
+                         const filename = `${filenameShort}_extracted_${date.toISOString()}.txt`
+                        await this.#replyMsg.sendDocumentAsBinary(filebuffer, filename,"text/plain")
+                        extractedTextsent = true
                         
-            return {success:1,content_token_count:numberOfTokens, result:concatenatedText}
-                
-                } catch(err){
-
-
-                    err.place_in_code = err.place_in_code || "extract_text_from_file_router";
-                    throw err;
+                    } catch(err){
+                        console.log("err",err)
+                        if(err.message.includes("File size exceeds the limit of")){
+                            extractedTextsendError = `The file size with extracted text is ${sizeString} which exceeds the Telegram limit of ${appsettings.telegram_options.file_size_limit} bytes and therefore can not be sent to the user.`
+                        } else {
+                            err.place_in_code = "extract_text_from_file_router";
+                            throw err;
+                        }
+                    }
                 }
+                
+                const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
+                console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
+                
+                if(numberOfTokens > this.#tokensLimitPerCall){
+                    return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: `volume of the file content is too big to fit into the dialogue. ${extractedTextsendError && "Also " + extractedTextsendError}`, instructions:`Inform the user that file size exeeds the dialog limits and therefore can not be included in the dialogue. ${extractedTextsent ? "But he can use a file with recognised text sent to the user." : ""}`}
+                }
+                            
+                return {success:1,content_token_count:numberOfTokens, result:concatenatedText, instructions:`Inform the user that: ${extractedTextsendError ? extractedTextsendError : extractedTextsent ? `he can use a file with recognised text sent to him.` : "the text has been extracted successfully."}`}
+                    
+            } catch(err){
+                err.place_in_code = err.place_in_code || "extract_text_from_file_router";
+                throw err;
+            }
             };
 
     async runJavaScriptCodeAndCaptureLogAndErrors(code) {

@@ -163,7 +163,7 @@ const list = [
                 }
             },
             friendly_name: "Чтение документа",
-            timeout_ms:60000,
+            timeout_ms:180000,
             try_limit: 3,
             availableInRegimes: ["chat"],
             availableForGroups: ["admin","basic"],

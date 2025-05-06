@@ -3,8 +3,8 @@ const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v
 const axios = require("axios");
 
 
-async function ocr_document(url, mimeType){
-  const start = performance.now();
+async function ocr_document(fileBuffer, mimeType,index=0){
+
     const location = process.env.GOOGLE_DOCUMENTAI_LOCATION
     const projectId = process.env.GOOGLE_DOCUMENTAI_PROJECT_ID
     const processorId = process.env.GOOGLE_DOCUMENTAI_PROCESSOR_ID
@@ -22,14 +22,6 @@ async function ocr_document(url, mimeType){
         client_x509_cert_url: process.env.GOOGLE_AUTH_CERT_URL,
         universe_domain: "googleapis.com"
       };
-
-    const response = await axios({
-          url,
-          method: 'GET',
-          responseType: 'arraybuffer'
-        });
-
-    const fileBuffer = Buffer.from(response.data)
     
     const client = new DocumentProcessorServiceClient({
         credentials: serviceAccountKeys,
@@ -54,10 +46,8 @@ async function ocr_document(url, mimeType){
   const {document} = result;
   const {text} = document;
   const endTime = performance.now();
-  const executionTime = endTime - start;
-  console.log(`ocr_document execution time: ${executionTime.toFixed(2)} ms`);
     
-  return text;
+  return {text,index};
 }
 
 

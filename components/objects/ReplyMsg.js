@@ -146,7 +146,6 @@ async sendDocumentDownloadWaiterMsg(){
   return await this.sendToNewMessage(text)
 };
 
-
 async sendLatexFormulaWaiterMsg(){
   const text = otherFunctions.getLocalizedPhrase(`latexFormula_progress`,this.#user.language)
   return await this.sendToNewMessage(text)
@@ -179,7 +178,6 @@ async simpleSendNewImage(obj){
   if(reply_markup){
     options.reply_markup = JSON.stringify(reply_markup)
   }
-
 
 return await this.#botInstance.sendPhoto(
   this.#chatId,
@@ -291,9 +289,8 @@ async sendDocumentAsBinary(fileBuffer,filename,mimetype) {
     if(mimetype){
       options.contentType = mimetype;
     }
-
     await this.#botInstance.sendDocument(this.#chatId, fileBuffer, {}, options);
-  
+    
 } catch(err){ 
     err.code = "ETELEGRAM";
     err.place_in_code = "sendDocumentAsBinary";
