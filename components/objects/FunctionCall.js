@@ -541,21 +541,17 @@ async get_data_from_mongoDB_by_pipepine(table_name){
         };
 
 
-    async extract_text_from_file(url,mine_type,index){
+    async extractTextFromFileWraper(resource_url,resource_mine_type,index){
 
             try{
 
-                const extractedObject = await func.extractTextFromFile(url,mine_type)
+                const extractedObject = await func.extractTextFromFile(resource_url,resource_mine_type)
 
-                if(extractedObject.success===1){
-                    return {success:1,index:index,resource_url:url,resource_mine_type:mine_type,text:extractedObject.text,was_extracted:extractedObject.was_extracted}
-                } else {
-                    return {success:0,index:index,resource_url:url,resource_mine_type:mine_type, error:extractedObject.error}
-                }
+                return {...extractedObject,index,resource_url,resource_mine_type}
                 
             } catch(err){
                 console.log(err)
-                return {success:0,index:index,resource_url:url,resource_mine_type:mine_type, error:`${err.message}\n ${err.stack}`}
+                return {success:0,index,resource_url,resource_mine_type, error:`${err.message}\n ${err.stack}`}
             }
 
         }
@@ -586,16 +582,15 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     
                 const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
                 const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
+                resources.sort((a, b) => {
+                    return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
+                });
 
                 if(resources.length===0){
                     return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
                 }
 
-                resources.sort((a, b) => {
-                    return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
-                });
-
-                const extractFunctions = resources.map((resource,index) => this.extract_text_from_file(resource.fileUrl,resource.fileMimeType,index))
+                const extractFunctions = resources.map((resource,index) => this.extractTextFromFileWraper(resource.fileUrl,resource.fileMimeType,index))
                 
                 let results = await Promise.all(extractFunctions)
                 
@@ -603,11 +598,10 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
                 results.sort((a, b) => a.index - b.index);
 
-                for (const result of results){
-                    if(result.success === 0){
-                        return {success:0,resource_index:result.index,resource_url:result.resource_url,resource_mine_type:result.resource_mine_type,error: result.error,instructions:"Fix the error in the respective resource and re-call the entire function."}
-                    }
-                };
+                const firstFailedResult = results.findIndex(result => result.success === 0);
+                if(firstFailedResult>=0){
+                    return {success:0,resource_index:firstFailedResult,resource_url:results.at(firstFailedResult).resource_url,resource_mine_type:results.at(firstFailedResult).resource_mine_type,error: results.at(firstFailedResult).error,instructions:"Fix the error in the respective resource and re-call the entire function."}
+                }
 
                 const concatenatedText = results.map(obj => obj.text).join(' ');
                 const wasExtracted = results.some(doc => doc.was_extracted);

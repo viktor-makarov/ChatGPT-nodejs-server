@@ -430,8 +430,6 @@ class Completion extends Transform {
     //  console.log(JSON.stringify(this.currentCompletionObj,null,4))
     }
 
-  
-
     async processChunksBatch(chunksToProcess){
 
         this.#countChunks +=  chunksToProcess.length
@@ -451,7 +449,7 @@ class Completion extends Transform {
     async batchStringToJson(batchString){
 
     const augumentedBatchString = this.#chunkStringBuffer + batchString
-
+    
     const stringChunks = augumentedBatchString
       .split("\n")  
       .filter((piece) => piece.trim() !== "")

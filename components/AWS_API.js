@@ -12,12 +12,12 @@ async function lambda_invoke(funcName, payload){
     });
   
     const { Payload, LogResult } = await client.send(command);
-    const result = Buffer.from(Payload).toString();
+    const result = JSON.parse(Buffer.from(Payload).toString());
     const logs = Buffer.from(LogResult, "base64").toString();
-
+    console.log("result", result);
     return result;
   };
-  /** snippet-end:[javascript.v3.lambda.actions.Invoke] */
+
   
   async function deleteS3FilesByPefix(prefix,regime){
 

@@ -557,12 +557,12 @@ async function countTokensLambda(text,model){
   const requestObj = {"text":text,"model":model}
   const start = performance.now();
 
-  const result = await awsApi.lambda_invoke("R2D2-countTokens",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-countTokens",requestObj)
 
   const endTime = performance.now();
   const executionTime = endTime - start;
   console.log(`countTokensLambda execution time: ${executionTime.toFixed(2)} ms`);
-  const resultJSON = JSON.parse(result)
+
 
   if(resultJSON.body.warning){
     console.log("countTokensLambda warning:",resultJSON.body.warning)
@@ -636,6 +636,7 @@ async function extractTextFromFile(url,mine_type){
       return {success:1,text:result.text}
     }
   } catch(err){
+    console.log("err",err)
     return {success:0,error:err.message}
   }
 }
@@ -645,12 +646,12 @@ async function extractTextLambdaPDFFile(url){
   const requestObj = {"file_url":url}
   const start = performance.now();
 
-  const result = await awsApi.lambda_invoke("R2D2-extractTextFromPDF",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-extractTextFromPDF",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
   console.log(`extractTextLambdaPDFFile execution time: ${executionTime.toFixed(2)} ms`);
-  const resultJSON = JSON.parse(result)
+
 
   if(resultJSON.statusCode === 200){
     return resultJSON.body
@@ -673,12 +674,12 @@ async function executePythonCode(codeToExecute){
   const requestObj = {"code":codeToExecute}
   const start = performance.now();
 
-  const result = await awsApi.lambda_invoke("R2D2-executePythonCode",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-executePythonCode",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
   console.log(`executePythonCode execution time: ${executionTime.toFixed(2)} ms`);
-  const resultJSON = JSON.parse(result)
+
    
   if(resultJSON.statusCode === 200){
     return resultJSON.body.result
@@ -699,12 +700,12 @@ async function extractTextLambdaExcelFile(url){
   const requestObj = {"file_url":url}
   const start = performance.now();
 
-  const result = await awsApi.lambda_invoke("R2D2-extractTextFromExcelFile",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-extractTextFromExcelFile",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
   console.log(`extractTextLambdaExcelFile execution time: ${executionTime.toFixed(2)} ms`);
-  const resultJSON = JSON.parse(result)
+
 
   if(resultJSON.statusCode === 200){
     return resultJSON.body
@@ -725,17 +726,16 @@ async function extractTextLambdaOtherFiles(url,mine_type){
   const requestObj = {"file_url":url,"file_mime_type":mine_type}
   const start = performance.now();
 
-  const result = await awsApi.lambda_invoke("R2D2-extractTextFromOtherFiles",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-extractTextFromOtherFiles",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
   console.log(`extractTextLambdaOtherFiles execution time: ${executionTime.toFixed(2)} ms`);
-  const resultJSON = JSON.parse(result)
 
   if(resultJSON.statusCode === 200){
     return resultJSON.body
   } else if (resultJSON.statusCode){
-      const err = new Error("extractTextLambdaOtherFiles: " + resultJSON.body)
+      const err = new Error("extractTextLambdaOtherFiles: " + JSON.stringify(resultJSON.body))
       throw err
   } else if (resultJSON.errorMessage){
     const err = new Error("extractTextLambdaOtherFiles: " + resultJSON.errorMessage)
