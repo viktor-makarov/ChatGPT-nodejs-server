@@ -2,16 +2,23 @@
 # You should customize this list as applicable to your project.
 # Learn more about .gitignore: https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
+
+#Temp files
+tempfiles/
+
 # Node artifact files
 node_modules/
 package-lock.json
 vault
 .env
+private.rem
+public.rem
 docker-compose.yml
 config/main_config.yml
 # Log files
 *.log
 tmp/
+/Python-3.9.1
 
 # JetBrains IDE
 .idea/

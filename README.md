@@ -4,7 +4,7 @@ This is a Telegram chatbot that utilizes the OpenAI API. The chatbot is built on
 
 ## Main features ##
 
-* The chatbot has four main modes: "assistant" for dialogue and three additional modes ("coderevier," "texteditor," and "translator") for preset tasks.
+* The chatbot has main mode: "chat".
 * Additionally, the chatbot offers a voice-to-text mode where users can send audio files (with a maximum size of 25 Mb) and receive the text transcribed, thanks to the Whisper technology from OpenAI.
 * Users can send tasks to the chatbot using both text messages and voice messages. The voice messages are first transcribed using the Whisper technology from OpenAI. In addition to voice messages, users can also send Telegram video notes and other audio and video recordings, as long as they are within 25 Mb.
 * Users can regenerate completions using an inline keyboard button.
@@ -99,7 +99,7 @@ Thank you for your contributions and happy coding!
 
 #### Features
 
-* The chatbot has four modes: "assistant" for dialogue and three additional modes ("coderevier," "texteditor," and "translator") for preset tasks.
+* The chatbot main mode "chat".
 * Users can send tasks to the chatbot using both text messages and voice messages. The voice messages are first transcribed using the Whisper technology from OpenAI. In addition to voice messages, users can also send Telegram video notes and other audio and video recordings, as long as they do not exceed 25 Mb in size.
 * The chatbot also offers a voice-to-text mode where users can send audio files (with a maximum size of 25 Mb) and receive the corresponding text, thanks to the Whisper technology from OpenAI.
 * It also includes an admin mode with advanced options, such as sending messages to all users with /senttome and /sendtoall commands and generating usage reports with /reports command.
