@@ -146,6 +146,11 @@ async sendDocumentDownloadWaiterMsg(){
   return await this.sendToNewMessage(text)
 };
 
+async sendUserManualWaiterMsg(){
+  const text = otherFunctions.getLocalizedPhrase(`manual_file_progress`,this.#user.language)
+  return await this.sendToNewMessage(text)
+};
+
 async sendLatexFormulaWaiterMsg(){
   const text = otherFunctions.getLocalizedPhrase(`latexFormula_progress`,this.#user.language)
   return await this.sendToNewMessage(text)

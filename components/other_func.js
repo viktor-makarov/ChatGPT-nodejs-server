@@ -62,11 +62,9 @@ async function startFileDownload(url){
 return response
 }
 
-async function getPDFPageNumber(pdfBuffer){
 
-  const pdfData = await pdf(pdfBuffer, { max: 0 }); // max: 0 to avoid parsing content
-
-  return pdfData.numpages
+async function parcePDF(pdfBuffer) {
+  return await pdf(pdfBuffer);
 }
 
 
@@ -557,7 +555,7 @@ async function countTokensLambda(text,model){
   const requestObj = {"text":text,"model":model}
   const start = performance.now();
 
-  const resultJSON = await awsApi.lambda_invoke("R2D2-countTokens",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-prod-countTokensWithTiktoken",requestObj)
 
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -574,7 +572,7 @@ async function countTokensLambda(text,model){
       const err = new Error("countTokensLambda: " + resultJSON.body)
       throw err
   } else if (resultJSON.errorMessage){
-    const err = new Error("countTokensLambda: " + resultJSON.errorMessage)
+    const err = new Error("countTokensLambda: " + resultJSON.errorMessage + " " + resultJSON.errorType)
     throw err
   } else {
     const err = new Error('unspecified error in awsApi.lambda_invoke function')
@@ -595,86 +593,53 @@ async function extractTextFromFile(url,mine_type){
 
     } else if (mine_type === "application/pdf") {
 
-      const result = await extractTextLambdaPDFFile(url)
+      const fileBuffer = await fileDownload(url)
 
-      if(result.text.length>10){
-        return {success:1,text:result.text}
+      const {numpages,text} = await parcePDF(fileBuffer)
+
+      const textWoLineBreaks = text.replace(/(\r\n|\n|\r)/gm, "");
+      
+      if(textWoLineBreaks.length>10){
+        return {success:1,text:text}
+      }
+
+      let ocr_text ="";
+      if(numpages <= appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk){
+        const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
+        ocr_text = ocrResult.text
       } else {
 
-        const fileBuffer = await fileDownload(url)
+        const pageChunks = await splitPDFByPageChunks(fileBuffer,appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk)
         
-        const pageNumber = await getPDFPageNumber(fileBuffer)
+        const ocrPromiseArr = pageChunks.map((chunk,index) => {
+          return googleApi.ocr_document(chunk,mine_type,index)
+        })
 
-        let text ="";
-        if(pageNumber <= appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk){
-          const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
-          text = ocrResult.text
-        } else {
+        const ocrResults = await Promise.all(ocrPromiseArr)
+        ocrResults.sort((a, b) => a.index - b.index);
 
-          const pageChunks = await splitPDFByPageChunks(fileBuffer,appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk)
-          
-          const ocrPromiseArr = pageChunks.map((chunk,index) => {
-            return googleApi.ocr_document(chunk,mine_type,index)
-          })
-
-          const ocrResults = await Promise.all(ocrPromiseArr)
-          ocrResults.sort((a, b) => a.index - b.index);
-
-          ocrResults.forEach( result => {
-            text += result.text
-          })
-        }
-
-        return {success:1,text:text,was_extracted:1}
+        ocrResults.forEach( result => {
+          ocr_text += result.text
+        })
       }
-    } else if (mine_type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
-    
-      const result = await extractTextLambdaExcelFile(url)
-      return {success:1,text:result.text}
+
+      return {success:1,text:ocr_text,was_extracted:1}
+      
     } else {
-      const result = await extractTextLambdaOtherFiles(url,mine_type)
-      return {success:1,text:result.text}
+      const result = await extractContentWithTika(url,)
+      return {success:1,text:result.text,metadata:result?.metadata,html:result?.html}
     }
   } catch(err){
-    console.log("err",err)
     return {success:0,error:err.message}
   }
 }
-
-async function extractTextLambdaPDFFile(url){
-
-  const requestObj = {"file_url":url}
-  const start = performance.now();
-
-  const resultJSON = await awsApi.lambda_invoke("R2D2-extractTextFromPDF",requestObj)
-  
-  const endTime = performance.now();
-  const executionTime = endTime - start;
-  console.log(`extractTextLambdaPDFFile execution time: ${executionTime.toFixed(2)} ms`);
-
-
-  if(resultJSON.statusCode === 200){
-    return resultJSON.body
-  } else if (resultJSON.statusCode){
-    const err = new Error("extractTextLambdaPDFFile: " + resultJSON.body)
-    throw err
-  } else if (resultJSON.errorMessage){
-    const err = new Error("extractTextLambdaPDFFile: " + resultJSON.errorType + " " + resultJSON.errorMessage)
-    throw err
-  } else {
-    const err = new Error('unspecified error in awsApi.lambda_invoke function')
-    throw err
-  }
-}
-
-
 
 async function executePythonCode(codeToExecute){
 
   const requestObj = {"code":codeToExecute}
   const start = performance.now();
 
-  const resultJSON = await awsApi.lambda_invoke("R2D2-executePythonCode",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-prod-runPythonCode",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
@@ -684,7 +649,7 @@ async function executePythonCode(codeToExecute){
   if(resultJSON.statusCode === 200){
     return resultJSON.body.result
   } else if (resultJSON.statusCode){
-    const err = new Error("executePythonCode: " + resultJSON.body)
+    const err = new Error("executePythonCode: " + JSON.stringify(resultJSON.body))
     throw err
   } else if (resultJSON.errorMessage){
     const err = new Error("executePythonCode: " + resultJSON.errorType + " " + resultJSON.errorMessage)
@@ -695,50 +660,24 @@ async function executePythonCode(codeToExecute){
   }
 }
 
-async function extractTextLambdaExcelFile(url){
+async function extractContentWithTika(url){
 
   const requestObj = {"file_url":url}
   const start = performance.now();
 
-  const resultJSON = await awsApi.lambda_invoke("R2D2-extractTextFromExcelFile",requestObj)
+  const resultJSON = await awsApi.lambda_invoke("R2D2-prod-extractContentWithTika",requestObj)
   
   const endTime = performance.now();
   const executionTime = endTime - start;
-  console.log(`extractTextLambdaExcelFile execution time: ${executionTime.toFixed(2)} ms`);
-
+  console.log(`extractContentWithTika execution time: ${executionTime.toFixed(2)} ms`);
 
   if(resultJSON.statusCode === 200){
     return resultJSON.body
   } else if (resultJSON.statusCode){
-      const err = new Error("extractTextLambdaExcelFile: " + resultJSON.body)
+      const err = new Error("extractContentWithTika: " + JSON.stringify(resultJSON.body))
       throw err
   } else if (resultJSON.errorMessage){
-    const err = new Error("extractTextLambdaExcelFile: " + resultJSON.errorMessage)
-    throw err
-  } else {
-    const err = new Error('unspecified error in awsApi.lambda_invoke function')
-    throw err
-  }
-}
-
-async function extractTextLambdaOtherFiles(url,mine_type){
-
-  const requestObj = {"file_url":url,"file_mime_type":mine_type}
-  const start = performance.now();
-
-  const resultJSON = await awsApi.lambda_invoke("R2D2-extractTextFromOtherFiles",requestObj)
-  
-  const endTime = performance.now();
-  const executionTime = endTime - start;
-  console.log(`extractTextLambdaOtherFiles execution time: ${executionTime.toFixed(2)} ms`);
-
-  if(resultJSON.statusCode === 200){
-    return resultJSON.body
-  } else if (resultJSON.statusCode){
-      const err = new Error("extractTextLambdaOtherFiles: " + JSON.stringify(resultJSON.body))
-      throw err
-  } else if (resultJSON.errorMessage){
-    const err = new Error("extractTextLambdaOtherFiles: " + resultJSON.errorMessage)
+    const err = new Error("extractContentWithTika: " + resultJSON.errorMessage + " " + resultJSON.errorType) 
     throw err
   } else {
     const err = new Error('unspecified error in awsApi.lambda_invoke function')
@@ -1395,6 +1334,7 @@ module.exports = {
   extractFileExtention,
   extractFileNameFromURL,
   filenameWoExtention,
-  getPDFPageNumber,
-  splitPDFByPageChunks
+  parcePDF,
+  splitPDFByPageChunks,
+  extractContentWithTika
 };

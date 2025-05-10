@@ -412,7 +412,9 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if (callback_event === "pdf_download"){
 
+    const msgSent = await replyMsg.sendUserManualWaiterMsg()
     await pdfdownloadHandler(replyMsg);
+    await replyMsg.deleteMsgByID(msgSent.message_id)
 
   } else if (callback_event === "regenerate"){
 
@@ -684,8 +686,7 @@ async function infoacceptHandler(requestMsgInstance) {
 async function pdfdownloadHandler(replyMsgInstance){
   
   const downloadedFile = await otherFunctions.fileDownload(appsettings.other_options.pdf_guide_url)
-  console.log("downloadedFile",downloadedFile)
-  const fileName = "Manual";
+  const fileName = otherFunctions.getLocalizedPhrase(`manual_file`,replyMsgInstance.user.language);
   
   await replyMsgInstance.sendDocumentAsBinary(downloadedFile,fileName)
   

@@ -542,20 +542,15 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
 
     async extractTextFromFileWraper(resource_url,resource_mine_type,index){
-
             try{
-
                 const extractedObject = await func.extractTextFromFile(resource_url,resource_mine_type)
-
+                
                 return {...extractedObject,index,resource_url,resource_mine_type}
                 
             } catch(err){
-                console.log(err)
                 return {success:0,index,resource_url,resource_mine_type, error:`${err.message}\n ${err.stack}`}
             }
-
         }
-
 
     getArrayFromParam(param){
 
@@ -604,7 +599,17 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 }
 
                 const concatenatedText = results.map(obj => obj.text).join(' ');
-                const wasExtracted = results.some(doc => doc.was_extracted);
+
+                let metadataText;
+                if(results.length === 1){
+                    metadataText = JSON.stringify(results[0].metadata,null,2)
+                } else if (results.length > 1){
+                    metadataText = results.map((obj,index) => `Part ${index}\n${JSON.stringify(obj.metadata,null,2)}`).join("\n");
+                }
+                
+                const combinedResultText = concatenatedText + (metadataText ? `\n\nMetadata:\n${metadataText}` : "");
+
+                const wasExtracted = results.some(doc => doc.was_etracted);
 
                 let extractedTextsent = false;
                 let extractedTextsendError;
@@ -634,14 +639,14 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                     }
                 }
                 
-                const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
+                const  numberOfTokens = await func.countTokensLambda(combinedResultText,this.#user.currentModel)
                 console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
                 
                 if(numberOfTokens > this.#tokensLimitPerCall){
                     return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: `volume of the file content is too big to fit into the dialogue. ${extractedTextsendError && "Also " + extractedTextsendError}`, instructions:`Inform the user that file size exeeds the dialog limits and therefore can not be included in the dialogue. ${extractedTextsent ? "But he can use a file with recognised text sent to the user." : ""}`}
                 }
                             
-                return {success:1,content_token_count:numberOfTokens, result:concatenatedText, instructions:`Inform the user that: ${extractedTextsendError ? extractedTextsendError : extractedTextsent ? `he can use a file with recognised text sent to him.` : "the text has been extracted successfully."}`}
+                return {success:1,content_token_count:numberOfTokens, result:combinedResultText, instructions:`Inform the user that: ${extractedTextsendError ? extractedTextsendError : extractedTextsent ? `he can use a file with recognised text sent to him.` : "the text has been extracted successfully."}`}
                     
             } catch(err){
                 err.place_in_code = err.place_in_code || "extract_text_from_file_router";
