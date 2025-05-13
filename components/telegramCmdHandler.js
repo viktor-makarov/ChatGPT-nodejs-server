@@ -384,9 +384,12 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   const callback_event = requestMsg.callback_event;
   const callback_data_input = requestMsg.callback_data;
+  const callbackExecutionStart = new Date();
 
+  try{
   replyMsg.sendTypingStatus()
   replyMsg.answerCallbackQuery(requestMsg.callbackId)
+  await mongo.upsertCallbackUsage(requestMsg)
 
   if (callback_event === "info_accepted"){
 
@@ -436,15 +439,17 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
     
     const choosenVersionIndex = callback_data_input
+    
     const choosenContent = doc.content[choosenVersionIndex-1]
     const choosenContentFormulas = doc.content_latex_formula[choosenVersionIndex-1]
     const totalVersionsCount = doc.content.length;
-    await replyMsg.sendChoosenVersion(choosenContent,choosenContentFormulas,choosenVersionIndex,totalVersionsCount)
-    
+    const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenContentFormulas,choosenVersionIndex,totalVersionsCount)
+    const msgIdsForDbCompletion = sentResult.map(result => result.message_id)
+
     await mongo.updateCompletionInDb({
       filter: {telegramMsgId:{"$in":doc.telegramMsgId}},
       updateBody:{
-        telegramMsgId:replyMsg.msgIdsForDbCompletion,
+        telegramMsgId:msgIdsForDbCompletion,
         completion_version:choosenVersionIndex
       }
     })
@@ -623,8 +628,15 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     responses = [{text:msqTemplates.unknown_callback}]
   }
 
-  
+  const callbackDuration = ((new Date() - callbackExecutionStart) / 1000).toFixed(2);
+  await mongo.upsertCallbackUsage(requestMsg,callbackDuration,1)
   return responses
+
+} catch(err){
+  err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query";
+  await mongo.upsertCallbackUsage(requestMsg,null,0,{message:err.message,stack:err.stack})
+  throw err
+}
 
 }
 

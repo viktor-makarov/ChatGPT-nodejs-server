@@ -16,7 +16,6 @@ class Completion extends Transform {
     #decoder
     #countChunks = 0;
 
-    #responseReceived;
     #responseErrorRaw
     #responseErrorMsg = "";
     #response_status;
@@ -80,7 +79,6 @@ class Completion extends Transform {
         
         this.#completionCreatedDT_UTC = new Date();
 
-        this.#responseReceived = false;
 
         this.#sendWithDelay = this.throttleFunction(
           this.sendMsg,
@@ -94,15 +92,14 @@ class Completion extends Transform {
       async router(){
 
         try{
-
+          
           this.#completionPreviousVersionsDoc = await this.completionPreviousVersions();
 
           this.#updateCompletionVariables()
           
           await this.#replyMsg.sendTypingStatus()
-          await this.#replyMsg.sendStatusMsg()
-          this.#long_wait_notes = this.triggerLongWaitNotes()
-
+          const statusMsg = await this.#replyMsg.sendStatusMsg()
+          this.#long_wait_notes = this.triggerLongWaitNotes(statusMsg)
           await openAIApi.chatCompletionStreamAxiosRequest(
             this.#requestMsg,
             this.#replyMsg,
@@ -118,9 +115,7 @@ class Completion extends Transform {
             }
           );
         
-        } finally {
-          this.clearLongWaitNotes()
-        }
+        } 
 
       }
 
@@ -173,15 +168,17 @@ class Completion extends Transform {
          return lastCompletionDoc;
       }
 
-      triggerLongWaitNotes(){
+      triggerLongWaitNotes(statusMsg){
   
         const long_wait_notes = modelConfig[this.#user.currentModel]?.long_wait_notes
+        
         let timeouts =[];
         if(long_wait_notes && long_wait_notes.length >0){
             
             for (const note of long_wait_notes){
+                
                 const timeoutInstance = setTimeout(() => {
-                  this.updateStatusMsg(note.comment)
+                  this.updateStatusMsg(note.comment,statusMsg.message_id,statusMsg.chat.id)
                 }, note.time_ms);
                 timeouts.push(timeoutInstance)
             }
@@ -211,7 +208,6 @@ class Completion extends Transform {
       this.#responseErrorRaw = value;
 
       this.#response_status = this.#responseErrorRaw?.response?.status 
-      this.#responseReceived = true;
 
       try{
         this.#responseErrorRaw.response.data.on('data', chunk => {
@@ -232,7 +228,6 @@ class Completion extends Transform {
     
     set response(value){
         this.#responseHeaders = value.headers
-        this.#responseReceived = true;
     }
 
     set completionLatexFormulas(value){
@@ -421,10 +416,10 @@ class Completion extends Transform {
       
       this.#dialogue.emit('triggerToolCall', completionObject.tool_calls) 
 
+      this.clearLongWaitNotes()
       this.#decoder.end()
       
       this.#dialogue.regenerateCompletionFlag = false
-      this.#responseReceived = true;
 
       
     //  console.log(JSON.stringify(this.currentCompletionObj,null,4))
@@ -541,18 +536,15 @@ class Completion extends Transform {
       }
     }
 
-    async updateStatusMsg(user_message){
-
-    if(!this.#responseReceived){
-
+    async updateStatusMsg(user_message,message_id,chat_id){
       await this.#replyMsg.simpleMessageUpdate(
         user_message,
         {
-          chat_id: this.#replyMsg.chatId,
-          message_id: this.#replyMsg.lastMsgSentId,
+          chat_id: chat_id,
+          message_id: message_id,
         }
       );
-      }
+  
     };
 
     throttleFunction(fn, delay) {

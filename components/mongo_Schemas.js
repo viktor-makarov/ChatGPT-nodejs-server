@@ -215,6 +215,23 @@ const FunctionUsageLogSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_functions_log }
 );
 
+const CallbackUsageLogSheema = new Schema(
+  {
+    message_id: { type: Number, index: true },
+    callback_event:{ type: String, index: true },
+    callback_data:{ type: String},
+    callback_error:{ type: Object},
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')." },
+    userid: { type: Number, index: true },
+    userFirstName: { type: String },
+    userLastName: { type: String },
+    username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
+    duration: {type: Number},
+    success:{type:Number ,description: "Indicates if callback execution was successfull."}
+  },
+  { collection: appsettings.mongodb_names.coll_callback_log }
+);
+
 const TelegramDialogSheema = new Schema(
   {
     sourceid: { type: String, index: true },
@@ -284,6 +301,9 @@ const FunctionQueueSheema = new Schema(
 FunctionQueueSheema.index({ name: -1 });
 FunctionQueueSheema.index({ function_id: -1 });
 
+
+
+
 module.exports = {
   ProfileSheema,
   LogsSheema,
@@ -297,5 +317,6 @@ module.exports = {
   HashStorage,
   KnowledgeBaseSheema,
   DialogMetaSheema,
-  FunctionQueueSheema
+  FunctionQueueSheema,
+  CallbackUsageLogSheema
 };

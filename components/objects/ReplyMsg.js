@@ -16,6 +16,7 @@ class ReplyMsg extends EventEmitter {
 #waitMsgInProgress = false;
 #sentTextIndex = 0;
 #user;
+
 #chatId;
 #lastMsgSentId
 #msgIdsForDbCompletion =[];
@@ -24,14 +25,14 @@ class ReplyMsg extends EventEmitter {
 #completion_ended = false;
 #completionRegenerateButtons;
 #completionRedaloudButtons = {
-  text: msqTemplates.readaloud,
+  text: "🔊",
   callback_data: JSON.stringify({e:"readaloud"}),
-}
-;
+};
 #completionReplyMarkupTemplate = {
   one_time_keyboard: true,
   inline_keyboard: [],
 };
+#versionBtnsAllias = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 
 #msgThreshold = appsettings.telegram_options.big_outgoing_message_threshold;
 
@@ -44,10 +45,7 @@ constructor(obj) {
     
     this.#completionRegenerateButtons = 
       {
-        text: msqTemplates.regenerate.replace(
-          "[temperature]",
-          this.#user.currentTemperature
-        ),
+        text: "🔄",
         callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
       };
 
@@ -313,11 +311,15 @@ async sendChoosenVersion(text,formulas,version,versionsCount){
   buttons = this.generateFormulasButton(buttons)
   }     
   
-  buttons.inline_keyboard.push([this.#completionRegenerateButtons])
-  buttons.inline_keyboard.push([this.#completionRedaloudButtons])
+  const downRow = [this.#completionRedaloudButtons]
 
-await this.deliverNewCompletionVersion(text,buttons,"HTML")
+  if(versionsCount<10){
+    downRow.unshift(this.#completionRegenerateButtons)
+  }
 
+  buttons.inline_keyboard.push(downRow)
+
+  return await this.deliverNewCompletionVersion(text,buttons,"HTML")
 }
 
 async sendToNewMessageWithCheck(text,reply_markup){
@@ -520,21 +522,24 @@ async generateMdjButtons(msg){
   return reply_markup
 }
 
+
+
 generateVersionButtons(completionCurrentVersionNumber,versionsCount,reply_markup){
 
   let version_row_buttons =[]
+  const buttonsInOneRow = 5;
   for (let i = 1; i <= versionsCount; i++){
     
-    let versionName = `Вер. ${i.toString()}`
+    let versionName = `${this.#versionBtnsAllias[i-1] || `Вер. ${i}`}`
     if(i === completionCurrentVersionNumber){
-      versionName = versionName+" (тек.)"
+      versionName = `${versionName} 🟢`
     }
     version_row_buttons.push({
       text: versionName,
       callback_data:JSON.stringify({e:"choose_ver",d:i})
     })
 
-    if(i === versionsCount || i % 2 === 0){
+    if(i === versionsCount || i % buttonsInOneRow === 0){
       reply_markup.inline_keyboard.push(version_row_buttons)
       version_row_buttons = [];
     }
@@ -632,23 +637,26 @@ async deliverCompletionToTelegram(completionInstance){
             //Если отправялем последнюю часть сообщения
               let reply_markup = structuredClone(this.#completionReplyMarkupTemplate)
               if(completionInstance.completionCurrentVersionNumber>1){
-                const currentVersionIndex = completionInstance.completionCurrentVersionNumber
-                const totalVersionsCount = currentVersionIndex
-                reply_markup = this.generateVersionButtons(currentVersionIndex,totalVersionsCount,reply_markup)
+
+                reply_markup = this.generateVersionButtons(completionInstance.completionCurrentVersionNumber,completionInstance.completionCurrentVersionNumber,reply_markup)
               }
 
               if(completionInstance.completionLatexFormulas){
               reply_markup = this.generateFormulasButton(reply_markup)
               }
               
-              reply_markup.inline_keyboard.push([this.#completionRegenerateButtons])
-              reply_markup.inline_keyboard.push([this.#completionRedaloudButtons])
+                const downRow = [this.#completionRedaloudButtons]
+
+              if(completionInstance.completionCurrentVersionNumber<10){
+                downRow.unshift(this.#completionRegenerateButtons)
+              }
+
+              reply_markup.inline_keyboard.push(downRow)
               
               options.reply_markup = JSON.stringify(reply_markup);
               
-              
               completionInstance.telegramMsgBtns = true;
-              console.log("telegramMsgBtns assined successfully")
+
               }
 
             try{

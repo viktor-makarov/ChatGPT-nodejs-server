@@ -56,7 +56,7 @@ constructor(obj) {
         this.#callbackId = obj.requestMsg.id;
         this.#callback_dataRaw = obj.requestMsg.data
         this.#inputType = "callback_query"
-
+        
         this.#refMsgId = obj.requestMsg.message.message_id
         
         this.#refRawMsg = obj.requestMsg.message

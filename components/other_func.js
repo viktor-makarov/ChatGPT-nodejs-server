@@ -11,6 +11,259 @@ const googleApi = require("./google_API.js");
 const path = require('path');
 const pdf = require('pdf-parse');
 const { PDFDocument } = require('pdf-lib');
+const Excel = require('exceljs');
+
+
+
+async function createExcelWorkbookToBuffer(worksheets = []) {
+  const workbook = new Excel.Workbook();
+  workbook.creator = 'R2D2 AI Assistant';
+  workbook.lastModifiedBy = 'R2D2 AI Assistant';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+  workbook.calcProperties.fullCalcOnLoad = true;
+  
+  worksheets.forEach((worksheetData, worksheetIndex) => {
+    // Sanitize worksheet name to remove invalid characters (* ? : \ / [ ])
+    const sanitizedWorksheetName = worksheetData.worksheet_name
+      .replace(/[\*\?:\/\\\[\]]/g, (match) => {
+      switch(match) {
+        case '*': return '×'; // Replace asterisk with multiplication sign
+        case '?': return '_'; // Replace question mark with underscore
+        case ':': return '-'; // Replace colon with hyphen
+        case '/': return '-'; // Replace forward slash with hyphen
+        case '\\': return '-'; // Replace backslash with hyphen
+        case '[': return '('; // Replace square bracket with parenthesis
+        case ']': return ')'; // Replace square bracket with parenthesis
+        default: return '_'; // Replace any other invalid chars with underscore
+      }
+      });
+    
+    const worksheet = workbook.addWorksheet(sanitizedWorksheetName);
+    
+    let currentRow = 1;
+
+    // Add header if provided
+    if (worksheetData.header) {
+      const headerCell = worksheet.getCell(`A${currentRow}`);
+      headerCell.value = worksheetData.header;
+      headerCell.font = { bold: true, size: 14 };
+      worksheet.getColumn('A').width = 80;
+      currentRow++
+    }
+    
+    // Add subheader if provided
+    if (worksheetData.subheader) {
+      const subheaderCell = worksheet.getCell(`A${currentRow}`);
+      subheaderCell.value = worksheetData.subheader;
+      subheaderCell.font = { italic: true, size: 12 };
+      currentRow++
+    }
+    
+    // Process each table in the worksheet
+    if (worksheetData.tables && worksheetData.tables.length > 0) {
+      worksheetData.tables.forEach((table, tableIndex) => {
+        // Add spacing before table
+        currentRow++;
+        
+        // Extract column definitions
+        const columns = table.columns.map(col => {
+          const newcol = {
+            name: col.name,
+            filterButton: true, 
+            totalsRowFunction: col.totalsRowFunction
+          }
+          return newcol
+        });
+
+        if(table.totalsRowLabel){
+          columns[0].totalsRowLabel = table?.totalsRowLabel
+        }
+
+        if(table.totalsRow && table.totalsRowLabel){
+          columns[0].totalsRowLabel = table?.totalsRowLabel
+        }
+        
+        // Prepare data for table
+        const rows = table.rows.map((rowData, rowIndex) => {
+          return rowData.map((cell, colIndex) => {
+            switch(cell.type) {
+              case 'string':
+                return String(cell.value);
+              case 'number':
+                return Number(cell.value);
+              case 'boolean':
+                return Boolean(cell.value);
+              case 'date':
+                return new Date(cell.value);             
+              case 'formula':
+                // Store formulas in the format ExcelJS expects
+                // Check if it's likely an R1C1 formula that needs conversion
+                
+                  if ( cell.value.includes('R') && cell.value.includes('C')) {
+                    const currentCellPosition = {
+                      row: currentRow + rowIndex + 1,
+                      col: colIndex + 1 // Excel columns are 1-based
+                    };
+                    const convertedFormula = convertR1C1ToA1(cell.value, currentCellPosition,currentRow);
+                    return { formula: convertedFormula };
+                  }
+
+                  const offsetFormula = offcetA1Formula(cell.value,currentRow);
+                  // If not a R1C1 formula, store as is
+                  return { formula: offsetFormula };
+                
+
+              default:
+                return cell.value;
+            }
+          });
+        });
+        
+        // Create the actual Excel table
+        const tableObj = {
+          name: `sheet${worksheetIndex + 1}_table${tableIndex + 1}`,
+        //  displayName: table.displayName,
+          ref: `A${currentRow}`,
+          headerRow: true,
+          totalsRow: table.totalsRow,
+          style: {
+            theme: table?.style?.theme || 'TableStyleLight1',
+            showRowStripes: table?.style?.showRowStripes || false
+          },
+          columns: columns,
+          rows:rows
+        };
+
+        // Add the table to the worksheet
+        // Add the table to the worksheet
+        worksheet.addTable(tableObj);
+        
+        // Calculate the new position after adding the table
+        currentRow += rows.length + 1 // Add 1 for the header row
+               + (table.totalsRow ? 1 : 0) -1; // Subtract 1 to account for the last row of the table
+
+        // Add spacing after table
+        currentRow++;
+      });
+    }
+  
+    // Basic adjustments for better presentation
+    worksheet.columns.forEach((column) => {
+      column.width = 15; // Default column width
+    });
+  });
+  
+  // Save workbook to buffer
+  const buffer = await workbook.xlsx.writeBuffer();
+  return buffer;
+}
+
+function offcetA1Formula(formula, tableStartRow) {
+  // If the formula doesn't start with =, treat it as a simple cell reference
+  if (!formula.startsWith('=')) {
+    return adjustCellReference(formula, tableStartRow);
+  }
+
+  // Handle functions and complex formulas
+  let result = formula;
+  
+  // Regular expression to find cell references and ranges in a formula
+  // Matches patterns like A1, $A$1, A$1, $A1, A1:B2, $A$1:$B$2, etc.
+  const cellRefRegex = /(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?/g;
+  
+  // Replace each cell reference with adjusted reference
+  result = result.replace(cellRefRegex, (match) => {
+    if (match.includes(':')) {
+      // It's a range reference (e.g., A1:B2)
+      const [startRef, endRef] = match.split(':');
+      const adjustedStartRef = adjustCellReference(startRef, tableStartRow);
+      const adjustedEndRef = adjustCellReference(endRef, tableStartRow);
+      return `${adjustedStartRef}:${adjustedEndRef}`;
+    } else {
+      // It's a single cell reference
+      return adjustCellReference(match, tableStartRow);
+    }
+  });
+
+  return result;
+}
+
+// Helper function to adjust a single cell reference
+function adjustCellReference(cellRef, tableStartRow) {
+  // Separate the column and row parts
+  const colRegex = /(\$?[A-Z]+)/;
+  const rowRegex = /(\$?)(\d+)/;
+  
+  const colMatch = cellRef.match(colRegex);
+  const rowMatch = cellRef.match(rowRegex);
+  
+  if (!colMatch || !rowMatch) {
+    return cellRef; // Return unchanged if not a valid cell reference
+  }
+  
+  const colPart = colMatch[0];
+  const rowDollar = rowMatch[1]; // $ sign if present
+  const rowNumber = parseInt(rowMatch[2]);
+  
+  
+  const adjustedRowNumber = rowNumber + tableStartRow - 1;
+  
+  return `${colPart}${rowDollar}${adjustedRowNumber}`;
+}
+
+
+function convertR1C1ToA1(formula, cell,tableStartRow) {
+  const currentRow = cell.row;
+  const currentCol = cell.col;
+  const regex = /R(\[?-?\d*\]?)?C(\[?-?\d*\]?)?/g;
+  
+  return formula.replace(regex, (match, rowOffset, colOffset) => {
+    // Parse row reference
+    let targetRow = currentRow;
+    if (rowOffset) {
+      if (rowOffset.startsWith('[') && rowOffset.endsWith(']')) {
+        // Relative reference [n]
+        targetRow += parseInt(rowOffset.slice(1, -1));
+      } else {
+        // Absolute reference
+        targetRow = parseInt(rowOffset) + tableStartRow - 1; // Adjust for 1-based index
+      }
+    }
+    
+    // Parse column reference
+    let targetCol = currentCol;
+    if (colOffset) {
+      if (colOffset.startsWith('[') && colOffset.endsWith(']')) {
+        // Relative reference [n]
+        targetCol += parseInt(colOffset.slice(1, -1));
+      } else {
+        // Absolute reference
+        targetCol = parseInt(colOffset);
+      }
+    }
+    
+    // Convert column number to A1 style address (e.g., A1, B2, etc.)
+    return getA1CellReference(targetRow, targetCol);
+  });
+}
+
+function getA1CellReference(row, col) {
+  // Convert column number to letter (1 = A, 2 = B, etc.)
+  let columnLetter = '';
+  let tempCol = col;
+  
+  while (tempCol > 0) {
+    const remainder = (tempCol - 1) % 26;
+    columnLetter = String.fromCharCode(65 + remainder) + columnLetter;
+    tempCol = Math.floor((tempCol - 1) / 26);
+  }
+  
+  // Combine column letter with row number
+  return columnLetter + row;
+}
+
+
 
 function generateButtonDescription(buttonLabels,buttonsShownBefore){
 
@@ -1336,5 +1589,6 @@ module.exports = {
   filenameWoExtention,
   parcePDF,
   splitPDFByPageChunks,
-  extractContentWithTika
+  extractContentWithTika,
+  createExcelWorkbookToBuffer
 };

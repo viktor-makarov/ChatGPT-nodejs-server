@@ -262,8 +262,9 @@ async selectAndExecuteFunction() {
         "custom_midjourney": () => this.CustomQueryMdjRouter(),
         "extract_text_from_file": () => this.extract_text_from_file_router(),
         "fetch_url_content": () => this.fetchUrlContentRouter(),
-        "generate_pdf_file": () => this.generatePDFFile(),
-        "generate_text_file": () => this.generateTextFile(),
+        "create_pdf_file": () => this.createPDFFile(),
+        "create_excel_file": () => this.createExcelFile(),
+        "create_text_file": () => this.createTextFile(),
         "get_chatbot_errors": () => this.get_data_from_mongoDB_by_pipepine("errors_log"),
         "get_current_datetime": () => this.get_current_datetime(),
         "get_functions_usage": () => this.get_data_from_mongoDB_by_pipepine("functions_log"),
@@ -388,30 +389,32 @@ async get_data_from_mongoDB_by_pipepine(table_name){
         if(table_name==="errors_log"){
             result = await mongo.queryLogsErrorByAggPipeline(pipeline)
         } else if (table_name==="tokens_logs"){
-            result = await mongo.queryTockensLogsByAggPipeline(pipeline)
+            result = await mongo.queryTokensLogsByAggPipeline(pipeline)
         } else if (table_name==="functions_log"){
             result = await mongo.functionsUsageByAggPipeline(pipeline)
         } else {
-            return {success:0,error:`There is not handler for mongodb table ${table_name}. Consider modication of the server code`,instructions:"Report the error to the user"}
+            return {success:0,error:`There is not handler for mongodb table ${table_name}. Consider modication of the server code`,
+            instructions:"Report the error to the user"}
         }
 
         const actualTokens = func.countTokensProportion(JSON.stringify(result))
         
         if(actualTokens>this.#tokensLimitPerCall){
-            return {success:0,error:`Result of the function exceeds ${this.#tokensLimitPerCall} characters.`,instructions: "Please adjust the query to reduce length of the result."}
+            return {success:0,error:`Result of the function exceeds ${this.#tokensLimitPerCall} characters.`,
+            instructions: "You must adjust the query to reduce length of the result and retry."}
         }
         let response = {success:1,result:result}
 
         //Post validation
         if(result.length===0){
             response["hint"]= "Empty result might be caused by two reasons. (1) Incorrect data type used in the query. Make sure you correctly apply the instructions regarding date format given in the function description. (2) You have misspelled the values used in the filters. To check spelling, retrieve a list of unique values of the columns on which filters should be applyed. Take into consideration both points and retry the request. Do not ask the user for an approval to retry."
-            response["warning"] = "But do not undertake more than three attempts to retry the function."
         };
 
         return response
             
     } catch (err){
-        return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message + "" + err.stack}`,instructions:"Adjust the pipeline provided and retry."}
+        return {success:0,error:`Error on applying the aggregation pipeline provided to the mongodb: ${err.message + "" + err.stack}`,
+        instructions:"Adjust the pipeline provided and retry the function."}
     }
 
     };
@@ -442,11 +445,167 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             }
         };
 
+        async createExcelFile(){
+
+            this.validateRequiredFieldsFor_createExcelFile()
+
+            const {data,filename} = this.#argumentsJson
+            
+            const filebuffer = await func.createExcelWorkbookToBuffer(data)
+            const mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            
+            const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
+            
+            func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+
+            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+
+            await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+
+            return {success:1,result:`The file ${filename} ({sizeString}) has been generated and successfully sent to the user.`}
+
+        }
         
+validateRequiredFieldsFor_createExcelFile(){
+        const {data, filename} = this.#argumentsJson
 
-        async generatePDFFile(){
+        let error = new Error();
+        error.instructions = "You must fix the error and retry the function."
+        
+        if(!filename || filename === ""){
+            error.message = `'filename' parameter is missing. Provide the value for the argument.`
+            throw error
+        }
+        
+        if(!filename.toLowerCase().endsWith('.xlsx')){
+            error.message = `'filename' parameter must end with '.xlsx' extension.`
+            throw error
+        }
+        
+        if(!data || !Array.isArray(data) || data.length === 0){
+            error.message = `'data' parameter is missing or not an array. Provide an array of worksheet objects.`
+            throw error
+        }
+        
+        // Validate each worksheet in the data array
+        for(let i = 0; i < data.length; i++){
+            const worksheet = data[i]
+            
+            if(!worksheet.worksheet_name || worksheet.worksheet_name === ""){
+                error.message = `'worksheet_name' is missing in worksheet at index ${i}.`
+                throw error
+            }
+            
+            if(worksheet.header && !typeof worksheet.header === "string"){
+                error.message = `'header' must have 'string' type in worksheet '${worksheet.worksheet_name}'.`
+                throw error
+            }
+                        
+            if(!worksheet.tables || !Array.isArray(worksheet.tables) || worksheet.tables.length === 0){
+                error.message = `'tables' parameter is missing or not an array in worksheet '${worksheet.worksheet_name}'.`
+                throw error
+            }
+            
+            // Validate each table in the worksheet
+            for(let j = 0; j < worksheet.tables.length; j++){
+                const table = worksheet.tables[j]               
+                
+                if(!table.displayName || table.displayName === ""){
+                    error.message = `'displayName' is missing in table at index ${j} of worksheet '${worksheet.worksheet_name}'.`
+                    throw error
+                }
+                
+                if(table.totalsRow === undefined || typeof table.totalsRow !== 'boolean'){
+                    error.message = `'totalsRow' is missing or not boolean in table '${table.name}' of worksheet '${worksheet.worksheet_name}'.`
+                    throw error
+                }
+                
+                if(!table.style || typeof table.style !== 'object'){
+                    error.message = `'style' is missing or not an object in table '${table.name}' of worksheet '${worksheet.worksheet_name}'.`
+                    throw error
+                }
+                
+                if(!table.columns || !Array.isArray(table.columns) || table.columns.length === 0){
+                    error.message = `'columns' parameter is missing or not an array in table '${table.name}' of worksheet '${worksheet.worksheet_name}'.`
+                    throw error
+                }
+                
+                
+                // Validate each column in the table
+                for(let k = 0; k < table.columns.length; k++){
+                    const column = table.columns[k]
+                    
+                    if(!column.name || column.name === ""){
+                        error.message = `'name' is missing in column at index ${k} of table '${table.name}' in worksheet '${worksheet.worksheet_name}'.`
+                        throw error
+                    }
+                    
+                    if(column.filterButton === undefined || typeof column.filterButton !== 'boolean'){
+                        error.message = `'filterButton' is missing or not boolean in column '${column.name}' of table '${table.name}' in worksheet '${worksheet.worksheet_name}'.`
+                        throw error
+                    }
+                    
+                    // Only validate totalsRowFunction and totalsRowLabel if totalsRow is true
+                    if(table.totalsRow){
+                        
+                        if(!column.totalsRowFunction){
+                            error.message = `'totalsRowFunction' is missing in column '${column.name}' of table '${table.name}' in worksheet '${worksheet.worksheet_name}'.`
+                            throw error
+                        }
+                    }
+                }
+                
+                if(!table.rows || !Array.isArray(table.rows) || table.rows.length === 0){
+                    error.message = `'rows' parameter is missing or not an array in table '${table.name}' of worksheet '${worksheet.worksheet_name}'.`
+                    throw error
+                }
+                
+                // Validate each row and its cells in the table
+                for(let m = 0; m < table.rows.length; m++){
+                    const row = table.rows[m]
+                    
+                    if(!Array.isArray(row)){
+                        error.message = `Row at index ${m} is not an array in table '${table.name}' of worksheet '${worksheet.worksheet_name}'.`
+                        throw error
+                    }
+                    
+                    if(row.length !== table.columns.length){
+                        error.message = `Row at index ${m} has ${row.length} cells, but there are ${table.columns.length} columns defined for table '${table.name}' in worksheet '${worksheet.worksheet_name}'.`
+                        throw error
+                    }
+                    
+                    // Validate each cell in the row
+                    for(let n = 0; n < row.length; n++){
+                        const cell = row[n]
+                        
+                        if(cell === undefined || cell === null){
+                            error.message = `Cell at index ${n} is missing in row ${m} of table '${table.name}' in worksheet '${worksheet.worksheet_name}'.`
+                            throw error
+                        }
+                        
+                        if(cell.value === undefined){
+                            error.message = `'value' is missing in cell at index ${n} of row ${m} in table '${table.name}' of worksheet '${worksheet.worksheet_name}'.`
+                            throw error
+                        }
+                        
+                        if(!cell.type || !['string', 'number', 'boolean', 'date', 'formula'].includes(cell.type)){
+                            error.message = `'type' is missing or invalid in cell at index ${n} of row ${m} in table '${table.name}' of worksheet '${worksheet.worksheet_name}'.`
+                            throw error
+                        }
 
-            this.validateRequiredFieldsFor_generatePDFFile()
+                        if(['string','date', 'formula'].includes(cell.type) && typeof cell.value !== 'string'){
+                            error.message = `Cell at index ${n} of row ${m} in table '${table.name}' of worksheet '${worksheet.worksheet_name}' must have a string value for type '${cell.type}'.`
+                            throw error
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+        async createPDFFile(){
+
+            this.validateRequiredFieldsFor_createPDFFile()
 
             const {filename,htmltext} = this.#argumentsJson
             
@@ -466,9 +625,9 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
         }
 
-        async generateTextFile(){
+        async createTextFile(){
 
-            this.validateRequiredFieldsFor_generateTextFile()
+            this.validateRequiredFieldsFor_createTextFile()
 
             const {filename,filetext,mimetype} = this.#argumentsJson
             
@@ -569,12 +728,8 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
             try{
            
-                try{
-                    this.validateRequiredFields()
-                } catch (err){
-                    return {success:0,error: err.message + "" + err.stack}
-                }
-                    
+                this.validateRequiredFields()
+
                 const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
                 const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
                 resources.sort((a, b) => {
@@ -606,7 +761,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 } else if (results.length > 1){
                     metadataText = results.map((obj,index) => `Part ${index}\n${JSON.stringify(obj.metadata,null,2)}`).join("\n");
                 }
-                
+
                 const combinedResultText = concatenatedText + (metadataText ? `\n\nMetadata:\n${metadataText}` : "");
 
                 const wasExtracted = results.some(doc => doc.was_etracted);
@@ -868,24 +1023,24 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
         const {textprompt,seed,aspectratio,version,imageprompt,imageweight} = this.#argumentsJson
 
+        let error = new Error();
+        error.instructions = "You must fix the error and retry the function."
+
         if(!textprompt){
-            let err = new Error("textprompt param contains no text.")
-            err.instructions = "You should provide the text prompt."
-            throw err;
+            error.message = "textprompt param contains no text."
+            throw error;
         } else {
             if (textprompt.split(" ").length > 150){
-                let err = new Error("textprompt length exceeds the limit of 150 words.")
-                err.instructions = "You should reduce the prompt length."
-                throw err;
+                error.message = "textprompt length exceeds the limit of 150 words."
+                throw error;
             }
 
             const paramPattern = new RegExp(/--([a-zA-Z]{2,})/,'gi');
 
             const matches = textprompt.match(paramPattern);
             if (matches) {
-                let err = new Error(`textprompt contains param ${matches}, but there should be no params in text prompt.`)
-                err.instructions = "You should remove all params from the text prompt."
-                throw err;
+                error.message = `textprompt contains param ${matches}, but there should be no params in text prompt.`
+                throw error;
               }
         }
         
@@ -895,17 +1050,15 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             const ratioPattern = /^\d+\s*:\s*\d+$/;
 
             if(!(pxPattern.test(aspectratioClean) || ratioPattern.test(aspectratioClean))){
-                let err = new Error(`aspectratio param ${aspectratio} is not valid.`)
-                err.instructions = "You should provide the aspect ratio in the format 16px x 9px or 16:9."
-                throw err;
+                error.message = `aspectratio param ${aspectratio} is not valid. Allowed aspect ratio format^ 16px x 9px or 16:9.`
+                throw error;
             }
         }
 
         if (version && version !== ""){
             if(!["6.1","5.2","5.1","5.0","4a","4b","4c"].includes(version)){
-                let err = new Error(`version param ${version} is not valid.`)
-                err.instructions = "You should provide the version param in accordance with the following restricted list 6.1, 5.2, 5.1, 5.0, 4a, 4b or 4c."
-                throw err;
+                error.message = `version param ${version} is not valid. Allowed versions are restricted to the following list 6.1, 5.2, 5.1, 5.0, 4a, 4b or 4c.`
+                throw error;
             }
         }
         
@@ -915,23 +1068,20 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             
             for (const url of urls) {
                 if (!url.match(/^https?:\/\/.+/)) {
-                    let err = new Error(`imageprompt param contains invalid URL: ${url}`)
-                    err.instructions = "You should provide the image prompt as one or more valid URLs separated by commas."
-                    throw err;
+                    error.message = `imageprompt param contains invalid URL: ${url} `
+                    throw error;
                 }
             }
         };
 
         if (imageweight && imageweight !== ""){
             if (typeof imageweight !== "number"){
-                let err = new Error("imageweight param is not a number.")
-                err.instructions = "You should provide the imageweight param. A number between 0 and 3. E.g. 0.5, 1, 1.75, 2, 2.5."
-                throw err;
+                error.message = `imageweight param is not a number. Allowed values are between 0 and 3. E.g. 0.5, 1, 1.75, 2, 2.5.`
+                throw error;
             } else {
                 if (imageweight < 0 || imageweight > 3){
-                    let err = new Error("imageweight param is out of range.")
-                    err.instructions = "You should provide the imageweight param in the range between 0 and 3. E.g. 0.5, 1, 1.75, 2, 2.5."
-                    throw err;
+                    error.message = `imageweight param is out of range. Allowed range is between 0 and 3. E.g. 0.5, 1, 1.75, 2, 2.5.`
+                    throw error;
                 }
             }
         }
@@ -959,39 +1109,54 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
     convertResourcesParamToJSON(){
 
+        let error = new Error();
+        error.instructions = "You must fix the error and retry the function."
+
         try{
             this.#argumentsJson.resources = JSON.parse(this.#argumentsJson.resources)
         } catch(err){
-            throw new Error(`Received 'resources' object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
+            error.message = `Received 'resources' object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`
+            throw error;
         }
-
     }
 
-    validateRequiredFieldsFor_generatePDFFile(){    
+
+    validateRequiredFieldsFor_createPDFFile(){    
 
         const {htmltext,filename} = this.#argumentsJson
+
+        let error = new Error();
+        error.instructions = "You must fix the error and retry the function."
         
         if(!filename || filename === ""){
-            throw new Error(`'filename' parameter is missing. Provide the value for the agrument.`)
+            error.message = `'filename' parameter is missing. Provide the value for the agrument.`
+            throw error;
         }
         if(!htmltext || htmltext === ""){
-            throw new Error(`'htmltext' parameter is missing. Provide the value for the agrument.`)
+            error.message = `'htmltext' parameter is missing. Provide the value for the agrument.`
+            throw error;
         }
 
     }
 
-    validateRequiredFieldsFor_generateTextFile(){
+    validateRequiredFieldsFor_createTextFile(){
 
         const {filename,filetext,mimetype} = this.#argumentsJson
+
+        let error = new Error();
+        error.instructions = "You must fix the error and retry the function."
         
         if(!filename || filename === ""){
-            throw new Error(`'filename' parameter is missing. Provide the value for the agrument.`)
+            error.message = `'filename' parameter is missing. Provide the value for the agrument.`
+            throw error;
         }
         if(!filetext || filetext === ""){
-            throw new Error(`'filetext' parameter is missing. Provide the value for the agrument.`)
+            error.message = `'filetext' parameter is missing. Provide the value for the agrument.`
+            throw error;
         }
         if(!mimetype || mimetype === ""){
-            throw new Error(`'mimetype' parameter is missing. Provide the value for the agrument.`)
+            error.message = `'mimetype' parameter is missing. Provide the value for the agrument.`
+            throw error;
         }
 
     }
@@ -1000,8 +1165,12 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
         const resources = this.#argumentsJson.resources
 
+        let error = new Error();
+        error.instructions = "You must fix the error and retry the function."
+
         if(!resources){
-            throw new Error(`'resources' parameter is missing. Provide the value for the agrument.`)
+            error.message = `'resources' parameter is missing. Provide the value for the agrument.`
+            throw error;
         }
 
         if(!Array.isArray(this.#argumentsJson.resources)){
@@ -1009,7 +1178,8 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
         const paramIsValid = regex.test(this.#argumentsJson.resources);
         if(!paramIsValid){
-            throw new Error(`'resources' parameter is invalid. It must look like this: 3456,3456,12345`)
+            error.message = `'resources' parameter is invalid. It must look like this: 3456,3456,12345`
+            throw error;
         }
         }
         

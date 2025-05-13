@@ -186,6 +186,7 @@ async function chatCompletionStreamAxiosRequest(
     };
     
     const available_tools =  await toolsCollection.getAvailableToolsForCompletion(dialogueClass.userInstance)
+
     const canUseTools = modelConfig[requestMsg.user.currentModel].canUseTool
     const canUseTemperature = modelConfig[requestMsg.user.currentModel].canUseTemperature
     
@@ -203,7 +204,7 @@ async function chatCompletionStreamAxiosRequest(
     try {
       const response = await axios(options);
       completionInstance.response = response;
-      response.data.pipe(completionInstance);
+      await response.data.pipe(completionInstance);
     } catch (error) {
 
       await replyMsg.simpleMessageUpdate("Ой-ой! :-(",{

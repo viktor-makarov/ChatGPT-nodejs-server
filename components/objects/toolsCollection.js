@@ -150,7 +150,7 @@ const list = [
             type:"function",
             function:{
                 name: "extract_text_from_file",
-                description: `Extracts text from documents or images provided by user. This function usage is restricted to the following mime types: ${appsettings.file_options.allowed_mime_types.join(', ')}.`,
+                description: `Extracts text from documents or images provided by user.`,
                 parameters: {
                     type: "object",
                     properties: {
@@ -382,8 +382,8 @@ const list = [
     {
         type:"function",
         function:{
-            name: "generate_pdf_file",
-            description: "Generates a PDF file. The file will be sent to the user as a document.",
+            name: "create_pdf_file",
+            description: "Creates a PDF file. The file will be sent to the user as a document.",
             parameters: {
                 type: "object",
                 properties: {
@@ -401,12 +401,178 @@ const list = [
 
         },
         friendly_name:"Создание PDF",
-        timeout_ms:45000,
+        timeout_ms:60000,
         try_limit:3,
         long_wait_notes: [
-            {time_ms:15000,comment:"Если в файле должно быть изобраюение, то обычно требуется больше времени. Подождем ... ☕️"},
-            {time_ms:30000,comment:"Похоже, файл действительно болшой. Подождем еще немного ... Но если через 15 секунд не закончит, то придется отменить."},
+            {time_ms:15000,comment:"Если в файле должно быть изображение, то обычно требуется больше времени. Подождем ... ☕️"},
+            {time_ms:30000,comment:"Похоже, файл действительно болшой. Подождем еще немного ... Но если через 30 секунд не закончит, то придется отменить."},
         ],
+        availableInRegimes: ["chat"],
+        availableForGroups: ["admin","basic"],
+        availableForToolCalls: true,
+        depricated:false
+    },
+    {
+        type:"function",
+        function:{
+            name: "create_excel_file",
+            description: "Creates an Excel file. The file will be sent to the user as a document.",
+            strict: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    data: {
+                        type: "array",
+                        description: "An array of Excel worksheets.",
+                        items: {
+                            type: "object",
+                            properties: {
+                                worksheet_name: {
+                                    type: "string",
+                                    description: "Name of the worksheet."
+                                },
+                                header: {
+                                    "type": ["string","null"],
+                                    "description": "Header on the top of the worksheet."
+                                },
+                                subheader: {
+                                    "type": ["string","null"],
+                                    "description": "Subheader of the worksheet."
+                                },
+                                tables:{
+                                    type: ["array","null"],
+                                    description: "An array of tables.",
+                                    items: {
+                                        type: "object",
+                                        properties: {
+                                            displayName: {
+                                                type: "string",
+                                                description: "Displayed name of the table"
+                                            },
+                                            totalsRow:{
+                                                type: "boolean",
+                                                description: "true = total row should be automatically added to the table. If true you must also provide totalsRowLabel and totalsRowFunction in coulumn properties."
+                                            },
+                                            style:{
+                                                type: "object",
+                                                properties: {
+                                                    theme:{
+                                                        type: "string",
+                                                        enum: [
+                                                            "TableStyleLight1",
+                                                            "TableStyleLight8",
+                                                            "TableStyleLight15",
+                                                            "TableStyleMedium1",
+                                                            "TableStyleMedium8",
+                                                            "TableStyleMedium15",
+                                                            "TableStyleMedium22",
+                                                            "TableStyleDark1",
+                                                            "TableStyleMedium8"
+                                                        ],
+                                                        description: "defines the style of the table. TableStyleLight1 is default.",
+                                                    },
+                                                    showRowStripes:{
+                                                        type: "boolean",
+                                                        description: "true = show row stripes."
+                                                    }
+                                                },
+                                                required: ["theme","showRowStripes"],
+                                                additionalProperties: false
+                                            },
+                                            totalsRowLabel:{
+                                                type:["string","null"],
+                                                description:"Label to describe the totals row."
+                                            },
+                                            columns:{
+                                                type:"array",
+                                                description:"Columns of the table",
+                                                items:{
+                                                    type:"object",
+                                                    properties:{
+                                                        name:{
+                                                            type:"string",
+                                                            description:"Name of the column. It should be unique in the table."
+                                                        },
+                                                        filterButton:{
+                                                            type:"boolean",
+                                                            description:"true = filter button should be added to the column. Applicable only if headerRow is true. If you add filter to one column - add the rest as well."
+                                                        },
+                                                        totalsRowFunction: {
+                                                            type: "string",
+                                                            enum: [
+                                                                "none",
+                                                                "average",
+                                                                "countNums",
+                                                                "count",
+                                                                "max",
+                                                                "min",
+                                                                "stdDev",
+                                                                "var",
+                                                                "sum"
+                                                            ],
+                                                            description: "Name of the totals function."
+                                                            }
+                                                    },      
+                                                    required: ["name","filterButton","totalsRowFunction"],
+                                                    additionalProperties: false
+                                                }
+                                            },
+                                            rows:{
+                                                type:"array",
+                                                description:"Rows of the table.",
+                                                items:{
+                                                    type:"array",
+                                                    description:"Cells of tthe row",
+                                                    items:{
+                                                        type:"object",
+                                                        properties:{
+                                                            value:{
+                                                                type:["string","number","boolean"],
+                                                                description:"Dates should be in the format YYYY-MM-DD and with type 'date'. Formulas must be in conventional A1 style and have type 'formula'. Sequential numbers of the rows should be in string format."
+                                                            },
+                                                            type:{
+                                                                type:"string",
+                                                                enum: [
+                                                                    "string",
+                                                                    "number",
+                                                                    "boolean",
+                                                                    "date",
+                                                                    "formula"
+                                                                ],
+                                                                description:"Type of the cell."
+                                                            }
+                                                        },
+                                                        required: ["value","type"],
+                                                        additionalProperties: false
+                                                    },
+                                                    required: ["name","data"],
+                                                    additionalProperties: false
+                                                }
+                                            },
+                                        },
+                                        required: ["displayName","totalsRow","totalsRowLabel","style","columns","rows"],
+                                        additionalProperties: false
+                                    }
+                                    
+                                }
+                                },
+                            required: ["worksheet_name","header","subheader","tables"],
+                            additionalProperties: false
+                            },
+                    },
+                    filename:{
+                        type:"string",
+                        description:"Name of the file. It must have .xlsx extention."
+                    }
+                },
+                required: ["filename","data"],
+                additionalProperties: false
+            }
+
+        },
+        friendly_name:"Создание Excel",
+        timeout_ms:60000,
+        try_limit:3,
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
@@ -414,8 +580,8 @@ const list = [
     },
     {type:"function",
         function:{
-            name: "generate_text_file",
-            description: "Generates a text file. The file will be sent to the user as a document.",
+            name: "create_text_file",
+            description: "Creates a text file. The file will be sent to the user as a document.",
             parameters: {
                 type: "object",
                 properties: {

@@ -9,6 +9,7 @@ const error_log_collection = global.mongoConnection.model(global.appsettings.mon
 const reg_log_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_reg_log,scheemas.RegistrationLogSheema);
 const token_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_tokens_log,scheemas.TokensLogSheema);
 const function_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_functions_log,scheemas.FunctionUsageLogSheema);
+const callback_usage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_callback_log,scheemas.CallbackUsageLogSheema);
 const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
 const dialog_meta_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_dialogue_meta,scheemas.DialogMetaSheema);
 const function_queue_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_function_queue,scheemas.FunctionQueueSheema);
@@ -17,6 +18,34 @@ const telegram_model_collection = global.mongoConnection.model(global.appsetting
 const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
 const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_names.coll_hash_storage,scheemas.HashStorage);
 const knowledge_base_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_knowledge_base,scheemas.KnowledgeBaseSheema);
+
+
+async function upsertCallbackUsage(requestMsgInstance,duration,success=-1, error){
+
+  try {
+    return await callback_usage_collection.updateOne(
+      { message_id: requestMsgInstance.callbackId},
+      {
+        message_id: requestMsgInstance.callbackId,
+        callback_event:requestMsgInstance.callback_event,
+        callback_data:requestMsgInstance.callback_data,
+        callback_error:error,
+        datetimeUTC: new Date(),
+        userid: requestMsgInstance.user.userid,
+        userFirstName: requestMsgInstance.user.user_first_name,
+        userLastName: requestMsgInstance.user.user_last_name,
+        username: requestMsgInstance.user.user_username,
+        duration: duration,
+        success: success
+      },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
+
 
 async function getFunctionQueueByName(queue_name){
 
@@ -325,7 +354,7 @@ async function insertFunctionUsagePromise(obj){
   }
 };
 
-const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
+const queryTokensLogsByAggPipeline = async (agg_pipeline) => {
   try {
 
     return await token_collection.aggregate(agg_pipeline)
@@ -1394,7 +1423,7 @@ module.exports = {
   profileMigrationScript,
   insert_permissions_migrationPromise,
   insert_read_section_migrationPromise,
-  queryTockensLogsByAggPipeline,
+  queryTokensLogsByAggPipeline,
   mongooseVersion,
   queryLogsErrorByAggPipeline,
   insert_details_logPromise,
@@ -1432,5 +1461,6 @@ module.exports = {
   getLastCompletion,
   getFunctionQueueByName,
   addFunctionToQueue,
-  removeFunctionFromQueue
+  removeFunctionFromQueue,
+  upsertCallbackUsage
 };
