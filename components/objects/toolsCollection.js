@@ -33,7 +33,7 @@ const list = [
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.function.description = `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one error.`
-            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. You should limit result of function with maximum of 100 rows. You can use get_current_datetime function to get current date and time if needs be.`
+            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
         }
     },
     {
@@ -62,8 +62,8 @@ const list = [
         addDescriptions: async function(){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
-            this.function.description = `Use this function to report on this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
-            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. You should limit result of function with maximum of 100 rows. You can use get_current_datetime function to get current date and time if needs be.`
+            this.function.description = `Prodides this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
+            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
         }
     },
     {
@@ -92,8 +92,8 @@ const list = [
         addDescriptions: async function(){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
-            this.function.description = `Use this function to report on this chatbot users' activity. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one request of a user.`
-            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' activity from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. You should limit result of function with maximum of 100 rows. You can use get_current_datetime function to get current date and time if needs be.`
+            this.function.description = `Provides chatbot users' query statistics. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one query of a user.`
+            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' query statistics from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
         }
     },
     {
@@ -151,16 +151,22 @@ const list = [
             function:{
                 name: "extract_text_from_file",
                 description: `Extracts text from documents or images provided by user.`,
+                strict: true,
                 parameters: {
                     type: "object",
                     properties: {
                         resources:{
-                            type: "string",
-                            description: `List of fileid numbers for extraction separated by commas. Images that represent the same document should be included in one tool call. Example: 3356,4567,4567. Documents are processd in the order they are provided in the list.`
+                            type: "array",
+                            description: `List of fileid numbers for extraction. Images that represent the same text document should be included in one function call. Documents are processd in the order they are provided in the list.`,
+                            items: {
+                                type: "number",
+                                description: "fileid"
                         }
+                    }
                     },
-                    required: ["resources"]
-                }
+                    required: ["resources"],
+                    additionalProperties: false
+                    }
             },
             friendly_name: "Чтение документа",
             timeout_ms:180000,

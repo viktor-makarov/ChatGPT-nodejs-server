@@ -509,7 +509,7 @@ validateRequiredFieldsFor_createExcelFile(){
             // Validate each table in the worksheet
             for(let j = 0; j < worksheet.tables.length; j++){
                 const table = worksheet.tables[j]               
-                
+
                 if(!table.displayName || table.displayName === ""){
                     error.message = `'displayName' is missing in table at index ${j} of worksheet '${worksheet.worksheet_name}'.`
                     throw error
@@ -728,10 +728,10 @@ validateRequiredFieldsFor_createExcelFile(){
 
             try{
            
-                this.validateRequiredFields()
+                this.validateRequiredFieldsFor_extractTextFromFile()
 
-                const sourceid_list_array = this.getArrayFromParam(this.#argumentsJson.resources)
-                const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
+     
+                const resources = await mongo.getUploadedFilesBySourceId(this.#argumentsJson.resources)
                 resources.sort((a, b) => {
                     return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
                 });
@@ -1161,7 +1161,7 @@ validateRequiredFieldsFor_createExcelFile(){
 
     }
 
-    validateRequiredFields(){
+    validateRequiredFieldsFor_extractTextFromFile(){
 
         const resources = this.#argumentsJson.resources
 
@@ -1169,18 +1169,18 @@ validateRequiredFieldsFor_createExcelFile(){
         error.instructions = "You must fix the error and retry the function."
 
         if(!resources){
-            error.message = `'resources' parameter is missing. Provide the value for the agrument.`
+            error.message = `'resources' parameter is missing.`
             throw error;
         }
 
-        if(!Array.isArray(this.#argumentsJson.resources)){
-            const regex = /^(\d+)(,\d+)*$/;
-
-        const paramIsValid = regex.test(this.#argumentsJson.resources);
-        if(!paramIsValid){
-            error.message = `'resources' parameter is invalid. It must look like this: 3456,3456,12345`
+        if(!Array.isArray(resources)){
+            error.message = `'resources' parameter is not an array.`
             throw error;
         }
+
+        if(resources.length === 0){
+            error.message = `'resources' array is empty.`
+            throw error;
         }
         
     }
