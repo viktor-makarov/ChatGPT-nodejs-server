@@ -82,9 +82,9 @@ async router(toolCalls = []){
             mdj_prompt = outcome?.supportive_data?.midjourney_prompt;
             toolExecutionResult.success = outcome.success
             toolExecutionResult.duration = outcome?.supportive_data?.duration || 0;
-            outcome?.supportive_data && delete outcome.supportive_data;
-            toolExecutionResult.content = JSON.stringify(outcome)
-                           
+            toolExecutionResult.fullContent = outcome?.supportive_data?.fullContent;
+            toolExecutionResult.content = JSON.stringify(outcome,this.modifyStringify,2)
+   
         } else {
             const outcome = {success:0,error:"Non-function types cannot be processed for now.",instructions:"Rework into a function"}
             toolExecutionResult.content = JSON.stringify(outcome)
@@ -135,6 +135,14 @@ async router(toolCalls = []){
     
     }
 };
+
+modifyStringify(key,value){
+
+    if (key === 'supportive_data') {
+        return undefined; // Exclude this key from the JSON stringification
+    }
+return value
+}
 
 async addMsgIdToToolCall(toolCallId,systemMsgId){
 

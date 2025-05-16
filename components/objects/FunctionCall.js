@@ -607,9 +607,24 @@ validateRequiredFieldsFor_createExcelFile(){
 
             this.validateRequiredFieldsFor_createPDFFile()
 
-            const {filename,htmltext} = this.#argumentsJson
-            
-            const formatedHtml = func.formatHtml(htmltext,filename)
+            const {filename,html,content_reff} = this.#argumentsJson
+                       
+            let formatedHtml;
+            if(html){
+                formatedHtml = func.formatHtml(html,filename)
+            } else {
+                const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
+
+                previuslyExtractedContent.sort((a, b) => {
+                    return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
+                });
+
+                if(previuslyExtractedContent.length === 0){
+                    return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
+                }
+                formatedHtml = func.fileContentToHtml(previuslyExtractedContent,filename)
+                
+            }
 
             const filebuffer = await func.htmlToPdfBuffer(formatedHtml)
             const mimetype = "application/pdf"
@@ -629,9 +644,28 @@ validateRequiredFieldsFor_createExcelFile(){
 
             this.validateRequiredFieldsFor_createTextFile()
 
-            const {filename,filetext,mimetype} = this.#argumentsJson
+            const {filename,text,content_reff,mimetype} = this.#argumentsJson
             
-            const filebuffer = func.generateTextBuffer(filetext)
+            let textToSave;
+            if(text){
+                textToSave = text
+            } else {
+                const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
+                
+                previuslyExtractedContent.sort((a, b) => {
+                    return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
+                });
+
+                if(previuslyExtractedContent.length === 0){
+                    return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
+                }
+                
+                textToSave = previuslyExtractedContent.map(obj => {
+                    return obj.tool_reply.fullContent.results.map(obj =>obj.text)
+                }).flat().join('\n')
+            }
+
+            const filebuffer = func.generateTextBuffer(textToSave)
             const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
             
             func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
@@ -703,7 +737,6 @@ validateRequiredFieldsFor_createExcelFile(){
     async extractTextFromFileWraper(resource_url,resource_mine_type,index){
             try{
                 const extractedObject = await func.extractTextFromFile(resource_url,resource_mine_type)
-                
                 return {...extractedObject,index,resource_url,resource_mine_type}
                 
             } catch(err){
@@ -730,8 +763,8 @@ validateRequiredFieldsFor_createExcelFile(){
            
                 this.validateRequiredFieldsFor_extractTextFromFile()
 
-     
-                const resources = await mongo.getUploadedFilesBySourceId(this.#argumentsJson.resources)
+                const sourceid_list_array = this.#argumentsJson.resources
+                const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
                 resources.sort((a, b) => {
                     return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
                 });
@@ -749,59 +782,46 @@ validateRequiredFieldsFor_createExcelFile(){
                 results.sort((a, b) => a.index - b.index);
 
                 const firstFailedResult = results.findIndex(result => result.success === 0);
-                if(firstFailedResult>=0){
+                if(firstFailedResult != -1){
                     return {success:0,resource_index:firstFailedResult,resource_url:results.at(firstFailedResult).resource_url,resource_mine_type:results.at(firstFailedResult).resource_mine_type,error: results.at(firstFailedResult).error,instructions:"Fix the error in the respective resource and re-call the entire function."}
                 }
 
                 const concatenatedText = results.map(obj => obj.text).join(' ');
 
-                let metadataText;
+                const fullContent = {
+                    reff:Date.now(), //Used as unique numeric identifier for the extracted content
+                    fileids: this.#argumentsJson.resources,
+                    fileNames: resources.map(obj => obj.fileName),
+                    results
+                }
+
+                let metadataText ="";
                 if(results.length === 1){
                     metadataText = JSON.stringify(results[0].metadata,null,2)
                 } else if (results.length > 1){
                     metadataText = results.map((obj,index) => `Part ${index}\n${JSON.stringify(obj.metadata,null,2)}`).join("\n");
                 }
-
-                const combinedResultText = concatenatedText + (metadataText ? `\n\nMetadata:\n${metadataText}` : "");
-
-                const wasExtracted = results.some(doc => doc.was_etracted);
-
-                let extractedTextsent = false;
-                let extractedTextsendError;
-
-                if(wasExtracted){
-                    
-                    const filenameShort = resources.length === 1 ? func.filenameWoExtention(resources[0].fileName) : "text" ;
-                    
-                    const filebuffer = func.generateTextBuffer(concatenatedText)
-                    const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
-                    
-                    try{
-                        func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)                  
-                        const date = new Date()
-                         const filename = `${filenameShort}_extracted_${date.toISOString()}.txt`
-                        await this.#replyMsg.sendDocumentAsBinary(filebuffer, filename,"text/plain")
-                        extractedTextsent = true
-                        
-                    } catch(err){
-                        console.log("err",err)
-                        if(err.message.includes("File size exceeds the limit of")){
-                            extractedTextsendError = `The file size with extracted text is ${sizeString} which exceeds the Telegram limit of ${appsettings.telegram_options.file_size_limit} bytes and therefore can not be sent to the user.`
-                        } else {
-                            err.place_in_code = "extract_text_from_file_router";
-                            throw err;
-                        }
-                    }
-                }
                 
-                const  numberOfTokens = await func.countTokensLambda(combinedResultText,this.#user.currentModel)
+                const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
                 console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
                 
                 if(numberOfTokens > this.#tokensLimitPerCall){
-                    return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: `volume of the file content is too big to fit into the dialogue. ${extractedTextsendError && "Also " + extractedTextsendError}`, instructions:`Inform the user that file size exeeds the dialog limits and therefore can not be included in the dialogue. ${extractedTextsent ? "But he can use a file with recognised text sent to the user." : ""}`}
+                    return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, 
+                    error: `The volume of the file content (${numberOfTokens} tokens) exceeds the token limit (${this.#tokensLimitPerCall} tokens) and cannot be included in the dialogue.`, 
+                    instructions:`Inform the user that file size exceeds the dialog limits and therefore cannot be included in the dialogue.`}
                 }
                             
-                return {success:1,content_token_count:numberOfTokens, result:combinedResultText, instructions:`Inform the user that: ${extractedTextsendError ? extractedTextsendError : extractedTextsent ? `he can use a file with recognised text sent to him.` : "the text has been extracted successfully."}`}
+                return {
+                    success:1,
+                    content_reff:fullContent.reff,
+                    constent_reff:fullContent.reff,
+                    text:concatenatedText,
+                    metadata: metadataText,
+                    supportive_data:{
+                        fullContent
+                    },
+                    instructions:`Inform the user that: the text has been extracted successfully.`
+                }
                     
             } catch(err){
                 err.place_in_code = err.place_in_code || "extract_text_from_file_router";
@@ -1123,7 +1143,7 @@ validateRequiredFieldsFor_createExcelFile(){
 
     validateRequiredFieldsFor_createPDFFile(){    
 
-        const {htmltext,filename} = this.#argumentsJson
+        const {html,filename,content_reff} = this.#argumentsJson
 
         let error = new Error();
         error.instructions = "You must fix the error and retry the function."
@@ -1132,8 +1152,29 @@ validateRequiredFieldsFor_createExcelFile(){
             error.message = `'filename' parameter is missing. Provide the value for the agrument.`
             throw error;
         }
-        if(!htmltext || htmltext === ""){
-            error.message = `'htmltext' parameter is missing. Provide the value for the agrument.`
+
+        if(!html && !content_reff){
+            error.message = `Either 'html' or 'content_reff' parameter must be present. Provide at least one of them.`
+            throw error;
+        }
+
+        if(html && content_reff){
+            error.message = `'html' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
+            throw error;
+        }
+        
+        if(html && html === ""){
+            error.message = `'html' parameter must not be blank.`
+            throw error;
+        }
+
+        if(content_reff && !Array.isArray(content_reff)){
+            error.message = `'content_reff' parameter must be an array.`
+            throw error;
+        }
+
+        if(content_reff && Array.isArray(content_reff) && content_reff.length === 0){
+            error.message = `'content_reff' array is empty.`
             throw error;
         }
 
@@ -1141,7 +1182,7 @@ validateRequiredFieldsFor_createExcelFile(){
 
     validateRequiredFieldsFor_createTextFile(){
 
-        const {filename,filetext,mimetype} = this.#argumentsJson
+        const {filename,text,content_reff,mimetype} = this.#argumentsJson
 
         let error = new Error();
         error.instructions = "You must fix the error and retry the function."
@@ -1150,15 +1191,36 @@ validateRequiredFieldsFor_createExcelFile(){
             error.message = `'filename' parameter is missing. Provide the value for the agrument.`
             throw error;
         }
-        if(!filetext || filetext === ""){
-            error.message = `'filetext' parameter is missing. Provide the value for the agrument.`
-            throw error;
-        }
+
         if(!mimetype || mimetype === ""){
             error.message = `'mimetype' parameter is missing. Provide the value for the agrument.`
             throw error;
         }
 
+        if(!text && !content_reff){
+            error.message = `Either 'text' or 'content_reff' parameter must be present. Provide at least one of them.`
+            throw error;
+        }
+
+        if(text && content_reff){
+            error.message = `'text' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
+            throw error;
+        }
+        
+        if(text && text === ""){
+            error.message = `'text' parameter must contain text.`
+            throw error;
+        }
+
+        if(content_reff && !Array.isArray(content_reff)){
+            error.message = `'content_reff' parameter must be an array.`
+            throw error;
+        }
+
+        if(content_reff && Array.isArray(content_reff) && content_reff.length === 0){
+            error.message = `'content_reff' array is empty.`
+            throw error;
+        }
     }
 
     validateRequiredFieldsFor_extractTextFromFile(){

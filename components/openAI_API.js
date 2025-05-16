@@ -203,6 +203,7 @@ async function chatCompletionStreamAxiosRequest(
     
     try {
       const response = await axios(options);
+      completionInstance.clearLongWaitNotes()
       completionInstance.response = response;
       await response.data.pipe(completionInstance);
     } catch (error) {

@@ -457,8 +457,20 @@ async function addMsgIdToToolCall(obj){
 };
 
 
+async function getExtractedTextByReff(content_reff){
+  try {
 
-
+    const filter = { "tool_reply.fullContent.reff": { $in: content_reff}}
+    
+    return await dialog_collection.find(
+      filter
+      ,{"tool_reply.fullContent": 1}
+    ).lean();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
 
 async function getUploadedFilesBySourceId(sourceid_list){
   try {
@@ -546,8 +558,7 @@ const upsertCompletionPromise = async (CompletionObject) => {
 
 async function  updateToolCallResult(result){
   try {
-
-    const  {tool_call_id, content, duration, success} = result
+    const  {tool_call_id, content, duration, success, fullContent,fullContentReff} = result
 
     return await dialog_collection.updateOne(
       { sourceid: tool_call_id },
@@ -555,7 +566,8 @@ async function  updateToolCallResult(result){
         $set: {
           "tool_reply.content": content,
           "tool_reply.duration": duration,
-          "tool_reply.success": success
+          "tool_reply.success": success,
+          "tool_reply.fullContent": fullContent
         }
       }
     );
@@ -567,8 +579,6 @@ async function  updateToolCallResult(result){
 
 const upsertProfilePromise = async (msg) => {
   try {
-
-
     const newProfile = {
       id: msg.from.id,
       id_chat: msg.chat.id,
@@ -1462,5 +1472,6 @@ module.exports = {
   getFunctionQueueByName,
   addFunctionToQueue,
   removeFunctionFromQueue,
-  upsertCallbackUsage
+  upsertCallbackUsage,
+  getExtractedTextByReff
 };

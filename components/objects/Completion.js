@@ -416,7 +416,6 @@ class Completion extends Transform {
       
       this.#dialogue.emit('triggerToolCall', completionObject.tool_calls) 
 
-      this.clearLongWaitNotes()
       this.#decoder.end()
       
       this.#dialogue.regenerateCompletionFlag = false

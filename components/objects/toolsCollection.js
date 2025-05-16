@@ -389,20 +389,28 @@ const list = [
         type:"function",
         function:{
             name: "create_pdf_file",
-            description: "Creates a PDF file. The file will be sent to the user as a document.",
+            description: "Creates a PDF file. The file will be sent to the user as a document. By default, you should use content_reff parameter if it is available. If not, you can use html.",
             parameters: {
                 type: "object",
                 properties: {
-                    htmltext: {
+                    html: {
                         type: "string",
-                        description: "Content for the file in html format. Table borders should be single. Images should have full public url. Urls to images should be in the format: <img src='https://example.com/image.png'/>. Urls may include parameters. Inline css sluses should be in the format: <div style='color:red;'>text</div>.",
+                        description: "Content for the file in html format. Images should have full public url. Urls to images should be in the format: <img src='https://example.com/image.png'/>. Urls may include parameters. Inline css classes should be in the format: <div style='color:red;'>text</div>. Should not be used together with content_reff.",
+                    },
+                    content_reff:{
+                        type: "number",
+                        description: "List of content reffs to be included into a file. Order does matter. Ensures original content is saved. Should not be used together with 'html'.",
+                        items: {
+                                type: "number",
+                                description: "Represents previousely extracted original content that should be saved to the file."
+                        }
                     },
                     filename:{
                         type:"string",
                         description:"Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
                     }
                 },
-                required: ["filename","htmltext"]
+                required: ["filename"]
             }
 
         },
@@ -584,29 +592,37 @@ const list = [
         availableForToolCalls: true,
         depricated:false
     },
-    {type:"function",
+    {
+        type:"function",
         function:{
             name: "create_text_file",
-            description: "Creates a text file. The file will be sent to the user as a document.",
+            description: "Creates a text file either based on text provided or content_reff. The file will be sent to the user as a document.  By default, you should use content_reff parameter if it is available. If not, you can use text.",
             parameters: {
                 type: "object",
                 properties: {
-                    filetext: {
+                    text: {
                         type: "string",
-                        description: "Text to be saved in the file."
+                        description: "Text for the file. Should not be used together with content_reff."
+                    },
+                    content_reff:{
+                        type: "array",
+                        description: "List of content reffs to be included into a file. Order does matter. This parameter should not be used together with 'text'.",
+                        items: {
+                                type: "number",
+                                description: "Represents previousely extracted original content that should be saved to the file."
+                        }
                     },
                     filename:{
                         type:"string",
-                        description:"Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
+                        description:"Name of the file. Must align with the content of the file. For example, if the file contains python code, file name should have the extention '.py'."
                     },
                     mimetype:{
                         type:"string",
-                        description:"Mimetype of the file. For example, 'text/plain' or text/x-python."
-                    },
+                        description:"Mimetype of the output file. For example, 'text/plain' or text/x-python."
+                    }
                 },
-                required: ["filename","mimetype","text"]
+                required: ["filename","mimetype"],
             }
-
         },
         friendly_name:"Создание текстового файла",
         timeout_ms:15000,

@@ -12,7 +12,7 @@ const path = require('path');
 const pdf = require('pdf-parse');
 const { PDFDocument } = require('pdf-lib');
 const Excel = require('exceljs');
-
+const cheerio = require('cheerio');
 
 
 async function createExcelWorkbookToBuffer(worksheets = []) {
@@ -842,7 +842,7 @@ async function extractTextFromFile(url,mine_type){
       const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
       const text = ocrResult.text
     
-      return {success:1,text:text,was_extracted:1}
+      return {success:1,text:text}
 
     } else if (mine_type === "application/pdf") {
 
@@ -876,7 +876,7 @@ async function extractTextFromFile(url,mine_type){
         })
       }
 
-      return {success:1,text:ocr_text,was_extracted:1}
+      return {success:1,text:ocr_text}
       
     } else {
       const result = await extractContentWithTika(url,)
@@ -1420,10 +1420,16 @@ function formatHtml(html,filename){
 
   return `<style>
 
-          body {
-            white-space: pre-line; /* Ensures text wraps and preserves whitespace */
+           body {
             font-family: Arial, sans-serif;
-            font-size: 12pt;
+          }
+           table {
+              border: 1px solid #333;
+              border-collapse: collapse;
+          }
+          td, th {
+            border: 1px solid #333;
+            padding: 2px 4px;
           }
           </style>
           <html>
@@ -1434,6 +1440,48 @@ function formatHtml(html,filename){
           <div>
           ${html}
           </div>
+          </body>
+      </html>`
+}
+
+
+function extractBodyContent(htmlString) {
+  const $ = cheerio.load(htmlString);
+  return $('body').html()?.trim() || '';
+}
+
+function fileContentToHtml(fileContent,filename){
+  
+  const bodyCombined = fileContent.map(obj => {
+     return obj.tool_reply.fullContent.results.map(obj =>{
+                    if(obj.html){
+                        return extractBodyContent(obj.html)
+                    } else {
+                        return `<p>${obj.text}</p>`
+                    }
+                })
+
+              }).flat().join('\n')
+
+  return `<html>
+  <style>
+           body {
+            font-family: Arial, sans-serif;
+          }
+           table {
+              border: 1px solid #333;
+              border-collapse: collapse;
+          }
+          td, th {
+            border: 1px solid #333;
+            padding: 2px 4px;
+          }
+          </style>
+          <head>
+          <title>${filename}</title>
+          </head>
+          <body>
+          ${bodyCombined}
           </body>
       </html>`
 }
@@ -1590,5 +1638,6 @@ module.exports = {
   parcePDF,
   splitPDFByPageChunks,
   extractContentWithTika,
-  createExcelWorkbookToBuffer
+  createExcelWorkbookToBuffer,
+  fileContentToHtml
 };
