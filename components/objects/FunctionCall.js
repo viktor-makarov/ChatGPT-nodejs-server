@@ -5,6 +5,7 @@ const func = require("../other_func.js");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
 const otherFunctions = require("../other_func.js");
 const toolsCollection = require("./toolsCollection.js");
+const awsApi = require("../AWS_API.js")
 
 class FunctionCall{
     #replyMsg;
@@ -603,41 +604,41 @@ validateRequiredFieldsFor_createExcelFile(){
         }
     }
 
-        async createPDFFile(){
+    async createPDFFile(){
 
-            this.validateRequiredFieldsFor_createPDFFile()
+        this.validateRequiredFieldsFor_createPDFFile()
 
-            const {filename,html,content_reff} = this.#argumentsJson
-                       
-            let formatedHtml;
-            if(html){
-                formatedHtml = func.formatHtml(html,filename)
-            } else {
-                const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
+        const {filename,html,content_reff} = this.#argumentsJson
+                    
+        let formatedHtml;
+        if(html){
+            formatedHtml = func.formatHtml(html,filename)
+        } else {
+            const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
 
-                previuslyExtractedContent.sort((a, b) => {
-                    return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
-                });
+            previuslyExtractedContent.sort((a, b) => {
+                return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
+            });
 
-                if(previuslyExtractedContent.length === 0){
-                    return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
-                }
-                formatedHtml = func.fileContentToHtml(previuslyExtractedContent,filename)
-                
+            if(previuslyExtractedContent.length === 0){
+                return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
             }
+            formatedHtml = func.fileContentToHtml(previuslyExtractedContent,filename)
+            
+        }
 
-            const filebuffer = await func.htmlToPdfBuffer(formatedHtml)
-            const mimetype = "application/pdf"
-            
-            const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
-            
-            func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
-            
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+        const filebuffer = await func.htmlToPdfBuffer(formatedHtml)
+        const mimetype = "application/pdf"
+        
+        const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
+        
+        func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+        
+        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
 
-            await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
-            
-            return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
+        await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+        
+        return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
         }
 
         async createTextFile(){
@@ -928,6 +929,29 @@ validateRequiredFieldsFor_createExcelFile(){
         return prompt
     }
 
+    async downloadFileBufferFromTgm(tgmFileId){
+    
+      
+      const tgm_url = await this.#replyMsg.getUrlByTgmFileId(tgmFileId)
+      const downloadStream = await otherFunctions.startFileDownload(tgm_url)
+      const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
+      
+      return buffer
+    }
+
+    async uploadFileToS3FromTgm(tgmFileId,userInstance){
+
+        const tgm_url = await this.#replyMsg.getUrlByTgmFileId(tgmFileId)
+        const fileName = otherFunctions.extractFileNameFromURL(tgm_url)
+        const fileExtension = otherFunctions.extractFileExtention(fileName)
+        const downloadStream = await otherFunctions.startFileDownload(tgm_url)
+        const filename = otherFunctions.valueToMD5(String(userInstance.userid))+ "_" + userInstance.currentRegime + "_" + otherFunctions.valueToMD5(String(fileName)) + "." + fileExtension;  
+
+        let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
+
+        return uploadResult.Location
+        }
+
 
     async CreateMdjImageRouter(){
    
@@ -941,6 +965,14 @@ validateRequiredFieldsFor_createExcelFile(){
 
             const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
             
+            const fileHandlerPromises = [
+                this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
+                this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
+            ]
+
+            const [aws_url, buffer] = await Promise.all(fileHandlerPromises)
+
+
             const buttons = generate_result.mdjMsg.options
             const labels = buttons.map(button => button.label)
             const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -955,7 +987,8 @@ validateRequiredFieldsFor_createExcelFile(){
                     instructions:"Show buttons description to the user only once.",
                     supportive_data:{
                         midjourney_prompt:prompt,
-                        image_url:sent_result.aws_url,
+                        image_url:aws_url,
+                        base64:buffer.toString('base64'),
                     }
                 };
             };
@@ -971,6 +1004,14 @@ validateRequiredFieldsFor_createExcelFile(){
                 const prompt = otherFunctions.extractTextBetweenDoubleAsterisks(content)
 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
+
+                const fileHandlerPromises = [
+                    this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
+                    this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
+                ]
+
+                const [aws_url, buffer] = await Promise.all(fileHandlerPromises)
+
                 const buttons = generate_result.mdjMsg?.options || [];
                 const labels = buttons.map(button => button?.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -983,7 +1024,8 @@ validateRequiredFieldsFor_createExcelFile(){
                         buttonsDescription: btnsDescription,
                         supportive_data:{
                             midjourney_prompt:content,
-                            image_url:sent_result.aws_url,
+                            image_url:aws_url,
+                            base64:buffer.toString('base64')
                         }
                     };
             }
@@ -997,6 +1039,14 @@ validateRequiredFieldsFor_createExcelFile(){
                 if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
                 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
+
+                const fileHandlerPromises = [
+                    this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
+                    this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
+                ]
+
+                const [aws_url, buffer] = await Promise.all(fileHandlerPromises)
+
                 const buttons = generate_result.mdjMsg.options
                 const labels = buttons.map(button => button.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -1008,7 +1058,8 @@ validateRequiredFieldsFor_createExcelFile(){
                         buttonsDescription: btnsDescription,
                         supportive_data:{
                             midjourney_prompt:prompt,
-                            image_url:sent_result.aws_url,
+                            image_url:aws_url,
+                            base64:buffer.toString('base64')
                         }
                     };
                 };

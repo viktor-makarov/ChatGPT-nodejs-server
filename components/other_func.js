@@ -315,6 +315,15 @@ async function startFileDownload(url){
 return response
 }
 
+function streamToBuffer(stream) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    stream.on('data', (chunk) => chunks.push(chunk));
+    stream.on('end',   ()    => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+}
+
 
 async function parcePDF(pdfBuffer) {
   return await pdf(pdfBuffer);
@@ -1639,5 +1648,6 @@ module.exports = {
   splitPDFByPageChunks,
   extractContentWithTika,
   createExcelWorkbookToBuffer,
-  fileContentToHtml
+  fileContentToHtml,
+  streamToBuffer
 };

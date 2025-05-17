@@ -2,7 +2,7 @@ const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
 const ErrorHandler = require("../telegramErrorHandler");
-const awsApi = require("../AWS_API.js")
+
 
 class ReplyMsg extends EventEmitter {
 
@@ -437,23 +437,11 @@ return seconds_to_wait
 
 }
 
-async uploadFileToS3FromTgm(tgmFileId,userInstance){
 
-  const tgm_url = await this.getUrlByTgmFileId(tgmFileId)
-  const fileName = otherFunctions.extractFileNameFromURL(tgm_url)
-  const fileExtension = otherFunctions.extractFileExtention(fileName)
-  const downloadStream = await otherFunctions.startFileDownload(tgm_url)
-  const filename = otherFunctions.valueToMD5(String(userInstance.userid))+ "_" + userInstance.currentRegime + "_" + otherFunctions.valueToMD5(String(fileName)) + "." + fileExtension;  
-
-  let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
-
-  return uploadResult.Location
-}
 
 
 async sendMdjImage(generateResult,prompt){
 
-  console.time("sending image")
   const reply_markup = await this.generateMdjButtons(generateResult.mdjMsg);
 
   let sent_result = await this.simpleSendNewImage({
@@ -465,9 +453,8 @@ async sendMdjImage(generateResult,prompt){
   });
 
 
-  sent_result.aws_url = await this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user)
+  
 
-  console.timeEnd("sending image")
   return sent_result
 }
 

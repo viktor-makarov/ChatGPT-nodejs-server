@@ -86,6 +86,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
         const isAllowedFileType = requestMsgInstance.isAllowedFileType()
 
         const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+        
 
         if(s3UploadResult.success === 0 || !isAllowedFileType){
           //Add info to the dialogue and notify user about problems with the file upload
@@ -114,19 +115,25 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
         await requestMsgInstance.getFileLinkFromTgm()
 
-        const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+        const fileHandlersPromises = [
+          uploadFileToS3Handler(requestMsgInstance),
+          downloadFileBufferFromTgm(requestMsgInstance)
+        ]
+
+        const [s3UploadResult,downloadBufferResult] = await Promise.all(fileHandlersPromises)
         
         const isAllowedFileType = requestMsgInstance.isAllowedFileType()
 
-        if(s3UploadResult.success === 0 || !isAllowedFileType){
+        if(s3UploadResult.success === 0 || downloadBufferResult.success === 0 || !isAllowedFileType){
           //Add info to the dialogue and notify user about problems with the file upload
           await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
           await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
 
         } else {
 
-             const url = s3UploadResult.Location
-
+            const url = s3UploadResult.Location
+            const base64 = downloadBufferResult.buffer.toString('base64')
+             
             const fileComment = {
               fileid:requestMsgInstance.msgId,
               context:"User has sent the image to the bot.",
@@ -135,7 +142,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
             if(fileCaption){
               fileComment.user_prompt = fileCaption
             }
-            await dialogueInstance.commitImageToDialogue(url,fileComment)
+            await dialogueInstance.commitImageToDialogue(url,base64,fileComment)
         }
 
         if(fileCaption){
@@ -314,6 +321,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     const outcome = await functionInstance.router();
 
+    console.log(JSON.stringify(outcome,null,2))
     if(outcome.success === 1){
     const placeholders = [{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
     
@@ -322,8 +330,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       public_url:outcome.supportive_data?.image_url,
       context:otherFunctions.getLocalizedPhrase("imagine",requestMsgInstance.user.language_code,placeholders)
     }
-
-    await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,fileComment)
+    
+    await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,outcome.supportive_data?.base64,fileComment)
     }
     
     } else {
@@ -621,7 +629,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       public_url:outcome.supportive_data.image_url,
       midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
-    await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,fileComment)
+    await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,outcome.supportive_data?.base64,fileComment)
     }
     
   } else {
@@ -738,16 +746,35 @@ async function adminHandler(requestMsgInstance) {
   }
 }
 
+
+async function downloadFileBufferFromTgm(requestMsgInstance){
+
+  try{
+  const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+  const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
+  
+  return {...{buffer},...{success:1}}
+  } catch(err){
+
+    requestMsgInstance.uploadFileError = err.message
+    requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. при обработке файла возникла ошибка.`
+    const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
+    requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
+    
+    return {success:0}
+  }
+}
+
 async function uploadFileToS3Handler(requestMsgInstance){
 
 try{
 const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
 const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
-let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
-uploadResult.success = 1
+const uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
 
-return uploadResult
+return {...{filename},...uploadResult,...{success:1}}
+
 } catch(err){
 
   requestMsgInstance.uploadFileError = err.message
@@ -755,8 +782,7 @@ return uploadResult
   const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
   requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
   
-  let uploadResult = {success:0}
-  return uploadResult
+  return {success:0}
 }
 }
 

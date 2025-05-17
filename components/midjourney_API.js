@@ -38,8 +38,8 @@ async function generateHandler(prompt){
     console.timeEnd("generate buffer")
       
         return {
-        imageBuffer:imageBuffer,
-        mdjMsg:mdjMsg
+        imageBuffer,
+        mdjMsg
         }
     }
 

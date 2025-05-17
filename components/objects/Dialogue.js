@@ -391,8 +391,8 @@ class Dialogue extends EventEmitter {
 
     };
 
-    async commitImageToDialogue(url,descriptionJson){
-
+    async commitImageToDialogue(url,base64,descriptionJson){
+        
         const currentRole = "user"
         const datetime = new Date();
         const sourceid = otherFunctions.valueToMD5(datetime.toISOString())+"_"+"image_url"
@@ -400,7 +400,9 @@ class Dialogue extends EventEmitter {
         let content = [];
         let text_content ={};
 
-        if(url){
+        if(base64){
+            content.push({type:"image_url",image_url: {url:`data:image/jpeg;base64,${base64}`}})
+        } else if (url){
             content.push({type:"image_url",image_url: {url:url}})
         } else {
             text_content.error = "Здесь должно было быть изображение, но с ним какие-то проблемы"
