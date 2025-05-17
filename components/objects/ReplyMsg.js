@@ -107,9 +107,16 @@ get lastMsgSentId(){
     return this.#lastMsgSentId;
 }
 
-
 async sendTypingStatus(){
     await this.#botInstance.sendChatAction(this.#chatId, "typing");
+}
+
+async pinChatMessage(msgId){
+  return await this.#botInstance.pinChatMessage(this.#chatId, msgId,{disable_notification:true})
+}
+
+async unpinAllChatMessages(){
+  return await this.#botInstance.unpinChatMessage(this.#chatId)
 }
 
 async sendAudioListenMsg(){

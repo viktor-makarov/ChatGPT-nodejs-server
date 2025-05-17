@@ -290,6 +290,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       }
     }
 
+    response.pin = true;
+
     responses.push(response)
 
   } else if(cmpName==="imagine"){
@@ -915,7 +917,7 @@ async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
 async function changeRegimeHandlerPromise(obj){
    
    await mongo.updateCurrentRegimeSetting(obj.requestMsgInstance);
-
+    
       if (obj.newRegime == "chat") {
         const previous_dialogue_tokens = await obj.dialogueInstance.metaGetTotalTokens()
 
@@ -932,7 +934,7 @@ async function changeRegimeHandlerPromise(obj){
               )
               .replace(
                 "[response_style]",
-                modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.response_style].name
+                modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.settings[obj.newRegime].response_style ?? "neutral"].name
               )
               .replace("[previous_dialogue_tokens]", previous_dialogue_tokens)
               .replace(
@@ -951,7 +953,7 @@ async function changeRegimeHandlerPromise(obj){
               modelConfig[obj.requestMsgInstance.user.currentModel].name
             ).replace(
               "[response_style]",
-              modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.response_style].name
+              modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.settings[obj.newRegime].response_style ?? "neutral"].name
             ),
           };
         }

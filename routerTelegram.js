@@ -27,13 +27,16 @@ async function GetModelsFromAPI() {
     const write_result = await mongo.update_models_listPromise(models_array.data);
     console.log(new Date(), `Success! OpenAI models updated: ${write_result}`);
 };
+
+
 async function setBotParameters(botInstance) {
 
     await botInstance.setMyCommands(appsettings.telegram_options.commands);
     await botInstance.setMyDescription({description:msqTemplates.bot_description});
     await botInstance.setMyShortDescription({short_description:msqTemplates.bot_description})
+    const botInfo = await botInstance.getMe();
+    await mongo.registerBotUser(botInfo)
     console.log(new Date(),"Success! Bot parameters setted");
- 
 }
 
 function router(botInstance) {
@@ -45,7 +48,7 @@ function router(botInstance) {
 async function eventRouter(event,botInstance){
 
   let user,requestMsg,replyMsg;
-    
+  
   //Слушаем сообщения пользователей
   try {
     
@@ -86,7 +89,7 @@ async function eventRouter(event,botInstance){
     }
    
     let responses = [];
-
+      
       switch(requestMsg.inputType) {
         case "text_command":
           responses = await telegramCmdHandler.textCommandRouter(requestMsg,dialogue,replyMsg)
@@ -97,16 +100,22 @@ async function eventRouter(event,botInstance){
         case "text_message":
             responses = await telegramCmdHandler.textMsgRouter(requestMsg,replyMsg,dialogue)
             break;
-
         case "callback_query":
               responses = await telegramCmdHandler.callbackRouter(requestMsg,replyMsg,dialogue)
               break;
+        case "pinned_message":
+              //ignore this type of message
+              break
         default:
             responses = [{text:msqTemplates.unknown_msg_type}]
     };
 
   for (const response of responses){
-    await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options);
+    const result = await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options);
+    if(response.pin){
+      await replyMsg.unpinAllChatMessages()
+      await replyMsg.pinChatMessage(result.message_id);
+    }
   }
 
   } catch (err) {

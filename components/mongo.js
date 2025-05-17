@@ -624,6 +624,41 @@ async function registerUser(requestMsgInstance,token) {
   }
 }
 
+async function registerBotUser(botInfo){
+  try {
+    const newProfile = {
+      $set: {
+        id: botInfo.id,
+        id_chat: botInfo.id,
+        is_bot: botInfo.is_bot,
+        first_name: botInfo.first_name,
+        last_name: botInfo.last_name,
+        username: botInfo.username,
+        language_code: botInfo.language_code,
+        "permissions.registered": true,
+        "permissions.readInfo": true,
+        plan: "free",
+        token: "00000000000000000000000000",
+        active: true
+      },
+      // Only set these fields if they don't already exist
+      $setOnInsert: {
+        "permissions.registeredDTUTC": Date.now(),
+        "permissions.readInfoDTUTC": Date.now()
+      }
+    };
+
+    return await telegram_profile_collection.updateOne(
+      { id: botInfo.id },
+      newProfile,
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
+
 async function insert_blank_profile(newToken){
 
   try {
@@ -1473,5 +1508,6 @@ module.exports = {
   addFunctionToQueue,
   removeFunctionFromQueue,
   upsertCallbackUsage,
-  getExtractedTextByReff
+  getExtractedTextByReff,
+  registerBotUser
 };

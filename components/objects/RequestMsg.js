@@ -71,7 +71,14 @@ constructor(obj) {
         this.#chatId = obj.requestMsg.message.chat.id
         this.#fromId = obj.requestMsg.from.id
 
-    } else {
+    } else if(obj.requestMsg.pinned_message) {
+        this.#inputType = "pinned_message"
+        this.#chatId = obj.requestMsg.chat.id
+        this.#fromId = obj.requestMsg.from.id
+        this.#msgId = obj.requestMsg.message_id
+        this.#msgTS = obj.requestMsg.date
+        
+       } else {
 
         this.#chatId = obj.requestMsg.chat.id
         this.#fromId = obj.requestMsg.from.id
@@ -196,7 +203,6 @@ if(this.#fileSize > this.#voiceToTextFoleSizeLimit){
 }
 
 authenticateRequest(){
-
 
     const commandName = this.#commandName
     const callback_event = this.#callback_event

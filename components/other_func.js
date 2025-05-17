@@ -325,7 +325,7 @@ function streamToBuffer(stream) {
 }
 
 
-async function parcePDF(pdfBuffer) {
+async function parsePDF(pdfBuffer) {
   return await pdf(pdfBuffer);
 }
 
@@ -857,7 +857,7 @@ async function extractTextFromFile(url,mine_type){
 
       const fileBuffer = await fileDownload(url)
 
-      const {numpages,text} = await parcePDF(fileBuffer)
+      const {numpages,text} = await parsePDF(fileBuffer)
 
       const textWoLineBreaks = text.replace(/(\r\n|\n|\r)/gm, "");
       
@@ -1644,7 +1644,7 @@ module.exports = {
   extractFileExtention,
   extractFileNameFromURL,
   filenameWoExtention,
-  parcePDF,
+  parsePDF,
   splitPDFByPageChunks,
   extractContentWithTika,
   createExcelWorkbookToBuffer,
