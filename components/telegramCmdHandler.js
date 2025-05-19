@@ -268,31 +268,11 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
    
     requestMsgInstance.user.currentRegime = cmpName
    
-    let response = await changeRegimeHandlerPromise({
+    responses = await changeRegimeHandlerPromise({
       newRegime:cmpName,
       requestMsgInstance:requestMsgInstance,
       dialogueInstance:dialogueInstance
     });
-
-    if(cmpName==="chat"){
-      response.buttons = {
-        reply_markup: {
-          keyboard: [['Перезапустить диалог']],
-          resize_keyboard: true,
-          one_time_keyboard: false
-        }
-      }
-    } else {
-      response.buttons = {
-        reply_markup: {
-          remove_keyboard: true,
-        }
-      }
-    }
-
-    response.pin = true;
-
-    responses.push(response)
 
   } else if(cmpName==="imagine"){
 
@@ -323,7 +303,6 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     const outcome = await functionInstance.router();
 
-    console.log(JSON.stringify(outcome,null,2))
     if(outcome.success === 1){
     const placeholders = [{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
     
@@ -917,17 +896,12 @@ async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
 async function changeRegimeHandlerPromise(obj){
    
    await mongo.updateCurrentRegimeSetting(obj.requestMsgInstance);
-    
+   const responses = []
       if (obj.newRegime == "chat") {
         const previous_dialogue_tokens = await obj.dialogueInstance.metaGetTotalTokens()
 
-        if (previous_dialogue_tokens > 0) {
-          return {
-            text: modelSettings[obj.newRegime].incomplete_msg
-              .replace(
-                "[temperature]",
-                obj.requestMsgInstance.user.currentTemperature
-              )
+        responses.push({
+          text: modelSettings[obj.newRegime].header_msg
               .replace(
                 "[model]",
                 modelConfig[obj.requestMsgInstance.user.currentModel].name
@@ -935,71 +909,95 @@ async function changeRegimeHandlerPromise(obj){
               .replace(
                 "[response_style]",
                 modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.settings[obj.newRegime].response_style ?? "neutral"].name
-              )
+              ),
+          pin: true,
+          buttons: {
+            reply_markup: {
+              keyboard: [['Перезапустить диалог']],
+              resize_keyboard: true,
+              one_time_keyboard: false
+            }
+          }
+        })
+
+        if (previous_dialogue_tokens > 0) {
+          responses.push({
+            text: modelSettings[obj.newRegime].incomplete_msg
               .replace("[previous_dialogue_tokens]", previous_dialogue_tokens)
               .replace(
                 "[request_length_limit_in_tokens]",
                 modelConfig[obj.requestMsgInstance.user.currentModel].request_length_limit_in_tokens
               ),
-          };
+          });
         } else {
-          return {
+          responses.push({
             text: modelSettings[obj.newRegime].welcome_msg
-            .replace(
-              "[temperature]",
-              obj.requestMsgInstance.user.currentTemperature
-            ).replace(
-              "[model]",
-              modelConfig[obj.requestMsgInstance.user.currentModel].name
-            ).replace(
-              "[response_style]",
-              modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.settings[obj.newRegime].response_style ?? "neutral"].name
-            ),
-          };
+          });
         }
       } else if (obj.newRegime == "translator" || obj.newRegime == "texteditor") {
-        return {
-          text: modelSettings[obj.newRegime].welcome_msg
+
+        responses.push({
+          text: modelSettings[obj.newRegime].header_msg
           .replace(
-            "[temperature]",
-            obj.requestMsgInstance.user.currentTemperature
-          ).replace(
             "[model]",
             modelConfig[obj.requestMsgInstance.user.currentModel].name
           ),
-        };
+          pin: true,
+          buttons:{
+            reply_markup: {
+            remove_keyboard: true,
+            }
+          }
+        });
+
+        responses.push({
+          text: modelSettings[obj.newRegime].welcome_msg
+        });
 
       } else if (obj.newRegime == "voicetotext") {
-        return {
+
+        responses.push({
+          text: modelSettings[obj.newRegime].header_msg,
+          pin: true,
+          buttons:{
+            reply_markup: {
+            remove_keyboard: true,
+            }
+          }
+        });
+
+        responses.push({
           text: modelSettings[obj.newRegime].welcome_msg.replace(
             "[size]",
             modelSettings.voicetotext.filesize_limit_mb.toString()
-          ),
-        };
+          )
+        });
       } else if (obj.newRegime == "texttospeech"){
-        return {
+
+        responses.push({
+          text: modelSettings[obj.newRegime].header_msg
+          .replace(
+            "[voice]",
+            obj.requestMsgInstance.user.currentVoice
+          ),
+          pin: true,
+          buttons:{
+            reply_markup: {
+            remove_keyboard: true,
+            }
+          }
+        });
+
+        responses.push({
           text: modelSettings[obj.newRegime].welcome_msg
           .replace(
             "[limit]",
             appsettings.telegram_options.big_message_threshold
           )
-          .replace(
-            "[voice]",
-            obj.requestMsgInstance.user.currentVoice
-          ),
-        };
-      } else {
-        return {
-          text: modelSettings[obj.newRegime].welcome_msg
-          .replace(
-            "[temperature]",
-            obj.requestMsgInstance.user.currentTemperature
-          ).replace(
-            "[model]",
-            modelConfig[obj.requestMsgInstance.user.currentModel].name
-          ),
-        };
+        });
       }
+
+    return responses;
   };
 
 async function unregisterHandler(requestMsgInstance) {

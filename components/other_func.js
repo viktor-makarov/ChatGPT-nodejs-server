@@ -451,7 +451,7 @@ async function getImageByUrl(url){
       url: url,
       responseType: "arraybuffer"
       });
-
+  
    const binaryImage = Buffer.from(response.data, "binary");
    return binaryImage
 };

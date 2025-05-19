@@ -1,7 +1,8 @@
 module.exports = {
     "chat":{
-        "welcome_msg":"Режим диалога | [model] | [response_style] - Напишите сообщение, чтобы начать диалог.",
-        "incomplete_msg":"Режим диалога | [model] | [response_style] - Размер диалога = [previous_dialogue_tokens] токенов (из [request_length_limit_in_tokens]).\n" +
+        "header_msg":"Режим диалога | [model] | [response_style]",
+        "welcome_msg": "Напишите сообщение, чтобы начать новый диалог.",
+        "incomplete_msg":"Размер диалога = [previous_dialogue_tokens] токенов (из [request_length_limit_in_tokens]).\n" +
                         "Чтобы начать новый диалог, нажмите здесь: /resetchat. ",
         "name":"Диалог",
         "options_desc":"Параметры работы Диалога:",
@@ -107,7 +108,8 @@ module.exports = {
         "default_dialogue_ttl_ms":3600000,
     },
     "translator":{
-        "welcome_msg":"Переводчик | [model] - Достаточно прислать текст. Русский текст будет переведен на английский. Текст на любом другом языке будет переведен на русский." ,
+        "header_msg":"Переводчик | [model]",
+        "welcome_msg":"Достаточно прислать текст. Русский текст будет переведен на английский. Текст на любом другом языке будет переведен на русский." ,
         "name":"Переводчик",
         "options_desc":"Параметры работы Переводчика:",
         "options":{
@@ -163,7 +165,8 @@ module.exports = {
         "default_dialogue_ttl_ms":3600000,
     },
     "texteditor":{
-        "welcome_msg":"Редактор | [model] - Просто пришлите Ваш текст в виде сообщения и я помогу его отредактировать." ,
+        "header_msg":"Редактор | [model]",
+        "welcome_msg":"Просто пришлите Ваш текст в виде сообщения и я помогу его отредактировать." ,
         "name":"Редактор",
         "options_desc":"Параметры работы Редактора:",
         "options":{
@@ -219,7 +222,8 @@ module.exports = {
         "default_dialogue_ttl_ms":3600000,
     },
     "voicetotext":{
-        "welcome_msg":"Голос в текст - Преобразовывает аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
+        "header_msg":"Голос в текст",
+        "welcome_msg":"Преобразовывает аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
         "name":"Голос в текст",
         "hostname":`https://${process.env.OAI_URL}`,
         "default_model":'whisper-1',
@@ -235,7 +239,8 @@ module.exports = {
         }
     },
     "texttospeech":{
-        "welcome_msg":"Текст в голос | [voice] - Преобразовывает текст в аудио запись. Пришлите текст, который нужно преобразовать. Длина текста не должна превышать [limit] символов.",
+        "header_msg":"Текст в голос | [voice]",
+        "welcome_msg":"Преобразовывает текст в аудио запись. Пришлите текст, который нужно преобразовать. Длина текста не должна превышать [limit] символов.",
         "name":"Текст в голос",
         "hostname":`https://${process.env.OAI_URL}`,
        // "default_model":'tts-1-hd',

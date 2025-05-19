@@ -113,7 +113,11 @@ async function eventRouter(event,botInstance){
   for (const response of responses){
     const result = await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options);
     if(response.pin){
-      await replyMsg.unpinAllChatMessages()
+      try{
+        await replyMsg.unpinAllChatMessages()
+      } catch(err){
+        console.log("Error unpinning messages",err.message)
+      }
       await replyMsg.pinChatMessage(result.message_id);
     }
   }
