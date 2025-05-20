@@ -7,6 +7,8 @@ const modelConfig = require("../config/modelConfig.js");
 const { Readable } = require("stream");
 const mongo = require("./mongo.js");
 const toolsCollection = require("./objects/toolsCollection.js");
+const { StringDecoder } = require('string_decoder');
+const otherFunctions = require("./other_func");
 
 const axios = require("axios");
 
@@ -155,7 +157,6 @@ const options = {
 
 async function chatCompletionStreamAxiosRequest(
   requestMsg, 
-  replyMsg,
   dialogueClass
 ) {
 
@@ -202,20 +203,97 @@ async function chatCompletionStreamAxiosRequest(
    // console.log("4","before axios",new Date())
     
     try {
-      const response = await axios(options);
-      completionInstance.clearLongWaitNotes()
-      completionInstance.response = response;
-      await response.data.pipe(completionInstance);
+      return await axios(options);
     } catch (error) {
 
-      await replyMsg.simpleMessageUpdate("Ой-ой! :-(",{
-        chat_id:replyMsg.chatId,
-        message_id:replyMsg.lastMsgSentId
-      })
-
-      await completionInstance.handleResponceError(error);
+      const errorAugmented = await OpenAIErrorHandle(error,dialogueClass);
+      throw errorAugmented
     }
 }
+
+    async function OpenAIErrorHandle(error,dialogueClass) {
+
+        const oai_response_status = error.response ? error.response.status : null;
+        let newErr = new Error(error.message);
+
+        newErr.message_from_response = await deriveErrorDetailsFromOAIResponse(error)
+        newErr.place_in_code = newErr.place_in_code || "openAi_API.OpenAIErrorHandle";
+
+        if (oai_response_status === 400 || error.message.includes("400")) {
+
+          newErr.code = "OAI_ERR_400";
+          newErr.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response?.message ?? "отсутствует");
+          
+          // Regular expression to check if the error message indicates that the context length limit has been exceeded
+          const contentExceededPattern = new RegExp(/context_length_exceeded/);
+          const contentIsExceeded = contentExceededPattern.test(err.message_from_response)
+          const imageSizeExceededPattern = new RegExp(/image size is (\d+(?:\.\d+)?[KMG]B), which exceeds the allowed limit of (\d+(?:\.\d+)?[KMG]B)/);
+          const imageSizeIsExceededMatch = newErr.message_from_response.match(imageSizeExceededPattern)
+          
+          if(contentIsExceeded){
+            newErr.resetDialogue = {
+              message_to_user: otherFunctions.getLocalizedPhrase("token_limit_exceeded",dialogueClass.userInstance.language_code)
+            }
+
+          } else if (imageSizeIsExceededMatch){
+            const placeholders = [{key:"[actualsize]",filler:imageSizeIsExceededMatch[1]},{key:"[limit]",filler:imageSizeIsExceededMatch[2]}]
+            newErr.resetDialogue = {
+              message_to_user: otherFunctions.getLocalizedPhrase("image_size_exceeded",dialogueClass.userInstance.language_code,placeholders)  
+            }
+          }
+            return newErr;
+          
+        } else if (oai_response_status === 401 || error.message.includes("401")) {
+          newErr.code = "OAI_ERR_401";
+          newErr.user_message = msqTemplates.OAI_ERR_401.replace("[original_message]",err?.message_from_response?.message ?? "отсутствует");
+          return newErr;
+        } else if (oai_response_status === 429 || error.message.includes("429")) {
+          newErr.code = "OAI_ERR_429";
+          newErr.data = error.data
+          newErr.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",newErr?.message_from_response?.message ?? "отсутствует");
+          newErr.mongodblog = false;
+          return newErr;
+        } else if (oai_response_status === 501 || error.message.includes("501")) {
+          newErr.code = "OAI_ERR_501";
+          newErr.user_message = msqTemplates.OAI_ERR_501.replace("[original_message]",newErr?.message_from_response?.message ?? "отсутствует");
+          return newErr;
+        } else if (oai_response_status === 503 || error.message.includes("503")) {
+          newErr.code = "OAI_ERR_503";
+          newErr.user_message = msqTemplates.OAI_ERR_503.replace("[original_message]",newErr?.message_from_response?.message ?? "отсутствует");
+          return newErr;
+        }  else if (error.code === "ECONNABORTED") {
+            newErr.code = "OAI_ERR_408";
+            newErr.user_message = msqTemplates.OAI_ERR_408;
+            return newErr;
+        } else {
+          newErr.code = "OAI_ERR99";
+          newErr.user_message = msqTemplates.error_api_other_problems;
+          return err;
+        }
+      }
+      
+      async function deriveErrorDetailsFromOAIResponse(error){
+        const errorStream = error.response.data;
+        const decoder = new StringDecoder("utf8"); 
+        let errorDetails = "";
+        const failedExtractionMsg = "Unable to derive error details from the service reply.";
+        try {
+          if (errorStream && typeof errorStream[Symbol.asyncIterator] === 'function') {
+            for await (const chunk of errorStream) {
+              errorDetails += decoder.write(chunk);
+            }
+          } else {
+            errorDetails = typeof errorStream === 'string' ? errorStream : failedExtractionMsg;
+          }
+          return errorDetails || failedExtractionMsg;
+        } catch (err) {
+          return failedExtractionMsg;
+        } finally {
+          decoder.end();
+        }
+      }
+
+
 
 module.exports = {
   getModels,

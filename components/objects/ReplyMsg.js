@@ -581,6 +581,7 @@ addMissingClosingTags(text){
 
 async deliverCompletionToTelegram(completionInstance){
 
+  // console.log(new Date(),"entered deliverCompletionToTelegram")
   try{
         if(this.#completion_ended){
           console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 3.")

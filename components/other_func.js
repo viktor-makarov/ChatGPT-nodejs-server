@@ -1309,11 +1309,37 @@ function extractTextBetweenDoubleAsterisks(text) {
   return matches ? matches[1] : null;
 }
 
-function throttleNew(func, delay) {
+function throttleNew(func, delay=0) {
   let throttleTimeout = null
+  console.log(new Date(),"throttleNew started")
   return (...args)=> {
-     if(!throttleTimeout) {
+     console.log(new Date(),"innerfunction execution")
+     if(throttleTimeout === null) {
          throttleTimeout = setTimeout(()=> {
+             console.log(new Date(),"callback triggered")
+             func(...args)
+             throttleTimeout = null
+         }, delay)
+     } 
+  }
+}
+
+function throttleWithImmediateStart(func, delay=0) {
+  let firstCall = true;
+  let throttleTimeout = null
+  // console.log(new Date(),"throttleNew started")
+  return (...args)=> {
+    //  console.log(new Date(),"innerfunction execution")
+
+     if(firstCall === true){
+        // console.log(new Date(),"first start")
+        func(...args)
+        firstCall = false
+     }
+
+     if(throttleTimeout === null) {
+         throttleTimeout = setTimeout(()=> {
+            //  console.log(new Date(),"callback triggered")
              func(...args)
              throttleTimeout = null
          }, delay)
@@ -1649,5 +1675,6 @@ module.exports = {
   extractContentWithTika,
   createExcelWorkbookToBuffer,
   fileContentToHtml,
-  streamToBuffer
+  streamToBuffer,
+  throttleWithImmediateStart
 };

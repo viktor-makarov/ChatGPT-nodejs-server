@@ -79,14 +79,8 @@ class Completion extends Transform {
         
         this.#completionCreatedDT_UTC = new Date();
 
-
-        this.#sendWithDelay = this.throttleFunction(
-          this.sendMsg,
-          appsettings.telegram_options.send_throttle_ms
-        );
-
         this.#timeout = modelConfig[this.#user.currentModel]?.timeout_ms || 120000;
-        this.#throttledDeliverCompletionToTelegram = otherFunctions.throttleNew(this.#replyMsg.deliverCompletionToTelegram.bind(this.#replyMsg) ,appsettings.telegram_options.send_throttle_ms)
+        this.#throttledDeliverCompletionToTelegram = otherFunctions.throttleWithImmediateStart(this.#replyMsg.deliverCompletionToTelegram.bind(this.#replyMsg) ,appsettings.telegram_options.send_throttle_ms)
       };
 
       async router(){
@@ -99,14 +93,52 @@ class Completion extends Transform {
           
           await this.#replyMsg.sendTypingStatus()
           const statusMsg = await this.#replyMsg.sendStatusMsg()
+
           this.#long_wait_notes = this.triggerLongWaitNotes(statusMsg)
-          await openAIApi.chatCompletionStreamAxiosRequest(
-            this.#requestMsg,
-            this.#replyMsg,
-            this.#dialogue
-          );
+
+          let oai_response;
+          try{
+            oai_response =  await openAIApi.chatCompletionStreamAxiosRequest(
+              this.#requestMsg,
+              this.#dialogue
+            );
+          } catch(err){
+
+            if(err.resetDialogue){
+              const response = await this.#dialogue.resetDialogue()
+              await this.#replyMsg.simpleMessageUpdate(response.text,{
+                chat_id:replyMsg.chatId,
+                message_id:replyMsg.lastMsgSentId
+              })
+              await this.#replyMsg.sendToNewMessage(err.resetDialogue?.message_to_user,null,null)
+              return
+            } else {
+              throw err
+            }
+          } finally{
+              this.clearLongWaitNotes()
+          }
+
+          this.#responseHeaders = oai_response.headers
+          oai_response.data.pipe(this)
+          await this.waitForTheStreamToFinish(oai_response.data)
+
+          this.checkIfCompletionIsEmpty()
+      
+          const completionObject = this.currentCompletionObj
+          await this.#dialogue.commitCompletionDialogue(completionObject)
+
+          await this.#dialogue.finalizeTokenUsage(completionObject,this.#tokenUsage)
+      
+          completionObject.tool_calls && this.#dialogue.emit('triggerToolCall', completionObject.tool_calls) 
 
         } catch(err){
+
+          await this.#replyMsg.simpleMessageUpdate("Ой-ой! :-(",{
+            chat_id:this.#replyMsg.chatId,
+            message_id:this.#replyMsg.lastMsgSentId
+            })
+          
           err.place_in_code = err.place_in_code || "completion.router";
           telegramErrorHandler.main(
             {
@@ -115,9 +147,25 @@ class Completion extends Transform {
             }
           );
         
+        } finally{
+          this.#decoder.end()
+          this.#dialogue.regenerateCompletionFlag = false
         } 
 
       }
+
+      async waitForTheStreamToFinish(stream){
+  
+      return new Promise((resolve, reject) => {
+        stream.on('end', () => {
+          resolve();
+        });
+        stream.on('error', (err) => {
+          reject(err);
+        });
+      });
+
+    }
 
       #updateCompletionVariables(){
 
@@ -169,11 +217,11 @@ class Completion extends Transform {
       }
 
       triggerLongWaitNotes(statusMsg){
-  
+        
         const long_wait_notes = modelConfig[this.#user.currentModel]?.long_wait_notes
         
         let timeouts =[];
-        if(long_wait_notes && long_wait_notes.length >0){
+        if(long_wait_notes && long_wait_notes.length > 0){
             
             for (const note of long_wait_notes){
                 
@@ -199,35 +247,6 @@ class Completion extends Transform {
         updateBody:this.completionFieldsToUpdate
       })
       console.log("Completion updated in DB")
-    }
-
-   
-
-    async handleResponceError(value){
-
-      this.#responseErrorRaw = value;
-
-      this.#response_status = this.#responseErrorRaw?.response?.status 
-
-      try{
-        this.#responseErrorRaw.response.data.on('data', chunk => {
-          this.#responseErrorMsg += this.#decoder.write(chunk);
-        });
-
-        this.#responseErrorRaw.response.data.on('end', async () => {
-          await this.UnSuccessResponseHandle(this.#responseErrorRaw)
-        });
-
-      } catch(err){
-        this.#responseErrorMsg = {error:"Unable to derive error details from the service reply."}
-        await this.UnSuccessResponseHandle(this.#responseErrorRaw)
-      }
-    
-      
-    };
-    
-    set response(value){
-        this.#responseHeaders = value.headers
     }
 
     set completionLatexFormulas(value){
@@ -298,81 +317,8 @@ class Completion extends Transform {
     }
 
     get toolCalls(){
-
       return this.#tool_calls
     }
-
-    async UnSuccessResponseHandle(error) {
-
-      try{
-      this.#response_status = error.response.status
-        let err = new Error(error.message);
-        err.message_from_response = this.#responseErrorMsg
-        err.place_in_code = err.place_in_code || "Completion.UnSuccessResponseHandle";
-
-
-
-        if (this.#response_status === 400 || error.message.includes("400")) {
-
-          const contentExceededPattern = new RegExp(/context_length_exceeded/);
-          const contentIsExceeded = contentExceededPattern.test(this.#responseErrorMsg)
-          const imageSizeExceededPattern = new RegExp(/image size is (\d+(?:\.\d+)?[KMG]B), which exceeds the allowed limit of (\d+(?:\.\d+)?[KMG]B)/);
-          const imageSizeIsExceededMatch = this.#responseErrorMsg.match(imageSizeExceededPattern)
-          
-          if(contentIsExceeded){
-            await this.#replyMsg.sendToNewMessage(msqTemplates.token_limit_exceeded,null,null)
-            const response = await this.#dialogue.resetDialogue()
-            await this.#replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode)
-          } else if (imageSizeIsExceededMatch){
-            const placeholders = [{key:"[actualsize]",filler:imageSizeIsExceededMatch[1]},{key:"[limit]",filler:imageSizeIsExceededMatch[2]}]
-            const devPrompt = otherFunctions.getLocalizedPhrase("image_size_exceeded",this.#replyMsg.user.language_code,placeholders)
-            await this.#replyMsg.sendToNewMessage(devPrompt,null,null)
-            const response = await this.#dialogue.resetDialogue()
-            await this.#replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode)            
-          } else {
-            err.code = "OAI_ERR_400";
-            err.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-            throw err;
-          }
-        } else if (this.#response_status === 401 || error.message.includes("401")) {
-          err.code = "OAI_ERR_401";
-          err.user_message = msqTemplates.OAI_ERR_401.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-          throw err;
-        } else if (this.#response_status === 429 || error.message.includes("429")) {
-          err.code = "OAI_ERR_429";
-          err.data = error.data
-          err.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",err?.message_from_response?? "отсутствует");
-          err.mongodblog = false;
-          throw err;
-        } else if (this.#response_status === 501 || error.message.includes("501")) {
-          err.code = "OAI_ERR_501";
-          err.user_message = msqTemplates.OAI_ERR_501.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-          throw err;
-        } else if (this.#response_status === 503 || error.message.includes("503")) {
-          err.code = "OAI_ERR_503";
-          err.user_message = msqTemplates.OAI_ERR_503.replace("[original_message]",err?.message_from_response ?? "отсутствует");
-          throw err;
-        }  else if (error.code === "ECONNABORTED") {
-            err.code = "OAI_ERR_408";
-            err.user_message = msqTemplates.OAI_ERR_408;
-            throw err;
-
-        } else {
-          err.code = "OAI_ERR99";
-          err.user_message = msqTemplates.error_api_other_problems;
-          throw err;
-        }
-      } catch(err){
-        err.place_in_code = err.place_in_code || "completion.UnSuccessResponseHandle";
-        telegramErrorHandler.main(
-          {
-            replyMsgInstance:this.#replyMsg,
-            error_object:err
-          }
-        );
-      }
-      }
-    
 
     _transform(chunk, encoding, callback) {
       this.#chunkBuffer.push(chunk);
@@ -403,25 +349,7 @@ class Completion extends Transform {
         const chunksToProcess = this.#chunkBuffer;
         this.#chunkBuffer = [];
         await this.processChunksBatch(chunksToProcess); //здесь выполнение должно быть именно синхронное
-        console.log(new Date(),"end: part inside this.#chunkBuffer.length > 0.Test part 2.")
-      }
-      console.log(new Date(),"end: part outside this.#chunkBuffer.length > 0. Test part 2.")
-
-      this.checkIfCompletionIsEmpty()
-      
-      const completionObject = this.currentCompletionObj
-      await this.#dialogue.commitCompletionDialogue(completionObject)
-
-      await this.#dialogue.finalizeTokenUsage(completionObject,this.#tokenUsage)
-      
-      this.#dialogue.emit('triggerToolCall', completionObject.tool_calls) 
-
-      this.#decoder.end()
-      
-      this.#dialogue.regenerateCompletionFlag = false
-
-      
-    //  console.log(JSON.stringify(this.currentCompletionObj,null,4))
+      }    
     }
 
     async processChunksBatch(chunksToProcess){
@@ -434,8 +362,8 @@ class Completion extends Transform {
         const jsonChunks = await this.batchStringToJson(batchString);
 
         await this.extractData(jsonChunks)
-        this.#replyMsg.deliverCompletionToTelegramThrottled(this)
-       // this.#throttledDeliverCompletionToTelegram(this)
+        // this.#replyMsg.deliverCompletionToTelegramThrottled(this)
+        this.#throttledDeliverCompletionToTelegram(this)
 
         this.#isProcessingChunk = false;
     }
@@ -545,37 +473,6 @@ class Completion extends Transform {
       );
   
     };
-
-    throttleFunction(fn, delay) {
-      let timerId;
-      let lastExecutedTime = 0;
-    
-      return function () {
-        return new Promise((resolve) => {
-        const context = this;
-        const args = arguments;
-    
-        const execute = function () {
-          resolve(fn.apply(context, args));
-          lastExecutedTime = Date.now();
-        };
-    
-        if (timerId) {
-          clearTimeout(timerId);
-        }
-      //  console.log(Date.now() - lastExecutedTime)
-        if (lastExecutedTime===0){ //first start
-          lastExecutedTime = Date.now();
-        }
-        
-        if (Date.now() - lastExecutedTime > delay) {
-          execute();
-        } else {
-          timerId = setTimeout(execute, delay);
-        }
-      })
-      };
-    }
 
     };
     
