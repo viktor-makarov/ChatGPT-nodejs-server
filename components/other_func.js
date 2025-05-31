@@ -1324,28 +1324,7 @@ function throttleNew(func, delay=0) {
   }
 }
 
-function throttleWithImmediateStart(func, delay=0) {
-  let firstCall = true;
-  let throttleTimeout = null
-  // console.log(new Date(),"throttleNew started")
-  return (...args)=> {
-    //  console.log(new Date(),"innerfunction execution")
 
-     if(firstCall === true){
-        // console.log(new Date(),"first start")
-        func(...args)
-        firstCall = false
-     }
-
-     if(throttleTimeout === null) {
-         throttleTimeout = setTimeout(()=> {
-            //  console.log(new Date(),"callback triggered")
-             func(...args)
-             throttleTimeout = null
-         }, delay)
-     } 
-  }
-}
 
 function debounceNew(func, delay) {
   let debounceTimer
@@ -1675,6 +1654,5 @@ module.exports = {
   extractContentWithTika,
   createExcelWorkbookToBuffer,
   fileContentToHtml,
-  streamToBuffer,
-  throttleWithImmediateStart
+  streamToBuffer
 };

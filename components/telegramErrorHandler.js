@@ -101,17 +101,26 @@ function msgShortener(text){
 
 function enrichErrorObject(err,replyMsgInstance){
 
+
+    err.sendToUser = err.user_message ?? true
+    
     if(err.code==="ETELEGRAM"){
         //Handle Telegram errors
         if (err.message.includes("400 Bad Request")) {
             err.internal_code = "TGR_ERR1"
-            err.user_message = msqTemplates.telegram_TGR_ERR1}
-          else  if (err.message.includes("429 Too Many Requests")) {
-                err.internal_code = "TGR_ERR2"
-                err.user_message = msqTemplates.telegram_TGR_ERR1
+            err.user_message = msqTemplates.telegram_TGR_ERR1
+            err.mongodblog = true
+            err.consolelog = false
+        } else  if (err.message.includes("429 Too Many Requests")) {
+            err.internal_code = "TGR_ERR2"
+            err.user_message = msqTemplates.telegram_TGR_ERR1
+            err.mongodblog = true
+            err.consolelog = false
         } else {
             err.internal_code = "TGR_ERR99"
             err.user_message = msqTemplates.telegram_TGR_ERR99
+            err.mongodblog = true
+            err.consolelog = false
         }
     } else if (err.code=="MONGO_ERR"){
         err.internal_code = "MDB_ERR1"
@@ -164,7 +173,7 @@ function enrichErrorObject(err,replyMsgInstance){
         err.user_message = msqTemplates.INT_ERR
     }
 
-    err.sendToUser = err.user_message ? true : false
+    
 
     return err
 }

@@ -6,6 +6,7 @@ const mongo = require("../mongo");
 const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
 const openAIApi = require("../openAI_API.js");
+const { error } = require('console');
 
 class Completion extends Transform {
 
@@ -25,6 +26,7 @@ class Completion extends Transform {
 
 
     #telegramMsgBtns = false;
+    #telegramMsgIds = []
 
     #requestMsg;
     #replyMsg;
@@ -49,14 +51,19 @@ class Completion extends Transform {
     #completionCurrentVersionNumber = 1;
     #long_wait_notes;
     #timeout;
-    #throttledDeliverCompletionToTelegram
 
-    #toolCallsInstance;
+    #throttledDeliverResponseToTgm;
+    #deliverResponseToTgm;
+    #toolCallsInstance
     #tool_calls=[];
+    #text;
 
     #actualModel;
-    #sendWithDelay;
-
+    #completionRedaloudButtons = {
+      text: "🔊",
+      callback_data: JSON.stringify({e:"readaloud"}),
+    };
+    
     constructor(obj) {
         super({ readableObjectMode: true });
         this.#chunkBuffer =[];
@@ -80,7 +87,6 @@ class Completion extends Transform {
         this.#completionCreatedDT_UTC = new Date();
 
         this.#timeout = modelConfig[this.#user.currentModel]?.timeout_ms || 120000;
-        this.#throttledDeliverCompletionToTelegram = otherFunctions.throttleWithImmediateStart(this.#replyMsg.deliverCompletionToTelegram.bind(this.#replyMsg) ,appsettings.telegram_options.send_throttle_ms)
       };
 
       async router(){
@@ -93,9 +99,12 @@ class Completion extends Transform {
           
           await this.#replyMsg.sendTypingStatus()
           const statusMsg = await this.#replyMsg.sendStatusMsg()
-
+          
           this.#long_wait_notes = this.triggerLongWaitNotes(statusMsg)
 
+          this.#deliverResponseToTgm = this.deliverResponseToTgmHandler(statusMsg.message_id,statusMsg.text.length);
+          this.#throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#deliverResponseToTgm,appsettings.telegram_options.send_throttle_ms)
+          
           let oai_response;
           try{
             oai_response =  await openAIApi.chatCompletionStreamAxiosRequest(
@@ -246,7 +255,13 @@ class Completion extends Transform {
         filter: {telegramMsgId:data.message_id},       
         updateBody:this.completionFieldsToUpdate
       })
-      console.log("Completion updated in DB")
+    }
+
+    async msgDeliveredUpdater(data){
+      await mongo.updateCompletionInDb({
+        filter: {sourceid:data.sourceid},       
+        updateBody:this.completionFieldsToUpdate
+      })
     }
 
     set completionLatexFormulas(value){
@@ -271,7 +286,8 @@ class Completion extends Transform {
       this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
       
       const result =  {
-        telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
+        telegramMsgId:this.#telegramMsgIds,
+     //   telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
         telegramMsgBtns:this.#telegramMsgBtns,
         content: this.#completionPreviousVersionsContent,
         content_latex_formula:this.#completionPreviousVersionsLatexFormulas
@@ -284,13 +300,14 @@ class Completion extends Transform {
       this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
       this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
 
-      const completionId = this.#dialogue.regenerateCompletionFlag ?  this.#completionPreviousVersionsDoc?.sourceid : this.#completionId
+      this.#completionId = this.#dialogue.regenerateCompletionFlag ?  this.#completionPreviousVersionsDoc?.sourceid : this.#completionId
       
       return {
             //Формируем сообщение completion
-            sourceid: completionId,
+            sourceid: this.#completionId,
             createdAtSourceTS: this.#completionCreatedTS,
             createdAtSourceDT_UTC: this.#completionCreatedDT_UTC,
+         //   telegramMsgId:this.#telegramMsgIds,
             telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
             telegramMsgBtns:this.#telegramMsgBtns,
             userid: this.#user.userid,
@@ -363,7 +380,7 @@ class Completion extends Transform {
 
         await this.extractData(jsonChunks)
         // this.#replyMsg.deliverCompletionToTelegramThrottled(this)
-        this.#throttledDeliverCompletionToTelegram(this)
+       // this.#throttledDeliverCompletionToTelegram(this)
 
         this.#isProcessingChunk = false;
     }
@@ -386,7 +403,6 @@ class Completion extends Transform {
       for (const stringChunk of stringChunks){
         if(stringChunk==="data: [DONE]"){
           this.#chunkStringBuffer = "";
-          this.#completion_ended = false;
           return jsonChunks
         } else {
           try{
@@ -405,7 +421,6 @@ class Completion extends Transform {
     async extractData(jsonChunks){
    //   console.log(JSON.stringify(jsonChunks,null,4))
 
-      
       //console.log(jsonChunks[0].choices[0].delta.content)
       for (const chunk of jsonChunks){
         
@@ -426,6 +441,8 @@ class Completion extends Transform {
 
             const content = (delta?.content ?? "");
             this.#completionContent += content
+            this.#replyMsg.text = this.#completionContent;
+            this.#throttledDeliverResponseToTgm()
 
             const tool_calls = delta?.tool_calls;
             let tool_call = tool_calls ? tool_calls[0] : null;
@@ -451,14 +468,13 @@ class Completion extends Transform {
           }
         }
       }
-      this.#replyMsg.text = this.#completionContent;
 
     }
 
     completionStausUpdate(){
       if (this.#completionFinishReason == "length" || this.#completionFinishReason == "stop") {
+        
         this.#completion_ended = true;
-        console.log(new Date(),"Completion finished. Test part 1")
         this.#replyMsg.completion_ended = true;
       }
     }
@@ -473,6 +489,263 @@ class Completion extends Transform {
       );
   
     };
+
+    deliverResponseToTgmHandler(initialMsgId,initialMsgCharCount = 0){
+          const sentMsgIds = new Set([initialMsgId])
+          let sentMsgsCharCount = [initialMsgCharCount];
+          const additionalMsgOptions = {disable_web_page_preview: true};
+          let completion_delivered = false;
+          let completion_ended_occured_count = 0
+
+      return async () =>{
+
+          try{
+            const text = this.#completionContent
+
+            if (text === undefined ||text === "") {
+              return {success:0,error:"Empty response from the service."};
+            };
+
+            if (completion_ended_occured_count > 3) {
+              return {success:0,error:"completion_ended_occured_count exceeded the limit."};
+            }
+
+            //Here we need to detect and extract tables.
+
+            const splitIndexBorders = this.splitTextBoarders(text,appsettings.telegram_options.big_outgoing_message_threshold);
+            const textChunks = this.splitTextChunksBy(text,splitIndexBorders,this.#completion_ended);
+            const repairedText = this.repairBrokenMakrdowns(textChunks);
+            const messages = this.createTGMMessagesFrom(repairedText,this.#completion_ended,additionalMsgOptions)
+
+            const sentMsgsCharCountTotal = sentMsgsCharCount.reduce((acc, val) => acc + val, 0);
+            const messagesCharCountTotal = messages.reduce((acc, val) => acc + val[0].length, 0);
+            completion_delivered = sentMsgsCharCount.length === messages.length && sentMsgsCharCountTotal === messagesCharCountTotal
+
+            if(completion_delivered){ //final run when all messages are sent
+              this.#telegramMsgIds = Array.from(sentMsgIds)
+              this.#telegramMsgBtns = true;
+              await this.msgDeliveredUpdater({sourceid:this.#completionId})
+              return {success:1,completion_delivered}
+            }
+
+            await this.deleteOldMessages(sentMsgIds,messages);
+
+            const updateResult = await this.updateMessages(sentMsgIds, messages, sentMsgsCharCount);
+
+            if(updateResult.success === 0 && updateResult.wait_time_ms!=-1){
+                const waitResult =await this.#replyMsg.sendTelegramWaitMsg(updateResult.wait_time_ms/1000)
+                sentMsgIds.add(waitResult.message_id)
+                
+                await otherFunctions.delay(updateResult.wait_time_ms)
+                const result = await this.#deliverResponseToTgm() //deliver the response after delay
+                return result
+            }
+            await this.sendMessages(messages,sentMsgIds,sentMsgsCharCount)
+            
+           
+           let nested_result; 
+            if(this.#completion_ended){
+              completion_ended_occured_count ++
+              nested_result = await this.#deliverResponseToTgm()
+            }
+           
+           return nested_result ?? {success:1,completion_delivered}
+          
+          } catch(err){
+            telegramErrorHandler.main(
+            {
+              replyMsgInstance:this.#replyMsg,
+              error_object:err
+            })
+            return {success:0,error:err.message}
+          }
+          }
+    }
+
+    throttleWithImmediateStart(func, delay=0) {
+
+      let throttleTimeout = null
+      // console.log(new Date(),"throttleNew started")
+      return (...args)=> {
+        //  console.log(new Date(),"innerfunction execution")
+        if(throttleTimeout === null) {
+            throttleTimeout = setTimeout(async ()=> {
+                //  console.log(new Date(),"callback triggered")
+                await func(...args)
+                throttleTimeout = null //this must be before the function call to release the throttle
+
+            }, delay)
+        }
+      }
+    }
+
+        splitTextBoarders(text,tgmMsgThreshold){
+
+      let residualText = text;
+      const textLastIndex = text.length - 1;
+      let startIndex = 0;
+      let endIndex = 0;
+      const splitLinesString = '\n';
+
+      const splitIndexes = [];
+      while (endIndex < textLastIndex) {
+              if(residualText.length < tgmMsgThreshold){
+                endIndex = textLastIndex
+                const lineBreakIsUsed = false;
+                splitIndexes.push([startIndex,endIndex,lineBreakIsUsed])
+                
+              } else {
+
+                const lastNewlineIndex = residualText.lastIndexOf(splitLinesString, tgmMsgThreshold);
+                const lineBreakIsUsed = lastNewlineIndex === -1 ? false : true
+                const cropIndex = lineBreakIsUsed ? lastNewlineIndex : tgmMsgThreshold -1;
+                residualText = residualText.slice(cropIndex+1);
+                endIndex = startIndex + cropIndex;
+                splitIndexes.push([startIndex,endIndex,lineBreakIsUsed])
+                startIndex = endIndex + 1;              
+              }
+            }
+
+
+      return splitIndexes
+    }
+
+     splitTextChunksBy(text,splitIndexBorders,completionEnded){
+
+      //Split text into chunks
+        const textChunks = [];
+        let index = 0;
+        for (const [startIndex, endIndex, lineBreakIsUsed] of splitIndexBorders) {
+          
+          if (splitIndexBorders.length === 1) { // Single chunk case - use the entire text
+            textChunks.push(text);
+            break;
+          }
+          
+          const chunk = text.slice(startIndex, endIndex + 1); // Extract chunk of text
+          
+          let splitFiller;
+          if(completionEnded && index === splitIndexBorders.length - 1){
+            splitFiller = ""
+          } else {
+            splitFiller = lineBreakIsUsed ? "" : "...";
+          }
+
+          textChunks.push(chunk + splitFiller);
+          index ++;
+        }
+
+        return textChunks;
+    }
+
+      repairBrokenMakrdowns(textChunks){
+        let repairedText = [];
+        let prefix = "";
+        for (const chunk of textChunks){
+          const brokenTags = otherFunctions.findBrokenTags(prefix + chunk);
+          repairedText.push(prefix + chunk + brokenTags?.close)
+          prefix = brokenTags?.open ?? ""; //it will be used for text in the next chunk
+        }
+
+        return repairedText;
+    }
+
+    createTGMMessagesFrom(repairedText,completionEnded,additionalMsgOptions){
+      
+    return repairedText.map((text, index) => {
+            const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text);
+            const isLastChunk = index === repairedText.length - 1 && completionEnded;
+            
+            const reply_markup = isLastChunk ? this.craftReplyMarkup() : null;
+            
+            return [conversionResult.html,reply_markup,"HTML",additionalMsgOptions];
+          });
+    }
+
+    async deleteOldMessages(sentMsgIds,messages){
+
+      const msgsToDelete = Array.from(sentMsgIds).filter((msg, index) => index > messages.length-1);
+
+      for (const message_id of msgsToDelete) {
+             await this.#replyMsg.deleteMsgByID(message_id)
+             sentMsgIds.delete(message_id)
+      }
+    }
+
+    async updateMessages(sentMsgIds, messages, sentMsgsCharCount){
+
+    const msgsToUpdate =[];
+    messages.forEach((msg,index) => {
+      if(sentMsgsCharCount.length > index && msg[0].length != sentMsgsCharCount[index]){
+        msgsToUpdate.push([...msg,Array.from(sentMsgIds)[index],index])
+      }
+    })
+
+    for (const [html,reply_markup,parse_mode,add_options,message_id,original_index] of msgsToUpdate) {
+               const result = await this.#replyMsg.updateMessageWithErrorHandling(html || "_", {
+                message_id: message_id,
+                reply_markup: reply_markup === null ? null : JSON.stringify(reply_markup),
+                parse_mode,
+                ...add_options,
+               })
+
+               sentMsgsCharCount[original_index] = html.length;
+
+               if(result.success === 0 && result.wait_time_ms !=-1){
+                return result
+               }
+
+
+    }
+
+    return {success:1}
+    }
+
+    async sendMessages(messages,sentMsgIds,sentMsgsCharCount){
+
+        const msgsToSend = messages.filter((msg, index) => index > sentMsgsCharCount.length - 1);
+
+        for (const [html,reply_markup,parse_mode,add_options] of msgsToSend) {
+            const result = await this.#replyMsg.sendMessageWithErrorHandling(html || "_",reply_markup,parse_mode,add_options)
+            sentMsgIds.add(result.message_id)
+            sentMsgsCharCount.push(html.length);
+            }
+    }
+
+    craftReplyMarkup(){
+      let reply_markup = {
+            one_time_keyboard: true,
+            inline_keyboard: [],
+          };
+
+      const completionRegenerateButtons = {
+            text: "🔄",
+            callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
+          };
+      const completionRedaloudButtons = this.#completionRedaloudButtons
+
+      const currentVersionNumber =  this.#completionCurrentVersionNumber
+      const latexFormulas =  this.#completionLatexFormulas
+
+      if(currentVersionNumber>1){
+        reply_markup = this.#replyMsg.generateVersionButtons(currentVersionNumber,currentVersionNumber,reply_markup)
+      }
+
+      if(latexFormulas){
+        reply_markup = this.#replyMsg.generateFormulasButton(reply_markup)
+      }
+
+      const downRow = [completionRedaloudButtons]
+
+      if(currentVersionNumber<10){
+        downRow.unshift(completionRegenerateButtons)
+      }
+
+      reply_markup.inline_keyboard.push(downRow)
+
+      return reply_markup
+    }
+
 
     };
     

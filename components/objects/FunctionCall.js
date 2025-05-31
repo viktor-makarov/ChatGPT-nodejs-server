@@ -104,6 +104,10 @@ async router(){
        let err;
     try{
 
+        this.validateFunctionCallObject(this.#functionCall)
+        this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
+        console.log("Function description",this.#argumentsJson.function_description)
+
         statusMessageId = await this.sendStatusMessage()
 
         await this.addFunctionToQueue(statusMessageId)
@@ -137,7 +141,8 @@ async router(){
 
 async sendStatusMessage(){
 
-    const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.`
+    const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
+    const MsgText = `${functionDescription} Выполняется.`
     const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null,null,null)
     return result.message_id
 }
@@ -178,7 +183,7 @@ async inQueueStatusMessage(statusMessageId){
 }
 
 async backExecutingStatusMessage(statusMessageId){
-    const msgText = `${this.#functionConfig.friendly_name}. Выполняется.`
+    const msgText = `${this.#functionConfig.friendly_name} Выполняется.`
 
     const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
@@ -189,9 +194,9 @@ async backExecutingStatusMessage(statusMessageId){
 async finalizeStatusMessage(functionResult,statusMessageId){
 
 
-
+    const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
-    const msgText = `${this.#functionConfig.friendly_name}. ${resultIcon}`
+    const msgText = `${functionDescription}. ${resultIcon}`
 
     const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
 
@@ -310,12 +315,9 @@ async functionHandler(){
             if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
                 return {success:0, error: `function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`,instructions:"Try to find another solution."}
             };
-            
-            this.validateFunctionCallObject(this.#functionCall)
-            this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
 
             const timeoutPromise = this.triggerFunctionTimeout();
-
+            
             try {
                 this.#inProgress = true;
                  const toolExecutionStart = new Date();

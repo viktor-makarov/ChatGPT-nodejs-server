@@ -13,12 +13,16 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                    },
                     aggregate_pipeline: {
                         type: "string",
                         description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`
                     }
                 },
-                required: ["aggregate_pipeline"]
+                required: ["aggregate_pipeline","function_description"]
             }
         },
         friendly_name: "Cистемные ошибки R2D2",
@@ -44,12 +48,16 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                    },
                     aggregate_pipeline: {
                         type: "string",
                         description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`
                     }
                 },
-                required: ["aggregate_pipeline"]
+                required: ["aggregate_pipeline","function_description"]
             }
         },
         friendly_name: "Статистика вызова функций R2D2",
@@ -74,12 +82,16 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                    },
                     aggregate_pipeline: {
                         type: "string",
                         description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`
                     }
                 },
-                required: ["aggregate_pipeline"]
+                required: ["aggregate_pipeline","function_description"]
             }
         },
         friendly_name: "Статистика использования R2D2",
@@ -104,12 +116,16 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                    },
                     id: {
                         type: "string",
                         description: `id of a knowledge base item`
                     },
                 },
-                required: ["id"]
+                required: ["id","function_description"]
             }
         },
         friendly_name: "Запрос в базу знаний",
@@ -135,7 +151,13 @@ const list = [
                 description: `Use this function when you are asked about functionality of the R2D2 bot.`,
                 parameters: {
                     type: "object",
-                    properties: {}
+                    properties: {
+                        function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        }
+                    },
+                    required: ["function_description"]
                 }
             },
             friendly_name: "Чтение инструкции",
@@ -155,6 +177,10 @@ const list = [
                 parameters: {
                     type: "object",
                     properties: {
+                        function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                         resources:{
                             type: "array",
                             description: `List of fileid numbers for extraction. Images that represent the same text document should be included in one function call. Documents are processd in the order they are provided in the list.`,
@@ -164,7 +190,7 @@ const list = [
                         }
                     }
                     },
-                    required: ["resources"],
+                    required: ["resources","function_description"],
                     additionalProperties: false
                     }
             },
@@ -184,6 +210,10 @@ const list = [
                 parameters: {
                     type: "object",
                     properties: {
+                        function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                         textprompt: {
                             type: "string",
                             description: `A text prompt for midjourney in english. You must use get_knowledge_base_item function for instructions and examples. If you are given a midjourney text prompt - you must use it exactly AS IS. To embed text into the image it should be put into double quotes`
@@ -209,7 +239,7 @@ const list = [
                             description: `Weight of the imageprompt vs. textprompt. Value can be from 0 to 3. For example: 0.5, 1.75, 2, 2.5. Higher value means the image prompt will have more impact on the generated image. Imageweight must be used only along with imageprompt parameter. Default value is 1.`
                         }
                     },
-                    required: ["textprompt"]
+                    required: ["textprompt","function_description"],
                 }
             },
             friendly_name: "Генерация изображения",
@@ -236,12 +266,16 @@ const list = [
                 parameters: {
                     type: "object",
                     properties: {
+                        function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                         prompt: {
                             type: "string",
                             description: `Full-fetched prompt for midjourney in english provided by user.`
                         }
                     },
-                    required: ["prompt"]
+                    required: ["prompt","function_description"]
                 }
             },
             friendly_name: "Генерация изображения",
@@ -268,6 +302,10 @@ const list = [
                 parameters: {
                     type: "object",
                     properties: {
+                        function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                         buttonPushed: {
                             type: "string",
                             description: `Label of the button pushed by user.`
@@ -289,7 +327,7 @@ const list = [
                             description: `Midjourney flags.`
                         },
                     },
-                    required: ["buttonPushed","msgId","customId","content","flags"]
+                    required: ["buttonPushed","msgId","customId","content","flags","function_description"],
                 }
             },
             friendly_name: "Команда Midjourney",
@@ -316,12 +354,16 @@ const list = [
                 parameters: {
                     type: "object",
                     properties: {
+                        function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                         url: {
                         type: "string",
                             description: `A single url as a string to fetch content from.`
                         }
                     },
-                required: ["url"]
+                required: ["url","function_description"],
                 }
             },
             friendly_name: "Чтение гиперссылки",
@@ -345,12 +387,16 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                     python_code: {
                         type: "string",
                         description: "Text of python code. In the code you must print the results to the console. Use syntax compatible with python 3.12. But you can use oly the following additional modules pandas, openpyxl, regex, PyPDF2 and python-docx."
                     }
                 },
-                required: ["python_code"]
+                required: ["python_code","function_description"]
             }
         },
         friendly_name:"Вычисления Python",
@@ -369,12 +415,16 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                     javascript_code: {
                         type: "string",
                         description: "Text of javascript code. In the code you must output results to the console."
                     }
                 },
-                required: ["javascript_code"]
+                required: ["javascript_code","function_description"]
             }
         },
         friendly_name:"Вычисления JavaScript",
@@ -393,6 +443,10 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                     html: {
                         type: "string",
                         description: "Content for the file in html format. Images should have full public url. Urls to images should be in the format: <img src='https://example.com/image.png'/>. Urls may include parameters. Inline css classes should be in the format: <div style='color:red;'>text</div>. Should not be used together with content_reff.",
@@ -410,7 +464,7 @@ const list = [
                         description:"Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
                     }
                 },
-                required: ["filename"]
+                required: ["filename","function_description"]
             }
 
         },
@@ -435,6 +489,10 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                     data: {
                         type: "array",
                         description: "An array of Excel worksheets.",
@@ -579,7 +637,7 @@ const list = [
                         description:"Name of the file. It must have .xlsx extention."
                     }
                 },
-                required: ["filename","data"],
+                required: ["filename","data","function_description"],
                 additionalProperties: false
             }
 
@@ -600,6 +658,10 @@ const list = [
             parameters: {
                 type: "object",
                 properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        },
                     text: {
                         type: "string",
                         description: "Text for the file. Should not be used together with content_reff."
@@ -621,7 +683,7 @@ const list = [
                         description:"Mimetype of the output file. For example, 'text/plain' or text/x-python."
                     }
                 },
-                required: ["filename","mimetype"],
+                required: ["filename","mimetype","function_description"],
             }
         },
         friendly_name:"Создание текстового файла",
@@ -639,7 +701,13 @@ const list = [
             description: "Use this function to answer user's questions which require current date and time. This function returns value of date and time at the moment of request.",
             parameters: {
                 type: "object",
-                properties: {}
+                properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                    }
+                },
+                required: ["function_description"]
             }
         },
         friendly_name:"Дата и время",

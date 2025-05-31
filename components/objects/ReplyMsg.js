@@ -48,7 +48,6 @@ constructor(obj) {
         text: "🔄",
         callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
       };
-
 };
 
 set text(value){
@@ -242,9 +241,85 @@ if(parse_mode){
 return await this.#botInstance.sendMessage(this.#chatId,text,options)
 }
 
+async sendMessageWithErrorHandling(text, reply_markup, parse_mode, add_options) {
+  try {
+    const result = await this.simpleSendNewMessage(text, reply_markup, parse_mode, add_options);
+    return {success:1, message_id: result.message_id};
+  } catch (err) {
+    if (err.message.includes("can't parse entities")) {
+      try {
+        
+        const result = await this.simpleSendNewMessage(text, reply_markup, null, add_options);
+        err.sendToUser = false
+        ErrorHandler.main({replyMsgInstance:this,error_object:err})
+        return {success:1, message_id: result.message_id};
+      } catch (retryErr) {
+        // Enhance the retry error with details before throwing
+        retryErr.mongodblog = true;
+        retryErr.details = retryErr.message;
+        retryErr.place_in_code = "sendMessageWithErrorHandling_retry";
+        throw retryErr;
+      }
+    }
+    
+    err.mongodblog = true;
+    err.details = err.message;
+    err.place_in_code = err.place_in_code || "sendMessageWithErrorHandling";
+    throw err;
+  }
+}
+
 async simpleMessageUpdate(text,options){
 
   return await this.#botInstance.editMessageText(text, options)
+}
+
+async updateMessageWithErrorHandling(text, options) {
+
+  // The options variable is already passed as a parameter, no need to redeclare it.
+  options.chat_id = this.#chatId;
+
+  try {
+   const result =  await this.#botInstance.editMessageText(text, options)
+   return {success:1, message_id: result.message_id};
+  } catch (err) {
+    if (err.message.includes("can't parse entities")) {
+      try {
+        const updatedOptions = { ...options };
+        delete updatedOptions.parse_mode;
+        const result = this.#botInstance.editMessageText(text, updatedOptions);
+        err.sendToUser = false
+        ErrorHandler.main({replyMsgInstance:this,error_object:err})
+        return {success:1, message_id: result.message_id};
+      } catch (retryErr) {
+        // Enhance the retry error with details before throwing
+        retryErr.mongodblog = true;
+        retryErr.details = retryErr.message;
+        retryErr.place_in_code = "updateMessageWithErrorHandling_retry";
+        throw retryErr;
+      }
+    } else if (err.message.includes("message is not modified")) {
+      err.sendToUser = false
+      ErrorHandler.main({replyMsgInstance:this,error_object:err})
+      console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!message is not modified, skipping update");
+      return {success:0, error:err.message};
+    }  else if (err.message.includes("ETELEGRAM: 429 Too Many Requests")) {
+      const millisecondsToWait = this.extractWaitTimeFromErrorMs(err);
+      if(millisecondsToWait>0){
+        return {success:0, error:err.message, wait_time_ms:millisecondsToWait};
+      } else {
+        err.mongodblog = true;
+        err.details = err.message;
+        err.place_in_code = err.place_in_code || "updateMessageWithErrorHandling_too_many_requests";
+        throw err;       
+      }
+    }
+    
+    err.mongodblog = true;
+    err.details = err.message;
+    err.place_in_code = err.place_in_code || "updateMessageWithErrorHandling";
+    throw err;
+  }
 }
 
 async deleteMsgByID(msgId){
@@ -289,7 +364,6 @@ async sendDocumentByUrl(url) {
 }
 
 async sendDocumentAsBinary(fileBuffer,filename,mimetype) {
-
   try{
 
     let options = {};
@@ -316,7 +390,7 @@ async sendChoosenVersion(text,formulas,version,versionsCount){
   buttons = this.generateVersionButtons(version,versionsCount,buttons)
   if(formulas){
   buttons = this.generateFormulasButton(buttons)
-  }     
+  }   
   
   const downRow = [this.#completionRedaloudButtons]
 
@@ -361,25 +435,29 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
 
     const splitLinesString = '\n';
     let residualText = text;
+    const textLastIndex = text.length - 1;
     let startIndex = 0;
     let endIndex = 0;
     let splitIndexes = [];
-    while (endIndex < text.length) {
+    while (endIndex < textLastIndex) {
       
       if(residualText.length < this.#msgThreshold){
-        endIndex = text.length
-        splitIndexes.push([startIndex,endIndex,false])
+        endIndex = textLastIndex
+        const lineBreakIsUsed = false;
+        splitIndexes.push([startIndex,endIndex,lineBreakIsUsed])
       } else {
         const lastNewlineIndex = residualText.lastIndexOf(splitLinesString, this.#msgThreshold);
-        const lineBreakIsUsed = lastNewlineIndex !== -1
-        endIndex = lineBreakIsUsed ? lastNewlineIndex : this.#msgThreshold;
+        const lineBreakIsUsed = lastNewlineIndex === -1 ? false : true
+        const cropIndex = lineBreakIsUsed ? lastNewlineIndex : this.#msgThreshold -1;
+        residualText = residualText.slice(cropIndex+1);
+        endIndex = startIndex + cropIndex;
         splitIndexes.push([startIndex,endIndex,lineBreakIsUsed])
-        startIndex = endIndex + (lineBreakIsUsed ? splitLinesString.length : 0);
-        residualText = residualText.slice(startIndex);
+        startIndex = endIndex + 1; 
       }
     }
 
     const textChunks = [];
+    let index = 0;
     for (const [startIndex, endIndex, lineBreakIsUsed] of splitIndexes) {
       
       if (splitIndexes.length === 1) { // Single chunk case - use the entire text
@@ -387,19 +465,24 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
         break;
       }
       
-      const chunk = text.slice(startIndex, endIndex); // Extract chunk of text
+      const chunk = text.slice(startIndex, endIndex + 1); // Extract chunk of text
       
-      const splitFiller = lineBreakIsUsed ? "" : "...";
+      let splitFiller;
+          if(index === splitIndexes.length - 1){
+            splitFiller = ""
+          } else {
+            splitFiller = lineBreakIsUsed ? "" : "...";
+          }
       textChunks.push(chunk + splitFiller);
+      index ++;
     }
 
-    
     let repairedText = [];
     let prefix = "";
     for (const chunk of textChunks){
       const brokenTags = otherFunctions.findBrokenTags(prefix + chunk);
       repairedText.push(prefix + chunk + brokenTags?.close)
-      prefix = brokenTags?.open; //it will be used for text in the next chunk
+      prefix = brokenTags?.open ?? ""; //it will be used for text in the next chunk
     }
 
     const sendOptions = repairedText.map((text, index) => {
@@ -410,12 +493,11 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
 
     let results = []
     for (const [html,reply_markup,parse_mode,add_options] of sendOptions) {
-      const result = await this.simpleSendNewMessage(html,reply_markup,parse_mode,add_options)
+      const result = await this.simpleSendNewMessage(html || "_",reply_markup,parse_mode,add_options)
       results.push(result)
     }
 
   return results
-
 };
 
 extractWaitTimeFromError(err){
@@ -441,10 +523,19 @@ extractWaitTimeFromError(err){
       }
 
 return seconds_to_wait
-
 }
 
+extractWaitTimeFromErrorMs(err){
 
+    const regex = /retry after (\d+)/i;
+    const match = err.message.match(regex);
+    
+    if (match) {
+      return match[1]*1000;
+    } else {
+      return -1; 
+    }
+}
 
 
 async sendMdjImage(generateResult,prompt){
@@ -458,9 +549,6 @@ async sendMdjImage(generateResult,prompt){
     fileName:`mdj_imagine_${generateResult.mdjMsg.id}.jpeg`,
     imageBuffer:generateResult.imageBuffer
   });
-
-
-  
 
   return sent_result
 }
@@ -583,9 +671,6 @@ async deliverCompletionToTelegram(completionInstance){
 
   // console.log(new Date(),"entered deliverCompletionToTelegram")
   try{
-        if(this.#completion_ended){
-          console.log(new Date(),"deliverCompletionToTelegram invoked. Test part 3.")
-        }
             let oneMsgText;
             
             const isValidTextToSend = this.#textToSend && this.#textToSendLength>0

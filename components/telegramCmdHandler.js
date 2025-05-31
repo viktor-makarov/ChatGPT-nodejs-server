@@ -211,6 +211,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   const isAdmin = requestMsgInstance.user.isAdmin
   let responses =[];
 
+  
+
   if(cmpName==="start"){
 
     if(isRegistered){
@@ -365,7 +367,10 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   } else {
     responses.push({text:msqTemplates.unknown_command})
   }
-   return responses
+
+  await replyMsgInstance.deleteMsgByID(requestMsgInstance.msgId)
+  
+  return responses
 }
 
 async function callbackRouter(requestMsg,replyMsg,dialogue){
@@ -434,7 +439,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const totalVersionsCount = doc.content.length;
     const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenContentFormulas,choosenVersionIndex,totalVersionsCount)
     const msgIdsForDbCompletion = sentResult.map(result => result.message_id)
-
+    
     await mongo.updateCompletionInDb({
       filter: {telegramMsgId:{"$in":doc.telegramMsgId}},
       updateBody:{
