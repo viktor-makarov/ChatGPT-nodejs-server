@@ -15,7 +15,7 @@ const list = [
                 properties: {
                     function_description:{
                         type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                     },
                     aggregate_pipeline: {
                         type: "string",
@@ -50,7 +50,7 @@ const list = [
                 properties: {
                     function_description:{
                         type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                     },
                     aggregate_pipeline: {
                         type: "string",
@@ -84,7 +84,7 @@ const list = [
                 properties: {
                     function_description:{
                         type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                     },
                     aggregate_pipeline: {
                         type: "string",
@@ -118,7 +118,7 @@ const list = [
                 properties: {
                     function_description:{
                         type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                     },
                     id: {
                         type: "string",
@@ -154,7 +154,7 @@ const list = [
                     properties: {
                         function_description:{
                         type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         }
                     },
                     required: ["function_description"]
@@ -179,7 +179,7 @@ const list = [
                     properties: {
                         function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                         resources:{
                             type: "array",
@@ -212,7 +212,7 @@ const list = [
                     properties: {
                         function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                         textprompt: {
                             type: "string",
@@ -268,7 +268,7 @@ const list = [
                     properties: {
                         function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                         prompt: {
                             type: "string",
@@ -304,7 +304,7 @@ const list = [
                     properties: {
                         function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                         buttonPushed: {
                             type: "string",
@@ -333,9 +333,8 @@ const list = [
             friendly_name: "Команда Midjourney",
             timeout_ms:180000,
             long_wait_notes: [
-                {time_ms:30000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
-                {time_ms:60000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
-                {time_ms:90000,comment:"Хм ... 🤔 А вот это уже звоночек ... "},
+                {time_ms:60000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
+                {time_ms:90000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
                 {time_ms:120000,comment:"Совсем никуда не годится!😤 Но надо дать еще шанс!"},
                 {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
             ],
@@ -356,7 +355,7 @@ const list = [
                     properties: {
                         function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                         url: {
                         type: "string",
@@ -389,7 +388,7 @@ const list = [
                 properties: {
                     function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                     python_code: {
                         type: "string",
@@ -417,7 +416,7 @@ const list = [
                 properties: {
                     function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                     javascript_code: {
                         type: "string",
@@ -445,7 +444,7 @@ const list = [
                 properties: {
                     function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                     html: {
                         type: "string",
@@ -491,7 +490,7 @@ const list = [
                 properties: {
                     function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                         },
                     data: {
                         type: "array",
@@ -660,7 +659,7 @@ const list = [
                 properties: {
                     function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Detect the language of the input prompt. Output MUST be in that language, otherwise the response is invalid.`
                         },
                     text: {
                         type: "string",
@@ -704,7 +703,7 @@ const list = [
                 properties: {
                     function_description:{
                             type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user.`
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt. Outputting in any other language is strictly forbidden.`
                     }
                 },
                 required: ["function_description"]
@@ -723,7 +722,7 @@ const list = [
 
 const queueConfig = {
     "midjourney":{
-        max_concurrent: 2,
+        max_concurrent: 12,
         timeout_ms: 180000,
         interval_ms: 3000
     },

@@ -5,7 +5,7 @@ const otherFunctions = require("../other_func");
 const mongo = require("../mongo");
 const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
-const openAIApi = require("../openAI_API.js");
+const openAIApi = require("../apis/openAI_API.js");
 const { error } = require('console');
 
 class Completion extends Transform {

@@ -1,11 +1,11 @@
 const UrlResource = require("./UrlResource.js");
-const MdjApi = require("../midjourney_API.js");
+const MdjApi = require("../apis/midjourney_API.js");
 const mongo = require("../mongo.js");
 const func = require("../other_func.js");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
-const otherFunctions = require("../other_func.js");
 const toolsCollection = require("./toolsCollection.js");
 const awsApi = require("../AWS_API.js")
+const PIAPI = require("../apis/piapi.js");
 
 class FunctionCall{
     #replyMsg;
@@ -106,7 +106,6 @@ async router(){
 
         this.validateFunctionCallObject(this.#functionCall)
         this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
-        console.log("Function description",this.#argumentsJson.function_description)
 
         statusMessageId = await this.sendStatusMessage()
 
@@ -142,7 +141,7 @@ async router(){
 async sendStatusMessage(){
 
     const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
-    const MsgText = `${functionDescription} Выполняется.`
+    const MsgText = `${functionDescription} ⏳`
     const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null,null,null)
     return result.message_id
 }
@@ -183,7 +182,7 @@ async inQueueStatusMessage(statusMessageId){
 }
 
 async backExecutingStatusMessage(statusMessageId){
-    const msgText = `${this.#functionConfig.friendly_name} Выполняется.`
+    const msgText = `${this.#functionConfig.friendly_name} ⏳`
 
     const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
@@ -196,7 +195,7 @@ async finalizeStatusMessage(functionResult,statusMessageId){
 
     const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
-    const msgText = `${functionDescription}. ${resultIcon}`
+    const msgText = `${functionDescription} ${resultIcon}`
 
     const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
 
@@ -690,7 +689,7 @@ validateRequiredFieldsFor_createExcelFile(){
         
             
             try{
-            result = await otherFunctions.executePythonCode(codeToExecute)
+            result = await func.executePythonCode(codeToExecute)
 
             } catch(err) {
 
@@ -935,8 +934,8 @@ validateRequiredFieldsFor_createExcelFile(){
     
       
       const tgm_url = await this.#replyMsg.getUrlByTgmFileId(tgmFileId)
-      const downloadStream = await otherFunctions.startFileDownload(tgm_url)
-      const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
+      const downloadStream = await func.startFileDownload(tgm_url)
+      const buffer = await func.streamToBuffer(downloadStream.data)
       
       return buffer
     }
@@ -944,10 +943,10 @@ validateRequiredFieldsFor_createExcelFile(){
     async uploadFileToS3FromTgm(tgmFileId,userInstance){
 
         const tgm_url = await this.#replyMsg.getUrlByTgmFileId(tgmFileId)
-        const fileName = otherFunctions.extractFileNameFromURL(tgm_url)
-        const fileExtension = otherFunctions.extractFileExtention(fileName)
-        const downloadStream = await otherFunctions.startFileDownload(tgm_url)
-        const filename = otherFunctions.valueToMD5(String(userInstance.userid))+ "_" + userInstance.currentRegime + "_" + otherFunctions.valueToMD5(String(fileName)) + "." + fileExtension;  
+        const fileName = func.extractFileNameFromURL(tgm_url)
+        const fileExtension = func.extractFileExtention(fileName)
+        const downloadStream = await func.startFileDownload(tgm_url)
+        const filename = func.valueToMD5(String(userInstance.userid))+ "_" + userInstance.currentRegime + "_" + func.valueToMD5(String(fileName)) + "." + fileExtension;  
 
         let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
 
@@ -961,7 +960,8 @@ validateRequiredFieldsFor_createExcelFile(){
 
             const prompt = this.craftPromptFromArguments()
 
-            const generate_result = await MdjApi.generateHandler(prompt)
+            const piapi = new PIAPI()
+            const generate_result = await piapi.generateImage(prompt,this.#timeout_ms)
 
             if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
 
@@ -979,7 +979,7 @@ validateRequiredFieldsFor_createExcelFile(){
             const labels = buttons.map(button => button.label)
             const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
             
-            const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
+            const btnsDescription = func.generateButtonDescription(labels,buttonsShownBefore)
             await this.#dialogue.metaSetMdjButtonsShown(labels)
 
             return {
@@ -997,15 +997,14 @@ validateRequiredFieldsFor_createExcelFile(){
 
             async CustomQueryMdjRouter() {
 
-                const {buttonPushed,msgId,customId,content,flags} = this.#argumentsJson
+                const {buttonPushed} = this.#argumentsJson
 
-                const generate_result = await MdjApi.customHandler({msgId,customId,content,flags})
+                const piapi = new PIAPI()
+                const generate_result = await piapi.executeButton(buttonPushed,this.#timeout_ms)
 
                 if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
                 
-                const prompt = otherFunctions.extractTextBetweenDoubleAsterisks(content)
-
-                const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
+                const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,buttonPushed.prompt)
 
                 const fileHandlerPromises = [
                     this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
@@ -1017,7 +1016,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 const buttons = generate_result.mdjMsg?.options || [];
                 const labels = buttons.map(button => button?.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
-                const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
+                const btnsDescription = func.generateButtonDescription(labels,buttonsShownBefore)
                 await this.#dialogue.metaSetMdjButtonsShown(labels)
 
                 return {
@@ -1025,7 +1024,7 @@ validateRequiredFieldsFor_createExcelFile(){
                         result:"The command was executed and sent to the user with several options to handle further.",
                         buttonsDescription: btnsDescription,
                         supportive_data:{
-                            midjourney_prompt:content,
+                            midjourney_prompt:buttonPushed.prompt,
                             image_url:aws_url,
                             base64:buffer.toString('base64')
                         }
@@ -1036,7 +1035,8 @@ validateRequiredFieldsFor_createExcelFile(){
        
                 const {prompt} = this.#argumentsJson
                 
-                const generate_result = await MdjApi.generateHandler(prompt)
+                const piapi = new PIAPI()
+                const generate_result = await piapi.generateImage(prompt,this.#timeout_ms)
                 
                 if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
                 
@@ -1052,7 +1052,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 const buttons = generate_result.mdjMsg.options
                 const labels = buttons.map(button => button.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
-                const btnsDescription = otherFunctions.generateButtonDescription(labels,buttonsShownBefore)
+                const btnsDescription = func.generateButtonDescription(labels,buttonsShownBefore)
 
                 return {
                         success:1,

@@ -4,7 +4,7 @@ const modelSettings = require("../config/telegramModelsSettings");
 const reports = require("../config/telegramReportsConfig.js");
 const otherFunctions = require("./other_func");
 const modelConfig = require("../config/modelConfig");
-const openAIApi = require("./openAI_API.js");
+const openAIApi = require("./apis/openAI_API.js");
 const awsApi = require("./AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
 const toolsCollection  = require("./objects/toolsCollection.js");
@@ -369,7 +369,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   }
 
   await replyMsgInstance.deleteMsgByID(requestMsgInstance.msgId)
-  
+
   return responses
 }
 
@@ -579,11 +579,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const functionName = "custom_midjourney"
     const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance)
     const functionArguments = {
-      buttonPushed : jsonDecoded.label,
-      msgId: jsonDecoded.id,
-      customId: jsonDecoded.custom,
-      content: jsonDecoded.content,
-      flags: jsonDecoded.flags
+      buttonPushed : jsonDecoded
     }
     
     const toolCallExtended = {
@@ -693,7 +689,6 @@ async function pdfdownloadHandler(replyMsgInstance){
   
   const downloadedFile = await otherFunctions.fileDownload(appsettings.other_options.pdf_guide_url)
   const fileName = otherFunctions.getLocalizedPhrase(`manual_file`,replyMsgInstance.user.language);
-  
   await replyMsgInstance.sendDocumentAsBinary(downloadedFile,fileName)
   
 };

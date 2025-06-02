@@ -1,14 +1,14 @@
 //Подключаем и настраиваем OpenAI
 
 const FormData = require("form-data");
-const msqTemplates = require("../config/telegramMsgTemplates.js");
-const modelSettings = require("../config/telegramModelsSettings.js");
-const modelConfig = require("../config/modelConfig.js");
+const msqTemplates = require("../../config/telegramMsgTemplates.js");
+const modelSettings = require("../../config/telegramModelsSettings.js");
+const modelConfig = require("../../config/modelConfig.js");
 const { Readable } = require("stream");
-const mongo = require("./mongo.js");
-const toolsCollection = require("./objects/toolsCollection.js");
+const mongo = require("../mongo.js");
+const toolsCollection = require("../objects/toolsCollection.js");
 const { StringDecoder } = require('string_decoder');
-const otherFunctions = require("./other_func");
+const otherFunctions = require("../other_func.js");
 
 const axios = require("axios");
 

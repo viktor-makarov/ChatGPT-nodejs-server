@@ -1,5 +1,5 @@
 const telegramCmdHandler = require("./components/telegramCmdHandler.js");
-const openAIApi = require("./components/openAI_API.js");
+const openAIApi = require("./components/apis/openAI_API.js");
 const telegramErrorHandler = require("./components/telegramErrorHandler.js");
 const mongo = require("./components/mongo");
 const msqTemplates = require("./config/telegramMsgTemplates.js");
@@ -7,7 +7,7 @@ const ReplyMsg = require("./components/objects/ReplyMsg.js");
 const RequestMsg  = require("./components/objects/RequestMsg.js");
 const User = require("./components/objects/User.js");
 const Dialogue = require("./components/objects/Dialogue.js");
-const MdjApi = require("./components/midjourney_API.js");
+const MdjApi = require("./components/apis/midjourney_API.js");
 
 async function MdjAccountInfo(){
   const info = await MdjApi.executeInfo()

@@ -1,6 +1,6 @@
 
 const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
-const axios = require("axios");
+
 
 
 async function ocr_document(fileBuffer, mimeType,index=0){

@@ -301,7 +301,6 @@ async updateMessageWithErrorHandling(text, options) {
     } else if (err.message.includes("message is not modified")) {
       err.sendToUser = false
       ErrorHandler.main({replyMsgInstance:this,error_object:err})
-      console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!message is not modified, skipping update");
       return {success:0, error:err.message};
     }  else if (err.message.includes("ETELEGRAM: 429 Too Many Requests")) {
       const millisecondsToWait = this.extractWaitTimeFromErrorMs(err);
@@ -540,17 +539,69 @@ extractWaitTimeFromErrorMs(err){
 
 async sendMdjImage(generateResult,prompt){
 
-  const reply_markup = await this.generateMdjButtons(generateResult.mdjMsg);
-
+  const reply_markup = await this.generateMdjButtonsFromPIAPI(generateResult.mdjMsg);
+  
   let sent_result = await this.simpleSendNewImage({
     caption:prompt,
     reply_markup:reply_markup,
-    contentType:"image/jpeg",
-    fileName:`mdj_imagine_${generateResult.mdjMsg.id}.jpeg`,
+    contentType:"image/png",
+    fileName:`mdj_imagine_${generateResult.mdjMsg.id}.png`,
     imageBuffer:generateResult.imageBuffer
   });
 
   return sent_result
+}
+
+async generateMdjButtonsFromPIAPI(msg){
+
+  let version_row_buttons =[]
+
+  let reply_markup = {
+    one_time_keyboard: true,
+    inline_keyboard: []
+  };
+
+  const sorted_buttons = appsettings.mdj_options.sorted_buttons
+  const exclude_buttons = appsettings.mdj_options.exclude_buttons;
+  
+  let buttons = msg.options.filter(button => !exclude_buttons.includes(button.label));
+  buttons.sort((a, b) => sorted_buttons.indexOf(a.label) - sorted_buttons.indexOf(b.label));
+  
+  const buttonsCount =  buttons.length
+
+  let i = 1;
+  for (const button of buttons){
+
+    const dataJson = {
+      label:button.label,
+      task_type:button.task_type,
+      index:button.index,
+      zoom_ratio:button.zoom_ratio,
+      direction:button.direction,
+      prompt:msg.prompt,
+      id:msg.id
+    }
+    const hash = await otherFunctions.encodeJson(dataJson)
+
+    version_row_buttons.push({
+      text: button.label,
+      callback_data:JSON.stringify({e:"mdjbtn",d:hash})
+    });
+
+    if(i === buttonsCount || i % 2 === 0){
+      reply_markup.inline_keyboard.push(version_row_buttons)
+      version_row_buttons = [];
+    }
+    i++; 
+  };
+
+  const big_picture_url = msg.uri
+  if(big_picture_url){
+    const btnText = otherFunctions.getLocalizedPhrase(`full_size_image`,this.#user.language)
+    reply_markup.inline_keyboard.push([{text:btnText, url:big_picture_url}])
+  }
+
+  return reply_markup
 }
 
 async generateMdjButtons(msg){
