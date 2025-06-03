@@ -54,6 +54,8 @@ async generateImage(prompt,timeout = 180000) {
             }
 
             if(Date.now() - startTime > timeout){
+                const canceleResult = await this.cancale_task(task.data.task_id,timeout)
+                console.log("Task cancelled:", JSON.stringify(canceleResult));
                 throw new Error(`Timeout ${timeout/1000} exceeded while waiting for image generation.`);
             }
             await otherFunctions.delay(this.#monitoringDelay)
@@ -96,6 +98,8 @@ async executeButton(button_data,timeout = 180000){
             }
 
             if(Date.now() - startTime > timeout){
+                const canceleResult = await this.cancale_task(task.data.task_id,timeout)
+                console.log("Task cancelled:", JSON.stringify(canceleResult));
                 throw new Error(`Timeout ${timeout/1000} exceeded while waiting for image generation.`);
             }
 
@@ -246,6 +250,24 @@ async create_imagine(prompt, process_mode="relax", timeout = 180000) {
     }
 
     return result.data
+}
+
+async cancale_task(task_id, timeout = 180000) {
+
+    const config = {
+        method: 'delete',
+        timeout:timeout,
+        url: `https://api.piapi.ai/api/v1/task/${task_id}`,
+        headers: {
+                "Content-Type": "application",
+                "x-api-key": process.env.PI_API_TOKEN
+            }
+    }
+
+        const result = await axios(config);
+
+    return result.data
+
 }
 
 async get_task_status(task_id, timeout = 180000) {
