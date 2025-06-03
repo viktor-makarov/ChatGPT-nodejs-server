@@ -79,7 +79,7 @@ async addFunctionToQueue(statusMessageId){
     }
 
     let error = new Error(`Timeout in queue exceeded. The function spent in the queue ${timeout_ms / 1000} seconds and was revoked.`);
-    error.instructions = "Tell the user that the attempt should be repeated later."
+    error.user_instructions = "Retry after 5 minutes"
     error.code = "FUNC_QUEUE_TIMEOUT";
     error.queue_timeout = true;
     throw error;
@@ -118,9 +118,11 @@ async router(){
     } catch(error){
         //Here is the main error handler for functions.
         err = error
-        err.instructions = err.instructions || "Server internal error occured. Try to find other ways to fulfill the user's task.";
-        err.place_in_code = err.place_in_code || "FunctionCall.router";
-        err.user_message = null //Functions have their own pattern to communicate errors to the user
+        err.assistant_instructions = error.assistant_instructions || "Server internal error occured. YOu MUST try to find other ways to fulfill the user's task.";
+        err.user_instructions = error.user_instructions 
+        err.place_in_code = error.place_in_code || "FunctionCall.router";
+        err.sendToUser = false //Functions have their own pattern to communicate errors to the user
+        err.adminlog = false //Functions should not log errors to the admin log, since they are already logged in the dialogue log.
         telegramErrorHandler.main(
                 {
                 replyMsgInstance:this.#replyMsg,
@@ -128,7 +130,17 @@ async router(){
                 }
             );
         
-        functionOutcome =  {success:0,error:err.message + (err.stack ? "\n" + err.stack : ""),instructions:err.instructions}
+
+        const devPrompt = this.functionErrorPrompt({
+            tool_call_id: this.#functionCall.tool_call_id,
+            functionName: this.#functionName,
+            errorMessage: error.message,
+            errorStack: err.stack,
+            assistant_instructions: err.assistant_instructions,
+            user_instructions: err.user_instructions
+        })
+        await this.#dialogue.commitDevPromptToDialogue(devPrompt)
+        functionOutcome =  {success:0,error:err.message + (err.stack ? "\n" + err.stack : "")}
     } finally {
         this.clearLongWaitNotes()
         await this.removeFunctionFromQueue()
@@ -136,6 +148,43 @@ async router(){
         statusMessageId && await this.finalizeStatusMessage(functionOutcome,statusMessageId)
         return functionOutcome;
     }
+}
+
+functionErrorPrompt(errorObject){
+
+    const {tool_call_id, functionName, errorMessage, errorStack, assistant_instructions,user_instructions} = errorObject;
+
+    let prompt = `Error in function call with ID ${tool_call_id} for function "${functionName}":\n` +
+                   `Error Message: ${errorMessage}\n` +
+                   `Error Stack: ${errorStack}\n\n`;
+
+    prompt += `You MUST report the error to the user in accordance with the following requirements:\n` +
+              `1. Do not use technical terms or jargon.\n` +
+              `2. Provide a simple, clear and concise explanation of the error.\n` +
+              `3. Avoid blaming the user or making them feel at fault.\n` +
+              `4. Use a friendly and helpful tone.\n\n`;
+
+    if(assistant_instructions){
+
+        prompt += `To fix the error you MUST follow the instructions:${assistant_instructions}.\n` + 
+                  `But before acting, notify the user what you are going to do to fix the error.\n` +
+                  `If unable to fix the error, use other available options to complete the users's query.\n`;
+
+        if(user_instructions){
+            prompt += `If you cannot fix the error, suggest to the user the following instructions: ${user_instructions}`
+        } else {
+            prompt += `If you cannot fix the error, suggest other available options to complete the user's query.`
+        }
+
+    } else {
+        if(user_instructions){
+            prompt += `Suggest to the user the following instructions: ${user_instructions}`
+        } else {
+            prompt += `Suggest other available options to complete the user's query.`
+        }
+    }
+    
+    return prompt;
 }
 
 async sendStatusMessage(){
@@ -284,7 +333,7 @@ async selectAndExecuteFunction() {
     
     if (!targetFunction) {
         let err = new Error(`Function ${this.#functionName} does not exist`);
-        err.instructions = "Provide a valid function.";
+        err.assistant_instructions = "Provide a valid function.";
         throw err;
     }
     
@@ -312,7 +361,10 @@ async functionHandler(){
             const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
    
             if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
-                return {success:0, error: `function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`,instructions:"Try to find another solution."}
+                let err = new Error(`Function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`);
+                err.assistant_instructions = "Try to find another solution.";
+                err.user_instructions = "Reset the dialog to clear the limit of unsuccessful calls.";
+                throw err;
             };
 
             const timeoutPromise = this.triggerFunctionTimeout();
@@ -354,7 +406,7 @@ validateFunctionCallObject(callObject){
         return { valid: true };
     } else {
         let err = new Error(`Call is malformed. Missing fields: ${missingFields.join(', ')}`)
-        err.instructions = "Fix the function and retry. But undertake no more than three attempts to recall the function."
+        err.assistant_instructions = "Fix the function and retry. But undertake no more than three attempts to recall the function."
         throw err;
     }
 }
@@ -362,7 +414,7 @@ validateFunctionCallObject(callObject){
 async get_current_datetime(){
     
     return {success:1,result: new Date().toString()}
-
+    
 }
 
 async get_user_guide(){
@@ -460,7 +512,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             
             func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
 
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+            if(this.#isCanceled){return}
 
             await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
 
@@ -472,7 +524,7 @@ validateRequiredFieldsFor_createExcelFile(){
         const {data, filename} = this.#argumentsJson
 
         let error = new Error();
-        error.instructions = "You must fix the error and retry the function."
+        error.assistant_instructions = "Fix the error and retry the function."
         
         if(!filename || filename === ""){
             error.message = `'filename' parameter is missing. Provide the value for the argument.`
@@ -635,7 +687,7 @@ validateRequiredFieldsFor_createExcelFile(){
         
         func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
         
-        if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+        if(this.#isCanceled){return}
 
         await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
         
@@ -672,7 +724,7 @@ validateRequiredFieldsFor_createExcelFile(){
             
             func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
 
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+            if(this.#isCanceled){return}
 
             await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
             
@@ -779,7 +831,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 
                 let results = await Promise.all(extractFunctions)
                 
-                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+                if(this.#isCanceled){return}
 
                 results.sort((a, b) => a.index - b.index);
 
@@ -963,7 +1015,7 @@ validateRequiredFieldsFor_createExcelFile(){
             const piapi = new PIAPI()
             const generate_result = await piapi.generateImage(prompt,this.#timeout_ms)
 
-            if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+            if(this.#isCanceled){return}
 
             const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
             
@@ -1002,7 +1054,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 const piapi = new PIAPI()
                 const generate_result = await piapi.executeButton(buttonPushed,this.#timeout_ms)
 
-                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+                if(this.#isCanceled){return}
                 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,buttonPushed.prompt)
 
@@ -1038,7 +1090,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 const piapi = new PIAPI()
                 const generate_result = await piapi.generateImage(prompt,this.#timeout_ms)
                 
-                if(this.#isCanceled){return {success:0,error: "Function is canceled by timeout."}}
+                if(this.#isCanceled){return}
                 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
 
@@ -1070,7 +1122,7 @@ validateRequiredFieldsFor_createExcelFile(){
 
         if(argumentsText === "" || argumentsText === null || argumentsText === undefined){
             let err = new Error("No arguments provided.")
-            err.instructions = "You should provide at least required arguments"
+            err.assistant_instructions = "You should provide at least required arguments"
             err.place_in_code = "argumentsToJson"
             throw err;
         }
@@ -1084,8 +1136,8 @@ validateRequiredFieldsFor_createExcelFile(){
                     const argumentsJson=JSON.parse(escapedArgumentsText)
                     return argumentsJson
                 } catch(err){
-                    let error =  new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`)
-                    error.instructions = "Inform the user about the error details in simple and understandable for ordinary users words."
+                    let error =  new Error(`Received arguments object poorly formed which caused the following error on conversion to JSON: ${err.message}.`)
+                    error.assistant_instructions = "Fix the error with arguments and retry the function."
                     throw error
                 }
             }
@@ -1097,7 +1149,7 @@ validateRequiredFieldsFor_createExcelFile(){
         const {textprompt,seed,aspectratio,version,imageprompt,imageweight} = this.#argumentsJson
 
         let error = new Error();
-        error.instructions = "You must fix the error and retry the function."
+        error.assistant_instructions = "Fix the error and retry the function."
 
         if(!textprompt){
             error.message = "textprompt param contains no text."
@@ -1183,7 +1235,7 @@ validateRequiredFieldsFor_createExcelFile(){
     convertResourcesParamToJSON(){
 
         let error = new Error();
-        error.instructions = "You must fix the error and retry the function."
+        error.assistant_instructions = "Fix the error and retry the function."
 
         try{
             this.#argumentsJson.resources = JSON.parse(this.#argumentsJson.resources)
@@ -1199,7 +1251,7 @@ validateRequiredFieldsFor_createExcelFile(){
         const {html,filename,content_reff} = this.#argumentsJson
 
         let error = new Error();
-        error.instructions = "You must fix the error and retry the function."
+        error.assistant_instructions = "Fix the error and retry the function."
         
         if(!filename || filename === ""){
             error.message = `'filename' parameter is missing. Provide the value for the agrument.`
@@ -1238,7 +1290,7 @@ validateRequiredFieldsFor_createExcelFile(){
         const {filename,text,content_reff,mimetype} = this.#argumentsJson
 
         let error = new Error();
-        error.instructions = "You must fix the error and retry the function."
+        error.assistant_instructions = "Fix the error and retry the function."
         
         if(!filename || filename === ""){
             error.message = `'filename' parameter is missing. Provide the value for the agrument.`
@@ -1281,7 +1333,7 @@ validateRequiredFieldsFor_createExcelFile(){
         const resources = this.#argumentsJson.resources
 
         let error = new Error();
-        error.instructions = "You must fix the error and retry the function."
+        error.assistant_instructions = "Fix the error and retry the function."
 
         if(!resources){
             error.message = `'resources' parameter is missing.`

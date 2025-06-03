@@ -19,7 +19,7 @@ if(err.mongodblog){
 const doc = await mongo.insert_error_logPromise(error_to_log)
 err.mongodblog_id = doc._id
 } else {
-err.mongodblog_id = "was not logged to mongodb  - not needed"  
+err.mongodblog_id = "was not logged to mongodb - as it was not required"  
 }
 
 //Log to console
@@ -39,7 +39,7 @@ if(err.sendToUser){
 }
 
 //Send details to the admin
-if( replyMsgInstance.user.isAdmin && err.mongodblog){
+if( replyMsgInstance.user.isAdmin && err.adminlog && err.mongodblog){
     let unfolded_text = JSON.stringify(error_to_log,null,4)
     unfolded_text = otherFunctions.wireHtml(unfolded_text)
     unfolded_text = msgShortener(unfolded_text)
@@ -101,8 +101,8 @@ function msgShortener(text){
 
 function enrichErrorObject(err,replyMsgInstance){
 
-
-    err.sendToUser = err.user_message ?? true
+    err.sendToUser = err.sendToUser ?? (err.user_message ? true : false)
+    err.adminlog = err.adminlog ?? true
     
     if(err.code==="ETELEGRAM"){
         //Handle Telegram errors

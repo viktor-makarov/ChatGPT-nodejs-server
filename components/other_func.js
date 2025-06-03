@@ -962,7 +962,7 @@ function startDeveloperPrompt(userInstance){
 
     prompt += "\n\n" + getLocalizedPhrase("response_style_"+userInstance.response_style,userInstance.language_code)
 
-    }
+  }
 
   return prompt
 }

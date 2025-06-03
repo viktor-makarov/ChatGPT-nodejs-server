@@ -23,8 +23,8 @@ async function generateHandler(prompt){
     } catch(err){
       err.code = "MDJ_ERR"
       if(err.message.includes("429")){
-        err.message ="The image failed to generate due to the limit of concurrent generations. Try again later."
-        err.instructions = "Communicate the reason of the failure to the user."
+        err.message ="The image failed to generate due to the limit of concurrent generations. "
+        err.assistant_instructions = "Retry the generation."
       } else {
         err.user_message = err.message
       }
@@ -46,8 +46,8 @@ async function generateHandler(prompt){
     } catch(err){
       err.code = "MDJ_ERR"
       if(err.message.includes("429")){
-        err.message ="The image failed to generate due to the limit of concurrent generations. Try again later."
-        err.instructions = "Communicate the reason of the failure to the user."
+        err.message ="The image failed to generate due to the limit of concurrent generations. "
+        err.assistant_instructions = "Retry the generation."
       } else {
         err.user_message = err.message
       }

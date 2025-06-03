@@ -212,7 +212,6 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   let responses =[];
 
   
-
   if(cmpName==="start"){
 
     if(isRegistered){
@@ -315,6 +314,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     }
     
     await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,outcome.supportive_data?.base64,fileComment)
+    } else {
+      dialogueInstance.emit('callCompletion');
     }
     
     } else {
@@ -612,6 +613,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
     await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,outcome.supportive_data?.base64,fileComment)
+    } else {
+      dialogue.emit('callCompletion');
     }
     
   } else {

@@ -173,7 +173,6 @@ class Dialogue extends EventEmitter {
     
     async resetDialogue(){
 
-
         await this.deletePreviousRegenerateButtons()
         await mongo.deleteDialogByUserPromise([this.#userid], "chat");
         await awsApi.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
@@ -326,7 +325,7 @@ class Dialogue extends EventEmitter {
         let currentRole = "developer"
         
         const datetime = new Date();
-
+        
         const sourceid = otherFunctions.valueToMD5(datetime.toISOString())
         const unixTimestamp = Math.floor(datetime.getTime() / 1000)
         let systemObj = {
@@ -390,6 +389,8 @@ class Dialogue extends EventEmitter {
         })
 
     };
+
+
 
     async commitImageToDialogue(url,base64,descriptionJson){
         
@@ -516,6 +517,11 @@ class Dialogue extends EventEmitter {
        await mongo.updateToolCallResult(result)
 
        console.log("TOOL MESSAGE UPDATED")
+    }
+
+    async commitFunctionErrorToDialogue(errorObject){
+
+
     }
 
     async commitCompletionDialogue(completionObject){
