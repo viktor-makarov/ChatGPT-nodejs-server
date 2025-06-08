@@ -59,10 +59,7 @@ class Completion extends Transform {
     #text;
 
     #actualModel;
-    #completionRedaloudButtons = {
-      text: "🔊",
-      callback_data: JSON.stringify({e:"readaloud"}),
-    };
+    
     
     constructor(obj) {
         super({ readableObjectMode: true });
@@ -379,8 +376,6 @@ class Completion extends Transform {
         const jsonChunks = await this.batchStringToJson(batchString);
 
         await this.extractData(jsonChunks)
-        // this.#replyMsg.deliverCompletionToTelegramThrottled(this)
-       // this.#throttledDeliverCompletionToTelegram(this)
 
         this.#isProcessingChunk = false;
     }
@@ -496,7 +491,7 @@ class Completion extends Transform {
           const additionalMsgOptions = {disable_web_page_preview: true};
           let completion_delivered = false;
           let completion_ended_occured_count = 0
-
+           
       return async () =>{
 
           try{
@@ -515,11 +510,11 @@ class Completion extends Transform {
             const splitIndexBorders = this.splitTextBoarders(text,appsettings.telegram_options.big_outgoing_message_threshold);
             const textChunks = this.splitTextChunksBy(text,splitIndexBorders,this.#completion_ended);
             const repairedText = this.repairBrokenMakrdowns(textChunks);
-            const messages = this.createTGMMessagesFrom(repairedText,this.#completion_ended,additionalMsgOptions)
+            const htmls = this.convertMarkdownToLimitedHtml(repairedText)
 
             const sentMsgsCharCountTotal = sentMsgsCharCount.reduce((acc, val) => acc + val, 0);
-            const messagesCharCountTotal = messages.reduce((acc, val) => acc + val[0].length, 0);
-            completion_delivered = sentMsgsCharCount.length === messages.length && sentMsgsCharCountTotal === messagesCharCountTotal
+            const messagesCharCountTotal = htmls.reduce((acc, val) => acc + val.length, 0);
+            completion_delivered = sentMsgsCharCount.length === htmls.length && sentMsgsCharCountTotal === messagesCharCountTotal
 
             if(completion_delivered){ //final run when all messages are sent
               this.#telegramMsgIds = Array.from(sentMsgIds)
@@ -528,6 +523,7 @@ class Completion extends Transform {
               return {success:1,completion_delivered}
             }
 
+            const messages = await this.createTGMMessagesFrom(htmls,this.#completion_ended,additionalMsgOptions,text)
             await this.deleteOldMessages(sentMsgIds,messages);
 
             const updateResult = await this.updateMessages(sentMsgIds, messages, sentMsgsCharCount);
@@ -579,7 +575,7 @@ class Completion extends Transform {
       }
     }
 
-        splitTextBoarders(text,tgmMsgThreshold){
+      splitTextBoarders(text,tgmMsgThreshold){
 
       let residualText = text;
       const textLastIndex = text.length - 1;
@@ -597,7 +593,7 @@ class Completion extends Transform {
               } else {
 
                 const lastNewlineIndex = residualText.lastIndexOf(splitLinesString, tgmMsgThreshold);
-                const lineBreakIsUsed = lastNewlineIndex === -1 ? false : true
+                const lineBreakIsUsed = lastNewlineIndex > 0
                 const cropIndex = lineBreakIsUsed ? lastNewlineIndex : tgmMsgThreshold -1;
                 residualText = residualText.slice(cropIndex+1);
                 endIndex = startIndex + cropIndex;
@@ -605,7 +601,6 @@ class Completion extends Transform {
                 startIndex = endIndex + 1;              
               }
             }
-
 
       return splitIndexes
     }
@@ -650,16 +645,27 @@ class Completion extends Transform {
         return repairedText;
     }
 
-    createTGMMessagesFrom(repairedText,completionEnded,additionalMsgOptions){
+
+    convertMarkdownToLimitedHtml(repairedText){
+      return repairedText.map((text) => {
+        const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text)
+        return conversionResult.html
+    })
+  }
+
+    async createTGMMessagesFrom(htmls,completionEnded,additionalMsgOptions,text){
       
-    return repairedText.map((text, index) => {
-            const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text);
-            const isLastChunk = index === repairedText.length - 1 && completionEnded;
-            
-            const reply_markup = isLastChunk ? this.craftReplyMarkup() : null;
-            
-            return [conversionResult.html,reply_markup,"HTML",additionalMsgOptions];
-          });
+      const messages =[];
+      let index = 0;
+    
+      for (const html of htmls) {
+
+            const isLastChunk = index === htmls.length - 1 && completionEnded;
+            const reply_markup = isLastChunk ? await this.craftReplyMarkup(text) : null;
+            messages.push([html,reply_markup,"HTML",additionalMsgOptions]);
+        index ++
+      }
+      return messages;
     }
 
     async deleteOldMessages(sentMsgIds,messages){
@@ -712,33 +718,37 @@ class Completion extends Transform {
             }
     }
 
-    craftReplyMarkup(){
+    async craftReplyMarkup(text=""){
       let reply_markup = {
             one_time_keyboard: true,
             inline_keyboard: [],
           };
 
-      const completionRegenerateButtons = {
+      const regenerateButtons = {
             text: "🔄",
             callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
-          };
-      const completionRedaloudButtons = this.#completionRedaloudButtons
+      };
 
-      const currentVersionNumber =  this.#completionCurrentVersionNumber
-      const latexFormulas =  this.#completionLatexFormulas
+      const completionContent = await otherFunctions.encodeJson({text})
+      
+      const redaloudButtons = {
+        text: "🔊",
+        callback_data: JSON.stringify({e:"readaloud",d:completionContent}),
+      };
 
-      if(currentVersionNumber>1){
-        reply_markup = this.#replyMsg.generateVersionButtons(currentVersionNumber,currentVersionNumber,reply_markup)
+      const PDFButtons = {
+        text: "PDF",
+        callback_data: JSON.stringify({e:"respToPDF",d:completionContent}),
+      };
+
+      if(this.#completionCurrentVersionNumber>1){
+        reply_markup = this.#replyMsg.generateVersionButtons(this.#completionCurrentVersionNumber,this.#completionCurrentVersionNumber,reply_markup)
       }
 
-      if(latexFormulas){
-        reply_markup = this.#replyMsg.generateFormulasButton(reply_markup)
-      }
+      const downRow = [redaloudButtons,PDFButtons]
 
-      const downRow = [completionRedaloudButtons]
-
-      if(currentVersionNumber<10){
-        downRow.unshift(completionRegenerateButtons)
+      if(this.#completionCurrentVersionNumber<10){
+        downRow.unshift(regenerateButtons)
       }
 
       reply_markup.inline_keyboard.push(downRow)

@@ -26,6 +26,13 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   
   const current_regime = requestMsgInstance.user.currentRegime
 
+  mongo.insertFeatureUsage({
+    userInstance: requestMsgInstance.user,
+    feature: requestMsgInstance.fileType,
+    regime: current_regime,
+    featureType: "fileUploaded"
+  })
+
   if(current_regime === "voicetotext"){
         if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
           const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
@@ -211,7 +218,13 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   const isAdmin = requestMsgInstance.user.isAdmin
   let responses =[];
 
-  
+  mongo.insertFeatureUsage({
+    userInstance: requestMsgInstance.user,
+    feature: cmpName,
+    regime: requestMsgInstance.user.currentRegime,
+    featureType: "command"
+  })
+
   if(cmpName==="start"){
 
     if(isRegistered){
@@ -382,9 +395,16 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   const callbackExecutionStart = new Date();
 
   try{
-  replyMsg.sendTypingStatus()
-  replyMsg.answerCallbackQuery(requestMsg.callbackId)
-  await mongo.upsertCallbackUsage(requestMsg)
+    replyMsg.sendTypingStatus()
+    replyMsg.answerCallbackQuery(requestMsg.callbackId)
+    await mongo.upsertCallbackUsage(requestMsg)
+
+    mongo.insertFeatureUsage({
+    userInstance: requestMsg.user,
+    feature: callback_event,
+    regime: requestMsg.user.currentRegime,
+    featureType: "button"
+  })
 
   if (callback_event === "info_accepted"){
 
@@ -393,7 +413,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     responses.push(response)
     requestMsg.user.hasReadInfo = true
 
-  } else if (callback_event === "dwnld_hash") {
+  } else if (callback_event === "hashToPDF") {
 
     const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
     const content = await otherFunctions.decodeJson(callback_data_input)
@@ -408,10 +428,24 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     await  replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
-  } else if (callback_event === "pdf_download"){
+  } else if (callback_event === "manualToPDF"){
 
     const msgSent = await replyMsg.sendUserManualWaiterMsg()
     await pdfdownloadHandler(replyMsg);
+    await replyMsg.deleteMsgByID(msgSent.message_id)
+
+  } else if (callback_event === "respToPDF"){
+
+    const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
+    const {text} = await otherFunctions.decodeJson(callback_data_input)
+   
+    const filename = `file_${String(requestMsg.refMsgId)}.pdf`
+    const formatedHtml = otherFunctions.markdownToHtml(text,filename)
+    const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
+    const mimetype = "application/pdf"
+    const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
+    otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+    await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
   } else if (callback_event === "regenerate"){
@@ -432,13 +466,11 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const doc = await dialogue.getLastCompletionDoc()
     await replyMsg.deleteMsgsByIDs(doc?.telegramMsgId)
 
-    
     const choosenVersionIndex = callback_data_input
     
     const choosenContent = doc.content[choosenVersionIndex-1]
-    const choosenContentFormulas = doc.content_latex_formula[choosenVersionIndex-1]
     const totalVersionsCount = doc.content.length;
-    const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenContentFormulas,choosenVersionIndex,totalVersionsCount)
+    const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenVersionIndex,totalVersionsCount)
     const msgIdsForDbCompletion = sentResult.map(result => result.message_id)
     
     await mongo.updateCompletionInDb({
@@ -449,27 +481,14 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       }
     })
 
-  } else if (callback_event === "latex_formula"){
-
-    const msgSent = await replyMsg.sendLatexFormulaWaiterMsg()
-    const lastdoc = await dialogue.getLastCompletionDoc()
-    
-    const letexObject = lastdoc.content_latex_formula[lastdoc.completion_version-1]
-    let pngBuffer;
-    pngBuffer  = await otherFunctions.generateCanvasPNG(letexObject);
-    
-    await replyMsg.simpleSendNewImage({
-      imageBuffer:pngBuffer,
-      fileName: `Формулы.png`,
-      contentType: 'image/png',
-      caption:`Формулы для ${lastdoc.completion_version} версии ответа`
-    })
-    await replyMsg.deleteMsgByID(msgSent.message_id)
-
   } else if (callback_event === "readaloud"){
 
     const result = await replyMsg.sendTextToSpeachWaiterMsg()
-    await openAIApi.TextToVoice(requestMsg);
+    const {text} = await otherFunctions.decodeJson(callback_data_input)
+
+    const constrainedText = handleTextLengthForTextToVoice(requestMsg,text)
+    
+    await openAIApi.TextToVoice(requestMsg,constrainedText);
     await replyMsg.deleteMsgByID(result.message_id)
 
   } else if(callback_event === "un_f_up") {
@@ -485,7 +504,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     };
     const downloadPDF_button = {
       text: "Отчет о выполнии в PDF",
-      callback_data: JSON.stringify({e:"dwnld_hash",d:callback_data_input}),
+      callback_data: JSON.stringify({e:"hashToPDF",d:callback_data_input}),
     };
 
     const reply_markup = {
@@ -631,6 +650,20 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   throw err
 }
 
+}
+
+function handleTextLengthForTextToVoice(requestMsg,text){
+
+    const cutNotification = otherFunctions.getLocalizedPhrase("text_to_speech_cut_notification",requestMsg.user.language_code)
+    const cutResult = otherFunctions.cutTextToLimit(text,appsettings.telegram_options.text_to_speach_limit,cutNotification.length)
+    let constrainedText;
+    if (cutResult.isCut){
+      constrainedText = cutResult.text + cutNotification;
+    } else {
+      constrainedText = text;
+    }
+
+  return constrainedText
 }
 
 function msgShortener(html){

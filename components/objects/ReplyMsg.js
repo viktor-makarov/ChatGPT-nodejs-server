@@ -21,17 +21,11 @@ class ReplyMsg extends EventEmitter {
 #lastMsgSentId
 #msgIdsForDbCompletion =[];
 #sendAttempts=0;
-#deliverCompletionToTelegramThrottled;
+
 #completion_ended = false;
 #completionRegenerateButtons;
-#completionRedaloudButtons = {
-  text: "🔊",
-  callback_data: JSON.stringify({e:"readaloud"}),
-};
-#completionReplyMarkupTemplate = {
-  one_time_keyboard: true,
-  inline_keyboard: [],
-};
+
+
 #versionBtnsAllias = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 
 #msgThreshold = appsettings.telegram_options.big_outgoing_message_threshold;
@@ -41,8 +35,7 @@ constructor(obj) {
     this.#botInstance = obj.botInstance
     this.#chatId = obj.chatId
     this.#user = obj.userInstance
-    this.#deliverCompletionToTelegramThrottled = this.throttle(this.deliverCompletionToTelegram,appsettings.telegram_options.send_throttle_ms)
-    
+
     this.#completionRegenerateButtons = 
       {
         text: "🔄",
@@ -54,10 +47,6 @@ set text(value){
   this.#text=value
   this.#textLength = this.#text.length
   this.calculateTextToSend()
-};
-
-async deliverCompletionToTelegramThrottled(completionInstance){
-  await this.#deliverCompletionToTelegramThrottled(completionInstance)
 };
 
 calculateTextToSend(){
@@ -251,6 +240,7 @@ async sendMessageWithErrorHandling(text, reply_markup, parse_mode, add_options) 
         
         const result = await this.simpleSendNewMessage(text, reply_markup, null, add_options);
         err.sendToUser = false
+        err.place_in_code = "sendMessageWithErrorHandling_can't_parse_entities";
         ErrorHandler.main({replyMsgInstance:this,error_object:err})
         return {success:1, message_id: result.message_id};
       } catch (retryErr) {
@@ -289,6 +279,7 @@ async updateMessageWithErrorHandling(text, options) {
         delete updatedOptions.parse_mode;
         const result = this.#botInstance.editMessageText(text, updatedOptions);
         err.sendToUser = false
+        err.place_in_code = "updateMessageWithErrorHandling_can't_parse_entities"
         ErrorHandler.main({replyMsgInstance:this,error_object:err})
         return {success:1, message_id: result.message_id};
       } catch (retryErr) {
@@ -382,16 +373,28 @@ async sendDocumentAsBinary(fileBuffer,filename,mimetype) {
 
 }
 
+async sendChoosenVersion(text,version,versionsCount){
 
-async sendChoosenVersion(text,formulas,version,versionsCount){
+  let buttons = {
+    one_time_keyboard: true,
+    inline_keyboard: [],
+  };
 
-  let buttons = structuredClone(this.#completionReplyMarkupTemplate)
   buttons = this.generateVersionButtons(version,versionsCount,buttons)
-  if(formulas){
-  buttons = this.generateFormulasButton(buttons)
-  }   
+
+  const completionContent = await otherFunctions.encodeJson({text})
   
-  const downRow = [this.#completionRedaloudButtons]
+  const redaloudButtons = {
+        text: "🔊",
+        callback_data: JSON.stringify({e:"readaloud",d:completionContent}),
+      };
+
+      const PDFButtons = {
+        text: "PDF",
+        callback_data: JSON.stringify({e:"respToPDF",d:completionContent}),
+      };
+
+  const downRow = [redaloudButtons,PDFButtons]
 
   if(versionsCount<10){
     downRow.unshift(this.#completionRegenerateButtons)
@@ -718,143 +721,6 @@ addMissingClosingTags(text){
   return text + brokenTags?.close
 }
 
-async deliverCompletionToTelegram(completionInstance){
-
-  // console.log(new Date(),"entered deliverCompletionToTelegram")
-  try{
-            let oneMsgText;
-            
-            const isValidTextToSend = this.#textToSend && this.#textToSendLength>0
-            if(!isValidTextToSend){
-              return
-            }
-
-            if(this.#waitMsgInProgress){
-              return
-            }
-
-            const msgExceedsThreshold = this.#textToSend.length > this.#msgThreshold
-            if(msgExceedsThreshold){
-
-                oneMsgText = this.truncateTextByThreshold(this.#textToSend)
-                this.calculateTextToSend()
-              
-            } else {
-                oneMsgText = this.addMissingClosingTags(this.#textToSend)
-            }
-
-            let options = {
-                chat_id:this.#chatId,
-                message_id:this.#lastMsgSentId,
-                parse_mode: "HTML",
-                disable_web_page_preview: true,
-            }
-
-            if(options.parse_mode==="HTML"){
-
-              const resultObj = otherFunctions.convertMarkdownToLimitedHtml(oneMsgText)
-              oneMsgText = resultObj.html
-              completionInstance.completionLatexFormulas = resultObj.latex_formulas
-
-            } else if (options.parse_mode==="Markdown"){
-                oneMsgText = this.wireStingForMarkdown(oneMsgText)
-            }
-
-            const lastMsgPart = this.#completion_ended && !msgExceedsThreshold
-
-
-            if (lastMsgPart) {
-              
-            //Если отправялем последнюю часть сообщения
-              let reply_markup = structuredClone(this.#completionReplyMarkupTemplate)
-              if(completionInstance.completionCurrentVersionNumber>1){
-
-                reply_markup = this.generateVersionButtons(completionInstance.completionCurrentVersionNumber,completionInstance.completionCurrentVersionNumber,reply_markup)
-              }
-
-              if(completionInstance.completionLatexFormulas){
-              reply_markup = this.generateFormulasButton(reply_markup)
-              }
-              
-                const downRow = [this.#completionRedaloudButtons]
-
-              if(completionInstance.completionCurrentVersionNumber<10){
-                downRow.unshift(this.#completionRegenerateButtons)
-              }
-
-              reply_markup.inline_keyboard.push(downRow)
-              
-              options.reply_markup = JSON.stringify(reply_markup);
-              
-              completionInstance.telegramMsgBtns = true;
-
-              }
-
-            try{
-            
-            var result;
-            try{
-
-              result = await this.simpleMessageUpdate(oneMsgText, options)
- 
-              if(lastMsgPart){
-                this.emit('msgDelivered', {message_id:result.message_id});
-              }
-            } catch(err){
-
-                if (err.message.includes("can't parse entities")) {
-                    delete options.parse_mode;
-                    
-                    result = await this.#botInstance.editMessageText(oneMsgText, options);
-                    
-                    if(lastMsgPart){
-                      this.emit('msgDelivered', {message_id:result.message_id});
-                    }
-                  } else if (err.message.includes(" message is not modified")){
-                    
-                    //Do nothing. It just happens)
-                  } else {
-                    
-                    err.mongodblog = true;
-                    err.details = err.message
-                    err.place_in_code = err.place_in_code || "sentToExistingMessage_Handler";
-                    throw err
-                  }
-
-                            } 
-            
-              if(msgExceedsThreshold){
-                  await this.sendStatusMsg()
-                
-                  await otherFunctions.delay(appsettings.telegram_options.debounceMs)
-                  this.deliverCompletionToTelegram(completionInstance)
-              }
-            } catch(err){
-                const secondsToWait =  this.extractWaitTimeFromError(err)
-
-                if(secondsToWait>0){
-                    const waitMsgResult = await this.sendTelegramWaitMsg(secondsToWait)
-  
-                    this.#waitMsgInProgress = true
-                    setTimeout(async () => {
-                        await this.deleteMsgByID(waitMsgResult.message_id)
-                        this.#waitMsgInProgress = false
-                        await this.deliverCompletionToTelegram(completionInstance)
-                    },secondsToWait * 1000)
-                } else {
-                    throw err;
-                }
-            }
-          }  catch(err){
-            
-            ErrorHandler.main(
-            {
-              replyMsgInstance:this,
-              error_object:err
-            }
-      );
-          }
-}
 
 async answerCallbackQuery(callbackId){
 await this.#botInstance.answerCallbackQuery(callbackId);

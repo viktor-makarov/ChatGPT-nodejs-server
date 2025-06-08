@@ -131,7 +131,7 @@ async router(){
             );
         
 
-        const devPrompt = this.functionErrorPrompt({
+        const devPrompt = await this.functionErrorPrompt({
             tool_call_id: this.#functionCall.tool_call_id,
             functionName: this.#functionName,
             errorMessage: error.message,
@@ -146,45 +146,66 @@ async router(){
         await this.removeFunctionFromQueue()
         await this.handleFailedFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
         statusMessageId && await this.finalizeStatusMessage(functionOutcome,statusMessageId)
+        
+        mongo.insertFunctionUsagePromise({ //intentionally async
+            userInstance:this.#user,
+            tool_function:this.#functionName,
+            tool_reply:functionOutcome,
+            call_duration:functionOutcome?.supportive_data?.duration,
+            success:functionOutcome.success
+        })
+        
         return functionOutcome;
     }
 }
 
-functionErrorPrompt(errorObject){
+async functionErrorPrompt(errorObject){
 
     const {tool_call_id, functionName, errorMessage, errorStack, assistant_instructions,user_instructions} = errorObject;
 
-    let prompt = `Error in function call with ID ${tool_call_id} for function "${functionName}":\n` +
-                   `Error Message: ${errorMessage}\n` +
-                   `Error Stack: ${errorStack}\n\n`;
+    const availableFunctions = await toolsCollection.getAvailableToolsForCompletion(this.#dialogue.userInstance)
+    const otherAvailableFunctions = availableFunctions.map(func => func.function.name).filter(funcName => funcName !== functionName);
 
-    prompt += `You MUST report the error to the user in accordance with the following requirements:\n` +
-              `1. Do not use technical terms or jargon.\n` +
-              `2. Provide a simple, clear and concise explanation of the error.\n` +
-              `3. Avoid blaming the user or making them feel at fault.\n` +
-              `4. Use a friendly and helpful tone.\n\n`;
-
-    if(assistant_instructions){
-
-        prompt += `To fix the error you MUST follow the instructions:${assistant_instructions}.\n` + 
-                  `But before acting, notify the user what you are going to do to fix the error.\n` +
-                  `If unable to fix the error, use other available options to complete the users's query.\n`;
-
-        if(user_instructions){
-            prompt += `If you cannot fix the error, suggest to the user the following instructions: ${user_instructions}`
-        } else {
-            prompt += `If you cannot fix the error, suggest other available options to complete the user's query.`
-        }
-
-    } else {
-        if(user_instructions){
-            prompt += `Suggest to the user the following instructions: ${user_instructions}`
-        } else {
-            prompt += `Suggest other available options to complete the user's query.`
-        }
-    }
+    let prompt = `
+    Tool call with ID ${tool_call_id} for function "${functionName}" resulted in an error:
     
+    Error Message: ${errorMessage}
+    Error Stack: ${errorStack}
+
+    Follow these step carefully:
+
+    1. Friendly Error Notification
+    - Politely inform the user that something went wrong.
+    - Use clear, simple language; avoid technical jargon or error codes.
+    - Never suggest the fault is the user's.
+    - Example: "Oops! Something went wrong while I was handling your request."
+
+    2. Brief Explanation
+    - Provide a concise, one-sentence summary of what happened.
+    - Example: "There was a small technical hiccup on my side."
+
+    3. Recovery Plan Design
+    You MUST try to find a another solution to complete the user's task.
+        a. Consider:
+            * The error details above.
+            * Past attempts to call this function (if any).
+            * Instructions for you: ${assistant_instructions || 'No assistant instructions.'}
+        b. Try to leverage other available functions: ${otherAvailableFunctions.join(", ") || "No other functions available"}
+    
+    4. Next Actions
+    IF a viable solution is found:
+        a. Inform the user of the action you’ll take.
+            - Example: "I’ll retry the process and see if it works now."
+        b. Execute the action.
+    ELSE (if no solution found):
+        a. Kindly let the user know you cannot resolve the error.
+        b. Suggest alternative available options to help complete their query.
+        c. Reference the user instructions for additional guidance (${user_instructions || 'none'}).
+
+    Use a warm, supportive tone throughout and insert appropriate emojis where suitable.`
+              
     return prompt;
+
 }
 
 async sendStatusMessage(){
@@ -333,7 +354,7 @@ async selectAndExecuteFunction() {
     
     if (!targetFunction) {
         let err = new Error(`Function ${this.#functionName} does not exist`);
-        err.assistant_instructions = "Provide a valid function.";
+        err.assistant_instructions = "Provide a valid function request.";
         throw err;
     }
     
@@ -381,8 +402,6 @@ async functionHandler(){
                     result.supportive_data = {duration: ((new Date() - toolExecutionStart) / 1000).toFixed(2)};
                  }
 
-                
-                 
                  return result
             } finally {
                 this.clearFunctionTimeout(); // Ensure timeout is cleared in all cases
@@ -414,7 +433,6 @@ validateFunctionCallObject(callObject){
 async get_current_datetime(){
     
     return {success:1,result: new Date().toString()}
-    
 }
 
 async get_user_guide(){

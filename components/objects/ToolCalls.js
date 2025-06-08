@@ -104,15 +104,6 @@ async router(toolCalls = []){
             }
             await this.#dialogue.commitImageToDialogue(mdj_public_url,mdj_image_base64,fileComment)
         }
-        
-        await mongo.insertFunctionUsagePromise({
-            userInstance:this.#user,
-            tool_function:functionName,
-            tool_reply:toolExecutionResult,
-            call_duration:toolExecutionResult.duration,
-            call_number:`${index}/${toolCallsPromiseList.length}`,
-            success:toolExecutionResult.success
-        })
 
         return toolExecutionResult;
     });

@@ -9,6 +9,7 @@ const error_log_collection = global.mongoConnection.model(global.appsettings.mon
 const reg_log_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_reg_log,scheemas.RegistrationLogSheema);
 const token_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_tokens_log,scheemas.TokensLogSheema);
 const function_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_functions_log,scheemas.FunctionUsageLogSheema);
+const feature_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_feature_log,scheemas.FeatureUsageLogSheema);
 const callback_usage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_callback_log,scheemas.CallbackUsageLogSheema);
 const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
 const dialog_meta_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_dialogue_meta,scheemas.DialogMetaSheema);
@@ -18,6 +19,7 @@ const telegram_model_collection = global.mongoConnection.model(global.appsetting
 const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
 const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_names.coll_hash_storage,scheemas.HashStorage);
 const knowledge_base_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_knowledge_base,scheemas.KnowledgeBaseSheema);
+const credits_usage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_creadits_usage,scheemas.CreditsUsageLogSheema);
 
 
 async function upsertCallbackUsage(requestMsgInstance,duration,success=-1, error){
@@ -342,7 +344,6 @@ async function insertFunctionUsagePromise(obj){
       tool_function:obj.tool_function,
       tool_reply:obj.tool_reply,
       call_duration:obj.call_duration,
-      call_number:obj.call_number,
       success:obj.success
     });
 
@@ -353,6 +354,52 @@ async function insertFunctionUsagePromise(obj){
     throw err;
   }
 };
+
+async function insertFeatureUsage(obj){
+  try {
+
+    const newFeatureUsage = new feature_collection({
+      userid: obj.userInstance.userid,
+      userFirstName: obj.userInstance.user_first_name,
+      userLastName: obj.userInstance.user_last_name,
+      username: obj.userInstance.user_username,
+      feature:obj.feature,
+      regime:obj?.regime,
+      featureType:obj.featureType
+    });
+
+    return await newFeatureUsage.save();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+
+    throw err;
+  }
+};
+
+async function insertFeatureUsage(obj){
+  try {
+
+    const newCreditUsage = new credits_usage_collection({
+      userid: obj.userInstance.userid,
+      userFirstName: obj.userInstance.user_first_name,
+      userLastName: obj.userInstance.user_last_name,
+      username: obj.userInstance.user_username,
+      creditType:obj.creditType,
+      creditSubType:obj.creditSubType,
+      usage:obj.usage,
+      details:obj.details,
+    });
+
+    return await newCreditUsage.save();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+
+    throw err;
+  }
+};
+
+
+
 
 const queryTokensLogsByAggPipeline = async (agg_pipeline) => {
   try {
@@ -1509,5 +1556,6 @@ module.exports = {
   removeFunctionFromQueue,
   upsertCallbackUsage,
   getExtractedTextByReff,
-  registerBotUser
+  registerBotUser,
+  insertFeatureUsage
 };

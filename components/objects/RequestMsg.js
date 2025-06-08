@@ -218,7 +218,7 @@ authenticateRequest(){
         return {passed:true}
     }
 
-    if(callback_event && callback_event === "pdf_download"){
+    if(callback_event && callback_event === "manualToPDF"){
         return {passed:true}
     }
 
@@ -241,7 +241,7 @@ authenticateRequest(){
 
 guideHandler() {
 
-    const callback_data = {e:"pdf_download"}
+    const callback_data = {e:"manualToPDF"}
     return {
       text: msqTemplates.info,
       parse_mode:"html",

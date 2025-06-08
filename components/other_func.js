@@ -13,7 +13,26 @@ const pdf = require('pdf-parse');
 const { PDFDocument } = require('pdf-lib');
 const Excel = require('exceljs');
 const cheerio = require('cheerio');
+const preloadedFiles = preloadFiles();
 
+const showdown  = require('showdown'), showdownHighlight = require("showdown-highlight");
+
+showdown.setOption('strikethrough', 'true');
+showdown.setOption('tables', 'true');
+showdown.setOption('ghCodeBlocks', 'false');
+showdown.setOption('tasklists', 'true');
+
+
+
+ const converter = new showdown.Converter({
+    extensions: [
+      showdownHighlight({
+        supportInline: true,
+        pre: true,    
+        auto_detection: true // Whether to use hljs' auto language detection, default is true
+        })
+    ]
+});
 
 async function createExcelWorkbookToBuffer(worksheets = []) {
   const workbook = new Excel.Workbook();
@@ -383,6 +402,7 @@ const svgson = require('svgson');
 
 const { encode, decode } = require("gpt-3-encoder");
 const msqTemplates = require("../config/telegramMsgTemplates");
+const { convert } = require('html-to-text');
 
 async function getSvgDimensions(svg) {
   const parsedSvg = await svgson.parse(svg);
@@ -652,10 +672,10 @@ function convertMarkdownToLimitedHtml(text){
       
       const formulasObj = {};
             // Handle LaTeX block formulas using \[...\]
-          convertedText = convertedText.replace(/\\\[(.*?)\\\]/gs, (_, formula) => {
+          convertedText = convertedText.replace(/^\\\[(.*?)\\\]/gms, (_, formula) => {
             const index = Object.keys(formulasObj).length+1;
             formulasObj[index]= formula.trim();
-            return `<pre><code class="language-Simplified LaTeX - # ${index}">${unicodeit.replace(formula.trim())}</code></pre>`;
+            return `<pre><code class="language-Simplified LaTeX - see PDF for better formating">${unicodeit.replace(formula.trim())}</code></pre>`;
         });
 
         // Handle LaTeX inline formulas using \(...\)
@@ -663,6 +683,16 @@ function convertMarkdownToLimitedHtml(text){
             return `<code>${unicodeit.replace(formula.trim())}</code>`;
         });
 
+        convertedText = convertedText.replace(/^\$\$(.*?)\$\$/gms, (_, formula) => {
+            const index = Object.keys(formulasObj).length+1;
+            formulasObj[index]= formula.trim();
+            return `<pre><code class="language-Simplified LaTeX - see PDF for better formating">${unicodeit.replace(formula.trim())}</code></pre>`;
+        });
+
+        // Handle LaTeX inline formulas using $...$
+        convertedText = convertedText.replace(/(?<=^|\s)\$([^$]*?)\$(?=\s|$|[,.;:])/g, (_, formula) => {
+            return `<code>${unicodeit.replace(formula.trim())}</code>`;
+        });
 
       // Extract code blocks and replace them with placeholders/ We withdraw code blocks to awoid their altering by other replacements
       const placeholder = '\uFFFF';  // Character unlikely to appear in Markdown
@@ -752,12 +782,10 @@ function wireHtml(text){
     return buffer;
   }
 
-
-
   async function htmlToPdfBuffer(htmlString, pdfOptions = {}) {
 
     const page = await global.chromeBrowserHeadless.newPage();
-    
+      
       await page.setContent(htmlString, {
         waitUntil: 'networkidle0',
     });
@@ -1458,6 +1486,152 @@ function formatHtml(html,filename){
       </html>`
 }
 
+function cutTextToLimit(text, limit, charSurplus=0) {
+
+console.log("cutTextToLimit","limit",limit,"charSurplus",charSurplus)
+
+
+if (text.length <= limit - charSurplus) {
+  return {
+    text:text,
+    isCut: false,
+    cutType: "none",
+  }
+} 
+
+const splitLinesString = '\n'
+const lineEndIndex = text.lastIndexOf(splitLinesString, limit-charSurplus);
+if(lineEndIndex>0){
+return {
+  text:text.substring(0, lineEndIndex),
+  isCut: true,
+  cutType:"lineEnd",
+}
+}
+
+const splitSetencesString = '. '
+const sentenceEndIndex = text.lastIndexOf(splitSetencesString, limit-charSurplus);
+if(sentenceEndIndex>0){
+  return {
+    text:text.substring(0, sentenceEndIndex),
+    isCut: true,
+    cutType:"sentenceEnd",
+  }
+}
+
+const splitWordsString = ' '
+const wordEndIndex = text.lastIndexOf(splitWordsString, limit-charSurplus);
+if (wordEndIndex>0){
+    return {
+      text:text.substring(0, wordEndIndex),
+      isCut: true,
+      cutType:"wordEnd",
+    }
+} 
+
+return {
+      text:text.substring(0, limit-charSurplus),
+      isCut: true,
+      cutType:"middleWord",
+    }
+}
+
+function preloadFiles() {
+  try {
+    const highlightCss = fs.readFileSync(path.join(__dirname, '..','public', 'styles', 'highlight.min.css'), 'utf8');
+    const customCss = fs.readFileSync(path.join(__dirname, '..','public', 'styles', 'custom.css'), 'utf8');
+    const texMmlChtml = fs.readFileSync(path.join(__dirname, '..','public', 'js', 'tex-mml-chtml.js'), 'utf8');
+    return { highlightCss, customCss,texMmlChtml };
+  } catch (error) {
+    console.warn('Failed to load local files:', error.message);
+    throw error
+  }
+}
+
+function secureLatexBlocks(markdownText) {
+
+      let convertedText = markdownText;
+
+       convertedText = convertedText.replace(/^\\\[(.*?)\\\]/gms, (match, content) => {
+            const encoded = Buffer.from(content.trim()).toString('base64');
+            return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER';
+        });
+
+      convertedText = convertedText.replace(/^\$\$(.*?)\$\$/gms, (match, content) => {
+            const encoded = Buffer.from(content.trim()).toString('base64');
+            return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER';
+        });
+
+      convertedText = convertedText.replace(/\\\((.*?)\\\)/g, (match, content) => {
+            const encoded = Buffer.from(content.trim()).toString('base64');
+            return 'LATEXINLINEPLACEHOLDER' + encoded + 'PLACEHOLDER';
+        });
+
+      convertedText = convertedText.replace(/(?<=^|\s)\$([^$]*?)\$(?=\s|$|[,.;:])/g, (match, content) => {
+            const encoded = Buffer.from(content.trim()).toString('base64');
+            return 'LATEXINLINEPLACEHOLDER' + encoded + 'PLACEHOLDER';
+        });
+
+      return convertedText
+}
+
+
+function restoredLatexBlocks(html){
+
+    let restored = html;
+
+    restored = restored.replace(/LATEXBLOCKPLACEHOLDER([A-Za-z0-9+/=]+)PLACEHOLDER/g, (match, content) => {
+            const encoded = Buffer.from(content, 'base64').toString();
+            return 'latex-block\n' + encoded + '\nlatex-block';
+        });
+
+    restored = restored.replace(/LATEXINLINEPLACEHOLDER([A-Za-z0-9+/=]+)PLACEHOLDER/g, (match, content) => {
+            const encoded = Buffer.from(content, 'base64').toString();
+            return 'latex-inline' + encoded + 'latex-inline';
+        });
+
+   return restored
+}
+
+function markdownToHtml(markdownText,filename) {
+
+  const textWithSecuredLatex = secureLatexBlocks(markdownText)
+  const htmlBody = converter.makeHtml(textWithSecuredLatex);
+  const restoredLatex = restoredLatexBlocks(htmlBody);
+
+  const cssContent = `
+          <style>
+          /* Highlight.js styles */
+          ${preloadedFiles.highlightCss}
+          
+          /* Custom styles */
+          ${preloadedFiles.customCss}
+          </style>`;
+
+  return `<!DOCTYPE html>
+          <html>
+          ${cssContent}
+          <head>
+            <meta charset="UTF-8">
+            <script>
+            MathJax = {
+                    tex: {
+                      inlineMath: [['latex-inline','latex-inline']],
+                      displayMath: [['latex-block','latex-block']],
+                      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+                      ignoreClass: 'tex2jax_ignore',
+                      processClass: 'tex2jax_process'
+                    }
+                  };
+            </script>
+            <script id="MathJax-script">${preloadedFiles.texMmlChtml}</script>
+            <title>${filename}</title>
+          </head>
+          <body>
+          ${restoredLatex}
+          </body>
+      </html>`
+}
 
 function extractBodyContent(htmlString) {
   const $ = cheerio.load(htmlString);
@@ -1654,5 +1828,7 @@ module.exports = {
   extractContentWithTika,
   createExcelWorkbookToBuffer,
   fileContentToHtml,
-  streamToBuffer
+  streamToBuffer,
+  cutTextToLimit,
+  markdownToHtml
 };

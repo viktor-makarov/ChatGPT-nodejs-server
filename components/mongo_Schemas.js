@@ -215,6 +215,35 @@ const FunctionUsageLogSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_functions_log }
 );
 
+const FeatureUsageLogSheema = new Schema(
+  {
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of the event. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')." },
+    userid: { type: Number, index: true },
+    userFirstName: { type: String },
+    userLastName: { type: String },
+    username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
+    feature:{ type: String, description: "Feature name. Hint: for correct filtering on this field first fetch all the unique values." },
+    regime: { type: String, description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
+    featureType: { type: String, description: "Feature details. Hint: for correct filtering on this field first fetch all the unique values." }
+  },
+  { collection: appsettings.mongodb_names.coll_feature_log}
+);
+
+const CreditsUsageLogSheema = new Schema(
+  {
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of the event. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')." },
+    userid: { type: Number, index: true },
+    userFirstName: { type: String },
+    userLastName: { type: String },
+    username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
+    creditType:{ type: String, description: "Credit type. Hint: for correct filtering on this field first fetch all the unique values." },
+    creditSubType: { type: String, description: "Credit subtype. Hint: for correct filtering on this field first fetch all the unique values." },
+    usage: { type: String, description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
+    details: { type: String, description: "Usage details. Hint: for correct filtering on this field first fetch all the unique values." }
+  },
+  { collection: appsettings.mongodb_names.coll_creadits_usage}
+);
+
 const CallbackUsageLogSheema = new Schema(
   {
     message_id: { type: Number, index: true },
@@ -301,9 +330,6 @@ const FunctionQueueSheema = new Schema(
 FunctionQueueSheema.index({ name: -1 });
 FunctionQueueSheema.index({ function_id: -1 });
 
-
-
-
 module.exports = {
   ProfileSheema,
   LogsSheema,
@@ -318,5 +344,7 @@ module.exports = {
   KnowledgeBaseSheema,
   DialogMetaSheema,
   FunctionQueueSheema,
-  CallbackUsageLogSheema
+  CallbackUsageLogSheema,
+  FeatureUsageLogSheema,
+  CreditsUsageLogSheema
 };

@@ -1,0 +1,79 @@
+/* Custom styles for markdownToHtml function */
+
+pre code {
+    background-color: transparent;
+    border: 0;
+    padding: 0;
+}
+
+code {
+    color: #333;
+    font-family: Consolas, "Liberation Mono", Courier, monospace;
+    font-weight: normal;
+    background: #f3f3f3;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-size: 0.97em;
+}
+
+blockquote {
+    border-left: 4px solid #b4b4b4;
+    background: #f9f9f9;
+    margin: 1em 0;
+    padding: 0.8em 1.2em;
+    color: #555;
+    font-style: italic;
+    font-size: 1.05em;
+}
+
+pre {
+    white-space: pre-wrap;
+    white-space: -moz-pre-wrap;
+    white-space: -pre-wrap;
+    white-space: -o-pre-wrap;
+    word-wrap: break-word;
+    background-color: #f8f8f8;
+    border: 1px solid #dfdfdf;
+    margin-top: 1.5em;
+    margin-bottom: 1.5em;
+    padding: 0.125rem 0.3125rem 0.0625rem;
+    margin-block: 1em;
+    margin-inline: 0px;
+    display: block;
+    font-family: monospace;
+    unicode-bidi: isolate;
+}
+
+body {
+    font-family: "Helvetica Neue", Helvetica, Roboto, Arial, sans-serif;
+    color: #222;
+    font-weight: normal;
+    line-height: 1.5;
+}
+
+table {
+    border: solid 1px #ddd;
+    margin-bottom: 1.25rem;
+    table-layout: auto;
+    border-collapse: separate;
+    border-spacing: 2px;
+}
+
+table thead {
+    background: #F5F5F5;
+}
+
+table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+table thead tr th, 
+table tfoot tr th, 
+table tfoot tr td, 
+table tbody tr th, 
+table tbody tr td, 
+table tr td {
+    line-height: 1.125rem;
+    font-size: 0.875rem;
+    padding: 0.5rem 0.625rem 0.625rem;
+}

@@ -84,7 +84,7 @@ async function VoiceToText(requestMsgInstance) {
   }
 }
 
-async function TextToVoice(requestInstance) {
+async function TextToVoice(requestInstance,text) {
   try {
 
     var openai_resp;
@@ -92,6 +92,8 @@ async function TextToVoice(requestInstance) {
     const model = requestInstance.user.settings["texttospeech"].model
     try {
 
+      let textToUse = text || requestInstance.text;
+      
 const options = {
       url: modelSettings["texttospeech"].hostname + modelSettings["texttospeech"].url_path,
       method: "POST",
@@ -105,9 +107,11 @@ const options = {
       },
       data: {
         model:model,
-        input: requestInstance.text,
+        input: textToUse,
         voice: voice
     }};
+
+    console.log("options",(text || requestInstance.text).length)
 
       openai_resp = await axios(options);
 
@@ -222,11 +226,11 @@ async function chatCompletionStreamAxiosRequest(
         if (oai_response_status === 400 || error.message.includes("400")) {
 
           newErr.code = "OAI_ERR_400";
-          newErr.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",err?.message_from_response?.message ?? "отсутствует");
+          newErr.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",error?.message_from_response?.message ?? "отсутствует");
           
           // Regular expression to check if the error message indicates that the context length limit has been exceeded
           const contentExceededPattern = new RegExp(/context_length_exceeded/);
-          const contentIsExceeded = contentExceededPattern.test(err.message_from_response)
+          const contentIsExceeded = contentExceededPattern.test(error.message_from_response)
           const imageSizeExceededPattern = new RegExp(/image size is (\d+(?:\.\d+)?[KMG]B), which exceeds the allowed limit of (\d+(?:\.\d+)?[KMG]B)/);
           const imageSizeIsExceededMatch = newErr.message_from_response.match(imageSizeExceededPattern)
           
