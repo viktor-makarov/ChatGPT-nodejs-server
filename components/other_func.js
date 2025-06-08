@@ -672,7 +672,7 @@ function convertMarkdownToLimitedHtml(text){
       
       const formulasObj = {};
             // Handle LaTeX block formulas using \[...\]
-          convertedText = convertedText.replace(/^\\\[(.*?)\\\]/gms, (_, formula) => {
+          convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (_, formula) => {
             const index = Object.keys(formulasObj).length+1;
             formulasObj[index]= formula.trim();
             return `<pre><code class="language-Simplified LaTeX - see PDF for better formating">${unicodeit.replace(formula.trim())}</code></pre>`;
@@ -1552,7 +1552,7 @@ function secureLatexBlocks(markdownText) {
 
       let convertedText = markdownText;
 
-       convertedText = convertedText.replace(/^\\\[(.*?)\\\]/gms, (match, content) => {
+       convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (match, content) => {
             const encoded = Buffer.from(content.trim()).toString('base64');
             return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER';
         });
