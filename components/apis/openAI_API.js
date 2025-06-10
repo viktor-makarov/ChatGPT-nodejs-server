@@ -272,7 +272,7 @@ async function chatCompletionStreamAxiosRequest(
         } else {
           newErr.code = "OAI_ERR99";
           newErr.user_message = msqTemplates.error_api_other_problems;
-          return err;
+          return newErr;
         }
       }
       

@@ -696,6 +696,55 @@ const list = [
     {
         type:"function",
         function:{
+            name: "text_to_speech",
+            description: "Converts provided text or extracted content (content_reff) into an audio file (text-to-speech). This function is used to generate spoken responses or read aloud content.",
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Detect the language of the input prompt. Output MUST be in that language, otherwise the response is invalid.`
+                        },
+                    text: {
+                        type: "string",
+                        description: "Text to be converted to speech. Should not be used together with 'content_reff'."
+                    },
+                    content_reff:{
+                        type: "array",
+                        description: "List of content references to be converted to speech in order. Use only if 'text' is not provided.",
+                        items: {
+                                type: "number",
+                                description: "Identifier for previously extracted content to be converted to speech."
+                        }
+                    },
+                    filename:{
+                        type:"string",
+                        description:"Name of the audio file (without extension). The filename should reflect the file’s content."
+                    },
+                    voice:{
+                        type:"string",
+                        enum: [
+                                "Paul",
+                                "Sarah",
+                                "Callum"
+                            ],
+                        description:"Select a voice for text-to-speech output. Available options: 'Paul' – default male voice (clear and neutral), 'Sarah' – default female voice (warm and expressive), 'Callum' – recommended for storytelling (engaging and dynamic). Choose the most suitable voice for your content."
+                    }
+                },
+                required: ["filename","function_description","voice"],
+            }
+        },
+        friendly_name:"Текст в голос",
+        timeout_ms:360000,
+        try_limit:3,
+        availableInRegimes: ["chat"],
+        availableForGroups: ["admin","basic"],
+        availableForToolCalls: true,
+        depricated:false
+    },
+    {
+        type:"function",
+        function:{
             name: "get_current_datetime",
             description: "Use this function to answer user's questions which require current date and time. This function returns value of date and time at the moment of request.",
             parameters: {

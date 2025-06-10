@@ -168,6 +168,21 @@ const RegistrationLogSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_reg_log }
 );
 
+const TokensLogSheema = new Schema(
+  {
+    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')." },
+    userid: { type: Number, index: true },
+    userFirstName: { type: String },
+    userLastName: { type: String },
+    username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
+    model: { type: String,description: "OpenAI model used for request. Hint: for correct filtering on this field first fetch all the unique values." },
+    prompt_tokens: { type: Number,description: "Number of tokens in prompt of the request." },
+    completion_tokens: { type: Number,description: "Number of tokens in completion of the request." },
+    total_tokens: { type: Number,description: "Total number of tokens in the request: prompt plus completion." }
+  },
+  { collection: appsettings.mongodb_names.tokens_log }
+);
+
 const ModelsSheema = new Schema(
   {
     updatedDTUTC: { type: Date },
@@ -182,19 +197,20 @@ const ModelsSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_models }
 );
 
-const TokensLogSheema = new Schema(
+const VoicesElevenLabsSheema = new Schema(
   {
-    datetimeUTC: { type: Date, default: Date.now,description:"Date and time of user's request. This field should be queried using format of new Date('YYYY-MM-DDTHH:MM:SS')." },
-    userid: { type: Number, index: true },
-    userFirstName: { type: String },
-    userLastName: { type: String },
-    username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
-    model: { type: String,description: "OpenAI model used for request. Hint: for correct filtering on this field first fetch all the unique values." },
-    prompt_tokens: { type: Number,description: "Number of tokens in prompt of the request." },
-    completion_tokens: { type: Number,description: "Number of tokens in completion of the request." },
-    total_tokens: { type: Number,description: "Total number of tokens in the request: prompt plus completion." }
+    voiceId: { type: String},
+    name: { type: String, index: true }
   },
-  { collection: appsettings.mongodb_names.tokens_log }
+  { strict: false,collection: appsettings.mongodb_names.coll_elevenlabs_voices }
+);
+
+const ModelsElevenLabsSheema = new Schema(
+  {
+    modelId: { type: String},
+    name: { type: String}
+  },
+  { strict: false,collection: appsettings.mongodb_names.coll_elevenlabs_models }
 );
 
 const FunctionUsageLogSheema = new Schema(
@@ -238,8 +254,8 @@ const CreditsUsageLogSheema = new Schema(
     username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
     creditType:{ type: String, description: "Credit type. Hint: for correct filtering on this field first fetch all the unique values." },
     creditSubType: { type: String, description: "Credit subtype. Hint: for correct filtering on this field first fetch all the unique values." },
-    usage: { type: String, description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
-    details: { type: String, description: "Usage details. Hint: for correct filtering on this field first fetch all the unique values." }
+    usage: { type: Number, description: "Usage value. Hint: for correct filtering on this field first fetch all the unique values." },
+    details: { type: Object, description: "Usage details. Hint: for correct filtering on this field first fetch all the unique values." }
   },
   { collection: appsettings.mongodb_names.coll_creadits_usage}
 );
@@ -346,5 +362,7 @@ module.exports = {
   FunctionQueueSheema,
   CallbackUsageLogSheema,
   FeatureUsageLogSheema,
-  CreditsUsageLogSheema
+  CreditsUsageLogSheema,
+  VoicesElevenLabsSheema,
+  ModelsElevenLabsSheema
 };

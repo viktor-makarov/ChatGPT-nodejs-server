@@ -245,48 +245,24 @@ module.exports = {
         "hostname":`https://${process.env.OAI_URL}`,
        // "default_model":'tts-1-hd',
         "default_model":'gpt-4o-mini-tts',
-       "url_path":'/v1/audio/speech',
+        "url_path":'/v1/audio/speech',
         "response_format":"json",
-        "voice": "shimmer",
+        "voice": "Sarah",
         "options_desc":"Параметры работы функции Текст в голос:",
         "options":{
-            "model":{
-                "name":"Версия модели",
-                "options_desc":"Выберите версию модели:",
-                "templateRespMsg":"Модель для функии Переводчик изменена на [value].",
-                "options":{
-                    "tts-1":{
-                        "name":"Быстрее",
-                    },
-                    "tts-1-hd":{
-                        "name":"Лучше качество",
-                    },	
-                    "back":{
-                        "name":"<< Назад"
-                    }
-            }},
             "voice":{
                 "name":"Версия голоса",
                 "options_desc":"Выберите версию голоса:",
                 "templateRespMsg":"Голос изменен на [value].",
                 "options":{
-                    "shimmer":{
-                        "name":"Шимер",
+                    "Paul":{
+                        "name":"Пол",
                     },
-                    "alloy":{
-                        "name":"Аллой",
+                    "Sarah":{
+                        "name":"Сара",
                     },	
-                    "echo":{
-                        "name":"Эко",
-                    },
-                    "fable":{
-                        "name":"Фабле",
-                    },
-                    "onyx":{
-                        "name":"Оникс",
-                    },
-                    "nova":{
-                        "name":"Нова",
+                    "Callum":{
+                        "name":"Калум",
                     },
                     "back":{
                         "name":"<< Назад"

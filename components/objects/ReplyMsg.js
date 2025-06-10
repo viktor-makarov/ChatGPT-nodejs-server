@@ -2,7 +2,8 @@ const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../other_func");
 const ErrorHandler = require("../telegramErrorHandler");
-
+const FormData = require("form-data");
+const axios = require("axios");
 
 class ReplyMsg extends EventEmitter {
 
@@ -109,6 +110,21 @@ async unpinAllChatMessages(){
 
 async sendAudioListenMsg(){
  return  await this.sendToNewMessage(msqTemplates.audio_dowload_progess)
+}
+
+async sendAudio(readableStream,filename){
+
+      const formData = new FormData();
+      formData.append('chat_id', this.#chatId);
+      formData.append('audio', readableStream, {filename: filename || 'audio.mp3'});
+      const result = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendAudio`, 
+          formData, {
+            headers: formData.getHeaders(),
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+          });
+      
+      return result.data;
 }
 
 async getUrlByTgmFileId(fileId){

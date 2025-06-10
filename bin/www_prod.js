@@ -16,6 +16,7 @@ const mongoClient = require("../components/mongoClient")
 global.mongoConnection = await mongoClient.connectToMongo()
 const chromeBrowser = require("../components/chromeBrowser")
 global.chromeBrowserHeadless = await chromeBrowser.launchBrowserHeadless()
+
 //const mdjCLient = require("../components/midjourneyClient")
 //await mdjCLient.initClient()
 const TelegramBot = require('node-telegram-bot-api');
@@ -58,7 +59,8 @@ global.bot.setWebHook(webHookUrl)
 //telegramRouter.MdjAccountInfo()
 await telegramRouter.setBotParameters(global.bot) //задаем параметры бота
 await telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
-await telegramRouter.GetModelsFromAPI() //получаем список моделей
+telegramRouter.GetLibrariesFromAPIs() //получаем список моделей OAI
+
 telegramRouter.router(global.bot) //включаем роутер
 console.timeEnd('Server startup');
 }

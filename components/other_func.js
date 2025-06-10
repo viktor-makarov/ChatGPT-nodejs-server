@@ -980,12 +980,6 @@ function startDeveloperPrompt(userInstance){
 
   let prompt = getLocalizedPhrase("system_start_dialogue",userInstance.language_code)
 
-
-  if(userInstance.prefered_name){
-    const placeholders = [{key:"[prefered_name]",filler:userInstance.prefered_name}]
-    prompt += "\n\n"+ getLocalizedPhrase("call_the_user",userInstance.language_code,placeholders)
-  }
-
   if(userInstance.response_style && userInstance.response_style !="neutral"){
 
     prompt += "\n\n" + getLocalizedPhrase("response_style_"+userInstance.response_style,userInstance.language_code)
@@ -1486,10 +1480,22 @@ function formatHtml(html,filename){
       </html>`
 }
 
+function handleTextLengthForTextToVoice(user_language_code,text){
+
+    const limit = global.elevenlabs_models[appsettings.text_to_speach.model_id].maximumTextLengthPerRequest || 4000;
+    const cutNotification = getLocalizedPhrase("text_to_speech_cut_notification",user_language_code)
+    const cutResult = cutTextToLimit(text,limit,cutNotification.length)
+    let constrainedText;
+    if (cutResult.isCut){
+      constrainedText = cutResult.text + cutNotification;
+    } else {
+      constrainedText = text;
+    }
+
+  return constrainedText
+}
+
 function cutTextToLimit(text, limit, charSurplus=0) {
-
-console.log("cutTextToLimit","limit",limit,"charSurplus",charSurplus)
-
 
 if (text.length <= limit - charSurplus) {
   return {
@@ -1554,12 +1560,12 @@ function secureLatexBlocks(markdownText) {
 
        convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (match, content) => {
             const encoded = Buffer.from(content.trim()).toString('base64');
-            return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER';
+            return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER\n';
         });
 
       convertedText = convertedText.replace(/(?:^|\s)\$\$(.*?)\$\$(?=\s|$)/gms, (match, content) => {
             const encoded = Buffer.from(content.trim()).toString('base64');
-            return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER';
+            return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER\n';
         });
 
       convertedText = convertedText.replace(/\\\((.*?)\\\)/g, (match, content) => {
@@ -1672,6 +1678,15 @@ function fileContentToHtml(fileContent,filename){
           ${bodyCombined}
           </body>
       </html>`
+}
+
+function arrayToObjectByKey(array, key) {
+  return array.reduce((acc, item) => {
+    const keyValue = item[key];
+    const {[key]: extractedKey, ...data} = item;
+    acc[keyValue] = data;
+    return acc;
+  }, {});
 }
 
 function commentSymbolForLanguage(language){
@@ -1830,5 +1845,7 @@ module.exports = {
   fileContentToHtml,
   streamToBuffer,
   cutTextToLimit,
-  markdownToHtml
+  markdownToHtml,
+  arrayToObjectByKey,
+  handleTextLengthForTextToVoice
 };

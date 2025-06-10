@@ -1,5 +1,6 @@
 const telegramCmdHandler = require("./components/telegramCmdHandler.js");
 const openAIApi = require("./components/apis/openAI_API.js");
+const elevenLabsApi = require("./components/apis/elevenlabs_API.js");
 const telegramErrorHandler = require("./components/telegramErrorHandler.js");
 const mongo = require("./components/mongo");
 const msqTemplates = require("./config/telegramMsgTemplates.js");
@@ -8,6 +9,7 @@ const RequestMsg  = require("./components/objects/RequestMsg.js");
 const User = require("./components/objects/User.js");
 const Dialogue = require("./components/objects/Dialogue.js");
 const MdjApi = require("./components/apis/midjourney_API.js");
+const otherFunctions = require("./components/other_func.js");
 
 async function MdjAccountInfo(){
   const info = await MdjApi.executeInfo()
@@ -22,12 +24,28 @@ async function UpdateGlobalVariables() {
     console.log(new Date(), "Success! Replacements performed" ,replaceResult);
 }
 
-async function GetModelsFromAPI() {
-    const models_array = await openAIApi.getModels(); //обновляем список моделей в базе
-    const write_result = await mongo.update_models_listPromise(models_array.data);
-    console.log(new Date(), `Success! OpenAI models updated: ${write_result}`);
-};
+async function GetLibrariesFromAPIs() {
+    const oai_models_array = await openAIApi.getModels(); //обновляем список моделей в базе
+    const write_oai_models = await mongo.update_models_listPromise(oai_models_array.data);
+    console.log(new Date(), `Success! OpenAI models updated: ${write_oai_models}`);
 
+    const elevenlabs_models_array = await elevenLabsApi.getAvailableModels(); //обновляем список моделей в базе
+    global.elevenlabs_models = otherFunctions.arrayToObjectByKey(elevenlabs_models_array,"modelId")
+    const write_elevenlabs_models = await mongo.update_elevenlabs_models_list(elevenlabs_models_array);
+    if(global.elevenlabs_models[appsettings.text_to_speach.model_id] === undefined){
+        throw new Error(`Default model ${appsettings.text_to_speach.model_id} not found in ElevenLabs models list`);
+    }
+    console.log(new Date(),`Success! ElevenLabs models updated: ${write_elevenlabs_models}`)
+    
+    const elevenlabs_voices_array = await elevenLabsApi.getAvailableVoices(); //обновляем список голосов в базе
+    global.elevenlabs_voices = otherFunctions.arrayToObjectByKey(elevenlabs_voices_array,"name")
+    const write_elevenlabs_voices = await mongo.update_elevenlabs_voices_list(elevenlabs_voices_array);
+    if(global.elevenlabs_voices[appsettings.text_to_speach.default_voice_name] === undefined){
+        throw new Error(`Default voice ${appsettings.text_to_speach.default_voice_name} not found in ElevenLabs voices list`);
+    }
+    console.log(new Date(),`Success! ElevenLabs voices updated: ${write_elevenlabs_voices}`)
+
+};
 
 async function setBotParameters(botInstance) {
 
@@ -136,7 +154,7 @@ async function eventRouter(event,botInstance){
 module.exports = {
   router,
   setBotParameters,
-  GetModelsFromAPI,
+  GetLibrariesFromAPIs,
   UpdateGlobalVariables,
   MdjAccountInfo
 };

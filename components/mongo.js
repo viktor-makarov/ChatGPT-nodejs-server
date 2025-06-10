@@ -21,6 +21,9 @@ const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_nam
 const knowledge_base_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_knowledge_base,scheemas.KnowledgeBaseSheema);
 const credits_usage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_creadits_usage,scheemas.CreditsUsageLogSheema);
 
+const elevenlabs_voices_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_elevenlabs_voices,scheemas.VoicesElevenLabsSheema);
+const elevenlabs_models_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_elevenlabs_models,scheemas.ModelsElevenLabsSheema);
+
 
 async function upsertCallbackUsage(requestMsgInstance,duration,success=-1, error){
 
@@ -376,7 +379,7 @@ async function insertFeatureUsage(obj){
   }
 };
 
-async function insertFeatureUsage(obj){
+async function insertCreditUsage(obj){
   try {
 
     const newCreditUsage = new credits_usage_collection({
@@ -851,6 +854,44 @@ async function update_models_listPromise(model_list) {
   
   return model_list.length;
 }
+
+
+async function update_elevenlabs_models_list(model_list) {
+  if (model_list.length === 0) {
+    const error = new Error("ElevenLabs model list is empty");
+    throw error;
+  }
+  
+  const operations = model_list.map(model => ({
+    updateOne: {
+      filter: { modelId: model.modelId },
+      update: model,
+      upsert: true
+    }
+  }));
+  
+  await elevenlabs_models_collection.bulkWrite(operations);
+  return model_list.length;
+}
+
+async function update_elevenlabs_voices_list(voices_list) {
+  if (voices_list.length === 0) {
+    const error = new Error("ElevenLabs voices list is empty");
+    throw error;
+  }
+  
+  const operations = voices_list.map(voice => ({
+    updateOne: {
+      filter: { voice_id: voice.voice_id },
+      update: voice,
+      upsert: true
+    }
+  }));
+  
+  await elevenlabs_voices_collection.bulkWrite(operations);
+  return voices_list.length;
+}
+
 
 async function insert_permissions_migrationPromise(msg) {
   try {
@@ -1557,5 +1598,8 @@ module.exports = {
   upsertCallbackUsage,
   getExtractedTextByReff,
   registerBotUser,
-  insertFeatureUsage
+  insertFeatureUsage,
+  update_elevenlabs_models_list,
+  update_elevenlabs_voices_list,
+  insertCreditUsage
 };

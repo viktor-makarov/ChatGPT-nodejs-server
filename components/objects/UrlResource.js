@@ -32,7 +32,7 @@ class UrlResource{
       }
 
       async getUrlBody(){
-
+        
         if(this.#isValid){
             try{
               const agent = new https.Agent({

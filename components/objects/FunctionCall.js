@@ -6,6 +6,7 @@ const telegramErrorHandler = require("../telegramErrorHandler.js");
 const toolsCollection = require("./toolsCollection.js");
 const awsApi = require("../AWS_API.js")
 const PIAPI = require("../apis/piapi.js");
+const elevenLabsApi = require("../apis/elevenlabs_API.js");
 
 class FunctionCall{
     #replyMsg;
@@ -347,7 +348,8 @@ async selectAndExecuteFunction() {
         "get_user_guide": () => this.get_user_guide(),
         "get_users_activity": () => this.get_data_from_mongoDB_by_pipepine("tokens_logs"),
         "run_javasctipt_code": () => this.runJavascriptCode(),
-        "run_python_code": () => this.runPythonCode()
+        "run_python_code": () => this.runPythonCode(),
+        "text_to_speech": () => this.textToSpeech()
     };
     
     const targetFunction = functionMap[this.#functionName];
@@ -711,6 +713,49 @@ validateRequiredFieldsFor_createExcelFile(){
         
         return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
         }
+
+
+        async textToSpeech(){
+
+                this.validateRequiredFieldsFor_textToSpeech()
+
+                const {filename,text,content_reff,voice} = this.#argumentsJson
+
+                let textToConvert;
+                if(text){
+                    textToConvert = text
+                } else {
+                    const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
+                    
+                    previuslyExtractedContent.sort((a, b) => {
+                        return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
+                    });
+
+                    if(previuslyExtractedContent.length === 0){
+                        return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
+                    }
+                    
+                    textToConvert = previuslyExtractedContent.map(obj => {
+                        return obj.tool_reply.fullContent.results.map(obj =>obj.text)
+                    }).flat().join('\n')
+                }
+
+                const constrainedText = func.handleTextLengthForTextToVoice(this.#user.language_code,textToConvert)
+                const filenameWithExt = `${filename}_${voice}.mp3` || `tts_${voice}_${Date.now()}.mp3`
+                const readableStream = await elevenLabsApi.textToVoiceStream(constrainedText,voice)
+
+                const msgResult = await this.#replyMsg.sendAudio(readableStream,filenameWithExt);
+
+                mongo.insertCreditUsage({
+                      userInstance: this.#user,
+                      creditType: "text_to_speech",
+                      creditSubType: "elevenlabs",
+                      usage:msgResult?.result?.audio?.duration || 0,
+                      details: {place_in_code:"textToSpeech function"}
+                    })
+
+                return {success:1,result:`Audio file ${filenameWithExt} has been generated and successfully sent to the user.`}
+            }
 
         async createTextFile(){
 
@@ -1301,6 +1346,49 @@ validateRequiredFieldsFor_createExcelFile(){
             throw error;
         }
 
+    }
+
+    validateRequiredFieldsFor_textToSpeech(){
+
+        const {filename,text,content_reff,voice} = this.#argumentsJson
+
+        let error = new Error();
+        error.assistant_instructions = "Fix the error and retry the function."
+
+        if(!filename || filename === ""){
+            error.message = `'filename' parameter is missing. Provide the value for the agrument.`
+            throw error;
+        }
+
+        if(!voice || voice === ""){
+            error.message = `'voice' parameter is missing. Provide the value for the agrument.`
+            throw error;
+        }
+
+        if(!text && !content_reff){
+            error.message = `Either 'text' or 'content_reff' parameter must be present. Provide at least one of them.`
+            throw error;
+        }
+
+        if(text && content_reff){
+            error.message = `'text' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
+            throw error;
+        }
+        
+        if(text && text === ""){
+            error.message = `'text' parameter must contain text.`
+            throw error;
+        }
+
+        if(content_reff && !Array.isArray(content_reff)){
+            error.message = `'content_reff' parameter must be an array.`
+            throw error;
+        }
+
+        if(content_reff && Array.isArray(content_reff) && content_reff.length === 0){
+            error.message = `'content_reff' array is empty.`
+            throw error;
+        }
     }
 
     validateRequiredFieldsFor_createTextFile(){

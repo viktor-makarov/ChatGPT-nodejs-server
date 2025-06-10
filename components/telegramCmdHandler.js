@@ -5,9 +5,11 @@ const reports = require("../config/telegramReportsConfig.js");
 const otherFunctions = require("./other_func");
 const modelConfig = require("../config/modelConfig");
 const openAIApi = require("./apis/openAI_API.js");
+const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const awsApi = require("./AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
 const toolsCollection  = require("./objects/toolsCollection.js");
+const { usage } = require("@elevenlabs/elevenlabs-js/api/index.js");
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -51,10 +53,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
         } else {
           responses.push({text:msqTemplates.file_type_cannot_be_converted_to_text})
         }
-    } else if(current_regime ==="texttospeech"){
-      responses.push({text:msqTemplates.file_is_not_handled_in_the_regime})
-
-    } else if (current_regime === "chat" || current_regime === "translator" || current_regime === "texteditor"){
+    }  else if (current_regime === "chat" || current_regime === "translator" || current_regime === "texteditor"){
       
 
       if(current_regime==="translator"){
@@ -173,18 +172,6 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
     case "voicetotext":
       responses.push({text:msqTemplates.error_voicetotext_doesnot_process_text})
     break;   
-    case "texttospeech":
-      const checkResult = requestMsgInstance.textToSpeechConstraintsCheck()
-      if(checkResult.success===0){
-        responses.push(checkResult.response)
-        break;
-      }
-
-      const result = await replyMsgInstance.sendTextToSpeachWaiterMsg()
-      await openAIApi.TextToVoice(requestMsgInstance);
-      await replyMsgInstance.deleteMsgByID(result.message_id)
-      
-    break;
     case "chat":
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
       dialogueInstance.emit('callCompletion')
@@ -278,7 +265,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     let response = await settingsOptionsHandler(requestMsgInstance);
     responses.push(response)
 
-  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor" || cmpName==="voicetotext" || cmpName==="texttospeech"){
+  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor" || cmpName==="voicetotext"){
    
     requestMsgInstance.user.currentRegime = cmpName
    
@@ -486,10 +473,24 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const result = await replyMsg.sendTextToSpeachWaiterMsg()
     const {text} = await otherFunctions.decodeJson(callback_data_input)
 
-    const constrainedText = handleTextLengthForTextToVoice(requestMsg,text)
+    const constrainedText = otherFunctions.handleTextLengthForTextToVoice( requestMsg.user.language_code,text)
+
+    const voice = requestMsg.user.currentVoice
+    const fileName = `tts_${voice}_${Date.now()}.mp3`
     
-    await openAIApi.TextToVoice(requestMsg,constrainedText);
+    const readableStream = await elevenLabsApi.textToVoiceStream(constrainedText,voice)
+    
+    const msgResult = await replyMsg.sendAudio(readableStream,fileName);
+
     await replyMsg.deleteMsgByID(result.message_id)
+
+    mongo.insertCreditUsage({
+      userInstance: requestMsg.user,
+      creditType: "text_to_speech",
+      creditSubType: "elevenlabs",
+      usage:msgResult?.result?.audio?.duration || 0,
+      details: {place_in_code:"readaloud"}
+    })
 
   } else if(callback_event === "un_f_up") {
 
@@ -652,19 +653,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
 }
 
-function handleTextLengthForTextToVoice(requestMsg,text){
 
-    const cutNotification = otherFunctions.getLocalizedPhrase("text_to_speech_cut_notification",requestMsg.user.language_code)
-    const cutResult = otherFunctions.cutTextToLimit(text,appsettings.telegram_options.text_to_speach_limit,cutNotification.length)
-    let constrainedText;
-    if (cutResult.isCut){
-      constrainedText = cutResult.text + cutNotification;
-    } else {
-      constrainedText = text;
-    }
-
-  return constrainedText
-}
 
 function msgShortener(html){
   let new_msg_html = html;
@@ -1006,29 +995,6 @@ async function changeRegimeHandlerPromise(obj){
           text: modelSettings[obj.newRegime].welcome_msg.replace(
             "[size]",
             modelSettings.voicetotext.filesize_limit_mb.toString()
-          )
-        });
-      } else if (obj.newRegime == "texttospeech"){
-
-        responses.push({
-          text: modelSettings[obj.newRegime].header_msg
-          .replace(
-            "[voice]",
-            obj.requestMsgInstance.user.currentVoice
-          ),
-          pin: true,
-          buttons:{
-            reply_markup: {
-            remove_keyboard: true,
-            }
-          }
-        });
-
-        responses.push({
-          text: modelSettings[obj.newRegime].welcome_msg
-          .replace(
-            "[limit]",
-            appsettings.telegram_options.big_message_threshold
           )
         });
       }

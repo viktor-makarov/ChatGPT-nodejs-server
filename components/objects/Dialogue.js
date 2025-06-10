@@ -179,7 +179,7 @@ class Dialogue extends EventEmitter {
         const deleteS3Results = await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)),this.#user.currentRegime)
         const deletedFiles = deleteS3Results.Deleted
         await this.commitDevPromptToDialogue(otherFunctions.startDeveloperPrompt(this.#user))
-
+        
         await this.deleteMeta()
         await this.createMeta()
 

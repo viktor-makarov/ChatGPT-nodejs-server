@@ -271,13 +271,6 @@ acceptHandler(){
   }
   
 
-textToSpeechConstraintsCheck(){
-    if(this.#text>appsettings.telegram_options.text_to_speach_limit){
-        return {success:0,response:{text:msqTemplates.texttospeech_length_error.replace("[limit]",appsettings.telegram_options.text_to_speach_limit)}}
-    }
- return {success:1}
-
-}
 
 async getFileLinkFromTgm(){
     
