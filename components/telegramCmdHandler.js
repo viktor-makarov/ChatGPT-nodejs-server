@@ -474,12 +474,12 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const {text} = await otherFunctions.decodeJson(callback_data_input)
 
     const constrainedText = otherFunctions.handleTextLengthForTextToVoice( requestMsg.user.language_code,text)
-
+    
     const voice = requestMsg.user.currentVoice
     const fileName = `tts_${voice}_${Date.now()}.mp3`
     
     const readableStream = await elevenLabsApi.textToVoiceStream(constrainedText,voice)
-    
+
     const msgResult = await replyMsg.sendAudio(readableStream,fileName);
 
     await replyMsg.deleteMsgByID(result.message_id)

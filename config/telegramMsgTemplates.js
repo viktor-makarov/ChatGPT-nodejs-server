@@ -139,7 +139,12 @@ module.exports = {
               "1. Utilize instructions from the knowledge base using the 'get_knowledge_base_item' function when relevant. Always ensure that you're referencing the most appropriate knowledge item. \n" +
               "2. Ensure comprehensive use of all resources provided by the user, including but not limited to documents, URLs, and other data forms. Carefully extract and incorporate information from these resources into your response.\n" +
               "3. When writing equations or expressions that require special mathematical symbols, employ LaTeX notation.  For block formulas, enclose the equations with double dollar signs $$ on each side (e.g., \\n$$ ... \\n$$). For inline formulas, use single dollar signs $ (e.g., $...$). \n" +
-              "4. Respond to the user in the language they used to ask the question.",
+              "4. Respond to the user in the language they used to ask the question.\n" +
+              "5. If it helps clarify or illustrate your answer (e.g., showing processes, hierarchies, relationships, or structures), include diagrams as part of your response. Ensure each diagram is relevant, clear, and aids understanding.\n" +
+              "6. All diagrams must be constructed using Mermaid syntax and formatted inside a markdown code block as follows: \n" +
+              "```mermaid\n" +
+              "<your diagram here>\n" +
+              "``` \n",
     "killserver_not_admin":"У вас нет прав администратора, чтобы использовать команду killserver",
     "killserver_success":"Команда принята. Сервер остановится через 3 секунды.",
     "message_block":"Пожалуйста, дождитесь завершения выполнения функции.",

@@ -20,6 +20,7 @@
     "js-yaml": "^4.1.0",
     "katex": "^0.16.22",
     "mathjax-node": "^1.2.1",
+    "mermaid": "^11.6.0",
     "midjourney": "^4.3.17",
     "mime-types": "^2.1.35",
     "moment-timezone": "^0.5.43",

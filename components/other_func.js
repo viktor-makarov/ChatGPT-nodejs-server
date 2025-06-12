@@ -22,8 +22,6 @@ showdown.setOption('tables', 'true');
 showdown.setOption('ghCodeBlocks', 'false');
 showdown.setOption('tasklists', 'true');
 
-
-
  const converter = new showdown.Converter({
     extensions: [
       showdownHighlight({
@@ -1578,6 +1576,11 @@ function secureLatexBlocks(markdownText) {
             return 'LATEXINLINEPLACEHOLDER' + encoded + 'PLACEHOLDER';
         });
 
+      convertedText = convertedText.replace(/^\s*```\s*mermaid\s*([\s\S]*?)^\s*```/gm, (match, content) => {
+          const encoded = Buffer.from(content.trim()).toString('base64');
+          return 'DIAGRAMMPLACEHOLDERSTART' + encoded + 'DIAGRAMMPLACEHOLDEREND\n';
+      });
+
       return convertedText
 }
 
@@ -1596,14 +1599,22 @@ function restoredLatexBlocks(html){
             return 'latex-inline' + encoded + 'latex-inline';
         });
 
+    restored = restored.replace(/DIAGRAMMPLACEHOLDERSTART([A-Za-z0-9+/=]+)DIAGRAMMPLACEHOLDEREND/g, (match, content) => {
+        const encoded = Buffer.from(content, 'base64').toString();
+
+        return '<div  class="mermaid">\n' + encoded + '\n</div>';
+    });
+
    return restored
 }
 
 function markdownToHtml(markdownText,filename) {
 
   const textWithSecuredLatex = secureLatexBlocks(markdownText)
+  
   const htmlBody = converter.makeHtml(textWithSecuredLatex);
   const restoredLatex = restoredLatexBlocks(htmlBody);
+
 
   const cssContent = `
           <style>
@@ -1631,6 +1642,10 @@ function markdownToHtml(markdownText,filename) {
                   };
             </script>
             <script id="MathJax-script">${preloadedFiles.texMmlChtml}</script>
+            <script type="module">
+              import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.esm.min.mjs';
+              mermaid.initialize({ startOnLoad: true });
+            </script>
             <title>${filename}</title>
           </head>
           <body>
