@@ -24,6 +24,38 @@ const credits_usage_collection = global.mongoConnection.model(global.appsettings
 const elevenlabs_voices_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_elevenlabs_voices,scheemas.VoicesElevenLabsSheema);
 const elevenlabs_models_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_elevenlabs_models,scheemas.ModelsElevenLabsSheema);
 
+const exchange_rates_international_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_exchange_rates_international,scheemas.ExchangeRates);
+
+async function getExchangeRateInternational(time_last_update_unix){
+
+  try {
+    return await exchange_rates_international_collection.findOne({ time_last_update_unix: time_last_update_unix }, { _id: 0, __v: 0 }).lean()
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
+
+
+async function saveExchangeRateInternational(object){
+  try {
+    const result = await exchange_rates_international_collection.updateOne(
+      { time_last_update_unix: object.time_last_update_unix },
+      { $setOnInsert: object },
+      { upsert: true }
+    );
+    
+    // Return null if document already existed (no insertion happened)
+    if (result.upsertedCount === 0) {
+      return null;
+    }
+    
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      throw err;
+  }
+}
 
 async function upsertCallbackUsage(requestMsgInstance,duration,success=-1, error){
 
@@ -1601,5 +1633,7 @@ module.exports = {
   insertFeatureUsage,
   update_elevenlabs_models_list,
   update_elevenlabs_voices_list,
-  insertCreditUsage
+  insertCreditUsage,
+  getExchangeRateInternational,
+  saveExchangeRateInternational
 };

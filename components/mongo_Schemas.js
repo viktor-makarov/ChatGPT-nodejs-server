@@ -260,6 +260,18 @@ const CreditsUsageLogSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_creadits_usage}
 );
 
+
+const ExchangeRates = new Schema(
+  {
+    time_last_update_unix: { type: Number, index: true },
+    time_last_update_iso4217: { type: String},
+    base_code: { type: String },
+    userLastName: { type: String }
+  },
+  {strict: false, collection: appsettings.mongodb_names.coll_exchange_rates_international}
+);
+
+
 const CallbackUsageLogSheema = new Schema(
   {
     message_id: { type: Number, index: true },
@@ -364,5 +376,6 @@ module.exports = {
   FeatureUsageLogSheema,
   CreditsUsageLogSheema,
   VoicesElevenLabsSheema,
-  ModelsElevenLabsSheema
+  ModelsElevenLabsSheema,
+  ExchangeRates
 };

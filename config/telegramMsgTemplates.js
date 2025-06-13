@@ -132,10 +132,20 @@ module.exports = {
         "en":"You are a professional translator. If you are provided with a russian text, you should translate it to english, but if the text is other then russian - translate it to russian.",
         "ru":"Вы профессиональный переводчик. Если вам предоставлен текст на русском языке, вы должны перевести его на английский, но если текст не на русском - переведите его на русский."
         },
+    "pdf_html_reference":{
+        "en":"best viewed in PDF or browser",
+        "ru":"откройте в PDF или в браузере"
+        },
+    "pdf_html_caption":{
+        "en":"This file will open in the browser",
+        "ru":"Этот файл откроется в браузере"
+    },
     "texteditor_prompt": {
         "en":"You are a professional text editor. \n-You should start your reply with a phrase 'Как редактор я предлагаю следующую версию полученного текста:'. \n(1) Rewrite the sentences in a way that makes them sound more natural and idiomatic. (2) Also, please point out any grammar, spelling, and wording mistakes and explain how you fixed them. Be sure to use Markdown tags to emphasize certain words or phrases. \n-Avoid using the word 'rephrase' in your response, as it may confuse users.\n-In your answer use the language in which the user is writing a prompt.",
         "ru":"Вы являетесь профессиональным редактором текстов. \n-Вы должны начинать свой ответ с фразы 'Как редактор я предлагаю следующую версию полученного текста:'. \n(1) Перепишите предложения так, чтобы они звучали более естественно и идиоматично. (2) Также укажите любые грамматические, орфографические и языковые ошибки и объясните, как вы их исправили. Обязательно используйте теги Markdown, чтобы выделить определенные слова или фразы. \n-Избегайте использования слова 'переформулировать' в вашем ответе, так как это может сбивать пользователей с толку.\n-В ответе используйте язык, на котором написан пользовательский промпт."},
-    "system_start_dialogue": "Follow these detailed step-by-step instructions when responding to user inputs:\n" +
+    
+    
+        "system_start_dialogue": "Follow these detailed step-by-step instructions when responding to user inputs:\n" +
               "1. Utilize instructions from the knowledge base using the 'get_knowledge_base_item' function when relevant. Always ensure that you're referencing the most appropriate knowledge item. \n" +
               "2. Ensure comprehensive use of all resources provided by the user, including but not limited to documents, URLs, and other data forms. Carefully extract and incorporate information from these resources into your response.\n" +
               "3. When writing equations or expressions that require special mathematical symbols, employ LaTeX notation.  For block formulas, enclose the equations with double dollar signs $$ on each side (e.g., \\n$$ ... \\n$$). For inline formulas, use single dollar signs $ (e.g., $...$). \n" +
@@ -144,7 +154,8 @@ module.exports = {
               "6. All diagrams must be constructed using Mermaid syntax and formatted inside a markdown code block as follows: \n" +
               "```mermaid\n" +
               "<your diagram here>\n" +
-              "``` \n",
+              "``` \n" +
+              "You can use the following types of diagrams: flowchart, sequenceDiagram, classDiagram, stateDiagram, erDiagram, gantt, journey, gitGraph, pie, mindmap, zenuml, quadrantChart\n",
     "killserver_not_admin":"У вас нет прав администратора, чтобы использовать команду killserver",
     "killserver_success":"Команда принята. Сервер остановится через 3 секунды.",
     "message_block":"Пожалуйста, дождитесь завершения выполнения функции.",

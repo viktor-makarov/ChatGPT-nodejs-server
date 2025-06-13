@@ -1,15 +1,14 @@
 
-const { timeout } = require("puppeteer");
 const mongo = require("../mongo.js");
 const scheemas = require("../mongo_Schemas.js");
-const { queue } = require("sharp");
+const ExRateAPI = require("../apis/exchangerate_API.js");
 
 const list = [
     {
         type:"function",
         function:{
             name: "get_chatbot_errors",
-            description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`,
+            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
             parameters: {
                 type: "object",
                 properties: {
@@ -19,7 +18,7 @@ const list = [
                     },
                     aggregate_pipeline: {
                         type: "string",
-                        description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`
+                        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
                     }
                 },
                 required: ["aggregate_pipeline","function_description"]
@@ -32,8 +31,7 @@ const list = [
         availableForGroups: ["admin"],
         availableForToolCalls: true,
         depricated:false,
-        
-        addDescriptions: async function (){
+        addProperties: async function (){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.function.description = `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one error.`
@@ -44,7 +42,7 @@ const list = [
         type:"function",
         function:{
             name: "get_functions_usage",
-            description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`,
+            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
             parameters: {
                 type: "object",
                 properties: {
@@ -54,7 +52,7 @@ const list = [
                     },
                     aggregate_pipeline: {
                         type: "string",
-                        description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`
+                        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
                     }
                 },
                 required: ["aggregate_pipeline","function_description"]
@@ -67,7 +65,7 @@ const list = [
         availableForGroups: ["admin"],
         availableForToolCalls: true,
         depricated:false,
-        addDescriptions: async function(){
+        addProperties: async function(){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.function.description = `Prodides this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
@@ -78,7 +76,7 @@ const list = [
         type:"function",
         function:{
             name: "get_users_activity",
-            description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`,
+            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
             parameters: {
                 type: "object",
                 properties: {
@@ -88,7 +86,7 @@ const list = [
                     },
                     aggregate_pipeline: {
                         type: "string",
-                        description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`
+                        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
                     }
                 },
                 required: ["aggregate_pipeline","function_description"]
@@ -101,7 +99,7 @@ const list = [
         availableForGroups: ["admin"],
         availableForToolCalls: true,
         depricated:false,
-        addDescriptions: async function(){
+        addProperties: async function(){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.function.description = `Provides chatbot users' query statistics. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one query of a user.`
@@ -112,7 +110,7 @@ const list = [
         type:"function",
         function:{
             name: "get_knowledge_base_item",
-            description: `Error: function description is absent. Run 'await this.addDescriptions()' function to get it.`,
+            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
             parameters: {
                 type: "object",
                 properties: {
@@ -138,7 +136,7 @@ const list = [
         addUserID: function(userid){
            return this.userid = userid
         },
-        addDescriptions: async function(){
+        addProperties: async function(){
            
             const kngBaseItems = await mongo.getKwgItemsForUser(this.userid)
             this.function.description = `Use this function when you need to get instructions to better perform on user's tasks on the following topics:\n ${JSON.stringify(kngBaseItems,null,4)}`
@@ -639,7 +637,6 @@ const list = [
                 required: ["filename","data","function_description"],
                 additionalProperties: false
             }
-
         },
         friendly_name:"Создание Excel",
         timeout_ms:60000,
@@ -707,7 +704,7 @@ const list = [
                         },
                     text: {
                         type: "string",
-                        description: "Text to be converted to speech. Should not be used together with 'content_reff'."
+                        description: "Text to be converted to speech. Should not be used together with 'content_reff'. Ensure that large numbers, tables, formulas, and code blocks are articulated clearly in words for accurate pronunciation. (e.g '1 million' instead of '1,000,000', 'x squared' instead of 'x^2', this tables contains ... , this code block represents...).",
                     },
                     content_reff:{
                         type: "array",
@@ -766,6 +763,46 @@ const list = [
         availableForToolCalls: true,
         depricated:false,
         queue_name:"test"
+    },
+    {
+        type:"function",
+        function:{
+            name: "currency_converter",
+            description: "Converts currencies using up-to-date official exchange rates. Always returns a JSON object with two fields: amount (number, rounded to two decimal places), ex_rate (number, rounded to two decimal places) and timestamp (ISO 8601 date and time when the rate was current).",
+            strict: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                    },
+                    amount: {
+                        type: "number",
+                        description: "Amount of money to convert. Must be a positive number."
+                    },
+                    from_currency: {
+                        type: "string",
+                        enum:ExRateAPI.availableCurrencies,
+                        description: "Currency code to convert from."
+                    },
+                    to_currency: {
+                        type: "string",
+                        enum:ExRateAPI.availableCurrencies,
+                        description: "Currency code to convert to."
+                    }
+                },
+                required: ["function_description","amount","from_currency","to_currency"],
+                additionalProperties: false
+            }
+        },
+        friendly_name:"Конвертер курсов",
+        timeout_ms:15000,
+        try_limit:3,
+        availableInRegimes: ["chat"],
+        availableForGroups: ["admin","basic"],
+        availableForToolCalls: true,
+        depricated:false
     }
 ]
 
@@ -799,7 +836,7 @@ async function getAvailableTools(userClass){
     
     for (const tool of availableForToolCalls) {
         tool.addUserID  &&  tool.addUserID(userClass.userid)
-        tool.addDescriptions && await tool.addDescriptions()
+        tool.addProperties && await tool.addProperties()
     }
 
     return availableForToolCalls;

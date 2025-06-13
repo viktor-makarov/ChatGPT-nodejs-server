@@ -7,6 +7,7 @@ const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../telegramErrorHandler.js");
 const openAIApi = require("../apis/openAI_API.js");
 const { error } = require('console');
+const { language } = require('@elevenlabs/elevenlabs-js/api/resources/dubbing/resources/resource/index.js');
 
 class Completion extends Transform {
 
@@ -510,7 +511,7 @@ class Completion extends Transform {
             const splitIndexBorders = this.splitTextBoarders(text,appsettings.telegram_options.big_outgoing_message_threshold);
             const textChunks = this.splitTextChunksBy(text,splitIndexBorders,this.#completion_ended);
             const repairedText = this.repairBrokenMakrdowns(textChunks);
-            const htmls = this.convertMarkdownToLimitedHtml(repairedText)
+            const htmls = this.convertMarkdownToLimitedHtml(repairedText,this.#user.language_code);
 
             const sentMsgsCharCountTotal = sentMsgsCharCount.reduce((acc, val) => acc + val, 0);
             const messagesCharCountTotal = htmls.reduce((acc, val) => acc + val.length, 0);
@@ -646,9 +647,9 @@ class Completion extends Transform {
     }
 
 
-    convertMarkdownToLimitedHtml(repairedText){
+    convertMarkdownToLimitedHtml(repairedText,language_code){
       return repairedText.map((text) => {
-        const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text)
+        const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text,language_code)
         return conversionResult.html
     })
   }
@@ -741,11 +742,16 @@ class Completion extends Transform {
         callback_data: JSON.stringify({e:"respToPDF",d:completionContent}),
       };
 
+      const HTMLButtons = {
+        text: "🌐",
+        callback_data: JSON.stringify({e:"respToHTML",d:completionContent}),
+      };
+
       if(this.#completionCurrentVersionNumber>1){
         reply_markup = this.#replyMsg.generateVersionButtons(this.#completionCurrentVersionNumber,this.#completionCurrentVersionNumber,reply_markup)
       }
 
-      const downRow = [redaloudButtons,PDFButtons]
+      const downRow = [redaloudButtons,HTMLButtons,PDFButtons]
 
       if(this.#completionCurrentVersionNumber<10){
         downRow.unshift(regenerateButtons)

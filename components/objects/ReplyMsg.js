@@ -369,17 +369,17 @@ async sendDocumentByUrl(url) {
   await this.#botInstance.sendDocument(this.#chatId, url);
 }
 
-async sendDocumentAsBinary(fileBuffer,filename,mimetype) {
+async sendDocumentAsBinary(fileBuffer,filename,mimetype,options = {}){ 
   try{
 
-    let options = {};
+    const fileOptions ={}
     if(filename){
-      options.filename = filename;
+      fileOptions.filename = filename;
     }
     if(mimetype){
-      options.contentType = mimetype;
+      fileOptions.contentType = mimetype;
     }
-    await this.#botInstance.sendDocument(this.#chatId, fileBuffer, {}, options);
+    await this.#botInstance.sendDocument(this.#chatId, fileBuffer, options, fileOptions);
     
 } catch(err){ 
     err.code = "ETELEGRAM";
@@ -410,14 +410,18 @@ async sendChoosenVersion(text,version,versionsCount){
         callback_data: JSON.stringify({e:"respToPDF",d:completionContent}),
       };
 
-  const downRow = [redaloudButtons,PDFButtons]
+      const HTMLButtons = {
+        text: "🌐",
+        callback_data: JSON.stringify({e:"respToHTML",d:completionContent}),
+      };
+
+  const downRow = [redaloudButtons,HTMLButtons,PDFButtons,]
 
   if(versionsCount<10){
     downRow.unshift(this.#completionRegenerateButtons)
   }
 
   buttons.inline_keyboard.push(downRow)
-
   return await this.deliverNewCompletionVersion(text,buttons,"HTML")
 }
 
@@ -504,7 +508,7 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
     }
 
     const sendOptions = repairedText.map((text, index) => {
-      const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text);
+      const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text,this.#user.language_code);
       const isLastChunk = index === repairedText.length - 1;
       return [conversionResult.html,isLastChunk ? reply_markup : null,parse_mode,null];
     });

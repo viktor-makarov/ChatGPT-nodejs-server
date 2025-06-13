@@ -6,6 +6,7 @@ const telegramErrorHandler = require("../telegramErrorHandler.js");
 const toolsCollection = require("./toolsCollection.js");
 const awsApi = require("../AWS_API.js")
 const PIAPI = require("../apis/piapi.js");
+const ExRateAPI = require("../apis/exchangerate_API.js");
 const elevenLabsApi = require("../apis/elevenlabs_API.js");
 
 class FunctionCall{
@@ -349,7 +350,8 @@ async selectAndExecuteFunction() {
         "get_users_activity": () => this.get_data_from_mongoDB_by_pipepine("tokens_logs"),
         "run_javasctipt_code": () => this.runJavascriptCode(),
         "run_python_code": () => this.runPythonCode(),
-        "text_to_speech": () => this.textToSpeech()
+        "text_to_speech": () => this.textToSpeech(),
+        "currency_converter": () => this.currencyConverter(),
     };
     
     const targetFunction = functionMap[this.#functionName];
@@ -539,7 +541,57 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             return {success:1,result:`The file ${filename} ({sizeString}) has been generated and successfully sent to the user.`}
 
         }
-        
+
+        async currencyConverter(){
+
+            this.validateRequiredFieldsFor_currencyConverter()
+            const {amount,from_currency,to_currency} = this.#argumentsJson
+
+            const {iso4217String,unixTimestamp} = func.firstMinuteOfToday()
+
+            const ex_rate_from_db = await mongo.getExchangeRateInternational(unixTimestamp)
+
+            let ex_rate = -1;
+            let converted_amount = -1;
+
+            if(ex_rate_from_db){
+                    ex_rate = ex_rate_from_db[to_currency] / ex_rate_from_db[from_currency]
+                    converted_amount = ex_rate * amount;
+                
+            } else {
+                const api_result = await ExRateAPI.get_rate("USD");
+                ex_rate = api_result[to_currency] / api_result[from_currency]
+                converted_amount = ex_rate * amount;
+                mongo.saveExchangeRateInternational(api_result) //intentionally async
+            }
+
+            return {success:1,result:{number:converted_amount,ex_rate:Math.round(ex_rate * 100) / 100,timestamp:iso4217String},instructions:"Provide the user with the specific date and time when the exchange rate was applied, as well as the exact exchange rate value that was used for the calculation."}
+        }
+
+validateRequiredFieldsFor_currencyConverter(){
+
+const {amount,from_currency,to_currency} = this.#argumentsJson
+
+        let error = new Error();
+        error.assistant_instructions = "Fix the error and retry the function."
+
+        if(amount <= 0 ){
+            error.message = `'amount' parameter must be above zero. Provide the value for the argument.`
+            throw error
+        }
+
+        if(ExRateAPI.availableCurrencies.includes(from_currency) === false){
+            error.message = `'from_currency' parameter is not supported. Provide the value for the argument from the list of available currencies: ${ExRateAPI.availableCurrencies.join(", ")}`
+            throw error
+        }
+
+        if(ExRateAPI.availableCurrencies.includes(to_currency) === false){
+            error.message = `'to_currency' parameter is not supported. Provide the value for the argument from the list of available currencies: ${ExRateAPI.availableCurrencies.join(", ")}`
+            throw error
+        }
+}
+
+
 validateRequiredFieldsFor_createExcelFile(){
         const {data, filename} = this.#argumentsJson
 

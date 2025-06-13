@@ -435,6 +435,21 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
+  } else if (callback_event === "respToHTML"){
+
+    const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
+    const {text} = await otherFunctions.decodeJson(callback_data_input)
+   
+    const filename = `file_${String(requestMsg.refMsgId)}.html`
+    const formatedHtml = await otherFunctions.markdownToHtmlPure(text,filename)
+    const filebuffer = otherFunctions.generateTextBuffer(formatedHtml)
+    const mimetype = "application/octet-stream"
+    const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
+    otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+    const caption = otherFunctions.getLocalizedPhrase("pdf_html_caption",requestMsg.user.language_code)
+    await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype,{caption})
+    await replyMsg.deleteMsgByID(msgSent.message_id)
+
   } else if (callback_event === "regenerate"){
 
     if(requestMsg.user.currentRegime != callback_data_input){

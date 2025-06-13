@@ -659,9 +659,11 @@ function findBrokenTags(text){
   }
 }
 
-function convertMarkdownToLimitedHtml(text){
+function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
 
   let convertedText = text
+
+      const referenceToPDF = getLocalizedPhrase("pdf_html_reference",user_language_code)
 
       // Sanitize remaining special HTML characters
       convertedText = convertedText.replace(/&(?![a-z]+;)/g, '&amp;');
@@ -673,23 +675,25 @@ function convertMarkdownToLimitedHtml(text){
           convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (_, formula) => {
             const index = Object.keys(formulasObj).length+1;
             formulasObj[index]= formula.trim();
-            return `<pre><code class="language-Simplified LaTeX - see PDF for better formating">${unicodeit.replace(formula.trim())}</code></pre>`;
+            return `<pre><code class="language-LaTeX - ${referenceToPDF}">${formula.trim()}</code></pre>`;
         });
 
         // Handle LaTeX inline formulas using \(...\)
         convertedText = convertedText.replace(/\\\((.*?)\\\)/g, (_, formula) => {
-            return `<code>${unicodeit.replace(formula.trim())}</code>`;
+            return `<code>${formula.trim()}</code>`;
         });
+
 
         convertedText = convertedText.replace(/(?:^|\s)\$\$(.*?)\$\$(?=\s|$)/gms, (_, formula) => {
             const index = Object.keys(formulasObj).length+1;
             formulasObj[index]= formula.trim();
-            return `<pre><code class="language-Simplified LaTeX - see PDF for better formating">${unicodeit.replace(formula.trim())}</code></pre>`;
+
+            return `<pre><code class="language-LaTeX - ${referenceToPDF}">${formula.trim()}</code></pre>`;
         });
 
         // Handle LaTeX inline formulas using $...$
         convertedText = convertedText.replace(/(?<=^|\s)\$([^$]*?)\$(?=\s|$|[,.;:])/g, (_, formula) => {
-            return `<code>${unicodeit.replace(formula.trim())}</code>`;
+            return `<code>${formula.trim()}</code>`;
         });
 
       // Extract code blocks and replace them with placeholders/ We withdraw code blocks to awoid their altering by other replacements
@@ -705,7 +709,7 @@ function convertMarkdownToLimitedHtml(text){
 
       convertedText = convertedText.replace(/^[\s]*```([^\s]+)?\s+([\s\S]+?)^[\s]*```/gm, (_, language, code) => {
         const index = Object.keys(codeObj).length;
-        codeObj[index] = `<pre><code class="language-${language}">${code}</code></pre>`;
+        codeObj[index] = `<pre><code class="language-${language === "mermaid" ? `${language} - ${referenceToPDF}` : language }">${code}</code></pre>`;
         return `${placeholder}${index}${placeholder}`;
     });
     
@@ -780,10 +784,24 @@ function wireHtml(text){
     return buffer;
   }
 
+
+
+  function firstMinuteOfToday(){
+
+    const now = new Date();
+    const firstMinuteOfTodayUTC = new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate(),0, 0, 1, 0));
+    const iso4217String = firstMinuteOfTodayUTC.toISOString(); 
+    const unixTimestamp = Math.floor(firstMinuteOfTodayUTC.getTime() / 1000);
+
+    return {iso4217String,unixTimestamp}
+    
+  }
+
   async function htmlToPdfBuffer(htmlString, pdfOptions = {}) {
 
     const page = await global.chromeBrowserHeadless.newPage();
-
+    try {
+    
       await page.setContent(htmlString, {
         waitUntil: 'networkidle0',
     });
@@ -797,8 +815,10 @@ function wireHtml(text){
     });
 
     return Buffer.from(buffer);
+  } finally {
+    page.close();
+  }
 }
-
 
   function checkFileSizeToTgmLimit(fileSizeBites,fileLimitBites){
 
@@ -1615,7 +1635,6 @@ function markdownToHtml(markdownText,filename) {
   const htmlBody = converter.makeHtml(textWithSecuredLatex);
   const restoredLatex = restoredLatexBlocks(htmlBody);
 
-
   const cssContent = `
           <style>
           /* Highlight.js styles */
@@ -1652,6 +1671,38 @@ function markdownToHtml(markdownText,filename) {
           ${restoredLatex}
           </body>
       </html>`
+}
+
+
+async function markdownToHtmlPure(markdownText, filename) {
+  // Generate the HTML with scripts first
+  const htmlWithScripts = markdownToHtml(markdownText, filename);
+  
+  // Use your existing headless browser to render it
+  const page = await global.chromeBrowserHeadless.newPage();
+  
+  try {
+    // Set content and wait for all scripts to execute
+    await page.setContent(htmlWithScripts, {
+      waitUntil: 'networkidle0', // Wait until no network requests for 500ms
+      timeout: 30000 // 30 second timeout
+    });
+   
+    
+    // Get the final HTML content
+    const finalHtml = await page.content();
+
+    // Remove script tags from the final HTML
+    const cleanHtml = finalHtml
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/MathJax\s*=\s*{[^}]*};?/gi, '');
+    
+    return cleanHtml;
+    
+  } finally {
+
+    page.close();
+  }
 }
 
 function extractBodyContent(htmlString) {
@@ -1862,5 +1913,7 @@ module.exports = {
   cutTextToLimit,
   markdownToHtml,
   arrayToObjectByKey,
-  handleTextLengthForTextToVoice
+  handleTextLengthForTextToVoice,
+  markdownToHtmlPure,
+  firstMinuteOfToday
 };
