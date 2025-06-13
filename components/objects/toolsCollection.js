@@ -2,6 +2,7 @@
 const mongo = require("../mongo.js");
 const scheemas = require("../mongo_Schemas.js");
 const ExRateAPI = require("../apis/exchangerate_API.js");
+const cbrAPI = require("../apis/cbr_API.js");
 
 const list = [
     {
@@ -380,7 +381,7 @@ const list = [
         type:"function",
         function:{
             name: "run_python_code",
-            description: "You can use this function to execute a python code. Use this every time you need to do calculations to ensure their accuraсy.",
+            description: "Use this function for any calculations (e.g., currency conversion, financial computations, table processing) to ensure accuracy. Always execute Python code for numerical results instead of computing directly in your reply.",
             parameters: {
                 type: "object",
                 properties: {
@@ -390,7 +391,7 @@ const list = [
                         },
                     python_code: {
                         type: "string",
-                        description: "Text of python code. In the code you must print the results to the console. Use syntax compatible with python 3.12. But you can use oly the following additional modules pandas, openpyxl, regex, PyPDF2 and python-docx."
+                        description: "Text of python code. In the code you must print ONLY the final result to the console. Use syntax compatible with Python 3.12. You may use: pandas, openpyxl, regex, PyPDF2, python-docx. Always perform currency or numeric calculations within the code."
                     }
                 },
                 required: ["python_code","function_description"]
@@ -760,7 +761,7 @@ const list = [
         try_limit:3,
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
-        availableForToolCalls: true,
+        availableForToolCalls: false,
         depricated:false,
         queue_name:"test"
     },
@@ -768,7 +769,7 @@ const list = [
         type:"function",
         function:{
             name: "currency_converter",
-            description: "Converts currencies using up-to-date official exchange rates. Always returns a JSON object with two fields: amount (number, rounded to two decimal places), ex_rate (number, rounded to two decimal places) and timestamp (ISO 8601 date and time when the rate was current).",
+            description: "Converts currencies using current exchange rates. Must be used for current date. Prohibited to use for dates in the past. Always returns a JSON object with two fields: amount (number, rounded to two decimal places), ex_rate (number, rounded to four decimal places) and timestamp (ISO 8601 date and time when the rate was current).",
             strict: true,
             parameters: {
                 type: "object",
@@ -803,6 +804,61 @@ const list = [
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
         depricated:false
+    },
+    {
+        type:"function",
+        function:{
+            name: "get_currency_rates",
+            description: "Produces currency historical exchange rates for given dates. Must be used only for dates in the past. Avoid using for the current date.",
+            strict: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                    },
+                    exchange_rates: {
+                        type: "array",
+                        description: "Array of queries for exchange rates, each specifying a date and currency pair.",
+                        items: {
+                                type: "object",
+                                properties: {
+                                    date: {
+                                        type: "string",
+                                        description: "Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date and must be in the past.",
+                                    },
+                                    from_currency: {
+                                        type: "string",
+                                        enum:cbrAPI.availableCurrencies,
+                                        description: "Currency code to convert from."
+                                    },
+                                    to_currency: {
+                                        type: "string",
+                                        enum:cbrAPI.availableCurrencies,
+                                        description: "Currency code to convert to."
+                                    }
+                                },
+                                required: ["date","from_currency","to_currency"],
+                                additionalProperties: false
+                        }
+                    }
+                },
+                required: ["function_description","exchange_rates"],
+                additionalProperties: false
+            }
+        },
+        friendly_name:"Конвертер курсов",
+        timeout_ms:15000,
+        try_limit:30,
+        availableInRegimes: ["chat"],
+        availableForGroups: ["admin","basic"],
+        availableForToolCalls: true,
+        depricated:false,
+        addProperties: async function(){
+            const currentDate = new Date().toISOString().split("T")[0]; // Get current date in YYYY-MM-DD format
+            this.function.parameters.properties.exchange_rates.items.properties.date.description = `Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date ${currentDate} and must be in the past.`
+        }
     }
 ]
 

@@ -8,6 +8,7 @@ const awsApi = require("../AWS_API.js")
 const PIAPI = require("../apis/piapi.js");
 const ExRateAPI = require("../apis/exchangerate_API.js");
 const elevenLabsApi = require("../apis/elevenlabs_API.js");
+const cbrAPI = require("../apis/cbr_API.js");
 
 class FunctionCall{
     #replyMsg;
@@ -352,6 +353,7 @@ async selectAndExecuteFunction() {
         "run_python_code": () => this.runPythonCode(),
         "text_to_speech": () => this.textToSpeech(),
         "currency_converter": () => this.currencyConverter(),
+        "get_currency_rates": () => this.getCurrencyRates(),
     };
     
     const targetFunction = functionMap[this.#functionName];
@@ -542,6 +544,28 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
         }
 
+
+        async getCurrencyRates(){
+
+            this.validateRequiredFieldsFor_getCurrencyRates()
+            const {exchange_rates} = this.#argumentsJson
+            const queryPromises = exchange_rates.map(query => this.handleExcengerateQuery(query))
+            const promiseResult = await Promise.all(queryPromises)
+            
+            return {success:1, result: promiseResult}
+        }
+
+        async handleExcengerateQuery(query_params){
+
+            const {date,from_currency,to_currency} = query_params;
+            const api_result_xml = await cbrAPI.get_rate_by_date(date);
+            const api_result_json = await cbrAPI.convertCbrXmlToJson(api_result_xml);
+
+            const ex_rate = api_result_json[from_currency] / api_result_json[to_currency];
+            return {date,from_currency,to_currency,ex_rate:Math.round(ex_rate * 10000) / 10000};
+        }
+
+
         async currencyConverter(){
 
             this.validateRequiredFieldsFor_currencyConverter()
@@ -557,7 +581,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             if(ex_rate_from_db){
                     ex_rate = ex_rate_from_db[to_currency] / ex_rate_from_db[from_currency]
                     converted_amount = ex_rate * amount;
-                
+
             } else {
                 const api_result = await ExRateAPI.get_rate("USD");
                 ex_rate = api_result[to_currency] / api_result[from_currency]
@@ -565,7 +589,7 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 mongo.saveExchangeRateInternational(api_result) //intentionally async
             }
 
-            return {success:1,result:{number:converted_amount,ex_rate:Math.round(ex_rate * 100) / 100,timestamp:iso4217String},instructions:"Provide the user with the specific date and time when the exchange rate was applied, as well as the exact exchange rate value that was used for the calculation."}
+            return {success:1,result:{number:converted_amount,ex_rate:Math.round(ex_rate * 10000) / 10000,timestamp:iso4217String},instructions:"Provide the user with the specific date and time when the exchange rate was applied, as well as the exact exchange rate value that was used for the calculation."}
         }
 
 validateRequiredFieldsFor_currencyConverter(){
@@ -591,6 +615,46 @@ const {amount,from_currency,to_currency} = this.#argumentsJson
         }
 }
 
+
+validateRequiredFieldsFor_getCurrencyRates(){
+
+    const {exchange_rates} = this.#argumentsJson
+
+    let error = new Error();
+    error.assistant_instructions = "Fix the error and retry the function."
+
+    if(!exchange_rates || !Array.isArray(exchange_rates) || exchange_rates.length === 0){
+        error.message = `'exchange_rates' parameter is missing or not an array.`
+        throw error
+    }
+
+    for(let i = 0; i < exchange_rates.length; i++){
+            const {date,from_currency,to_currency} = exchange_rates[i]
+            
+        if(!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)){
+            error.message = `'date' parameter for index ${i} must be in YYYY-MM-DD format.`
+            throw error
+        }
+
+        const currentDate = new Date();
+        const inputDate = new Date(date);
+
+        if (inputDate >= currentDate) {
+            error.message = `'date' parameter for index ${i} must be before the current date.`;
+            throw error;
+        }
+
+        if(cbrAPI.availableCurrencies.includes(from_currency) === false){
+            error.message = `'from_currency' parameter for index ${i} is not supported. Provide the value for the argument from the list of available currencies: ${ExRateAPI.availableCurrencies.join(", ")}`
+            throw error
+        }
+
+        if(cbrAPI.availableCurrencies.includes(to_currency) === false){
+            error.message = `'to_currency' parameter for index ${i} is not supported. Provide the value for the argument from the list of available currencies: ${ExRateAPI.availableCurrencies.join(", ")}`
+            throw error
+        }
+    }
+}
 
 validateRequiredFieldsFor_createExcelFile(){
         const {data, filename} = this.#argumentsJson

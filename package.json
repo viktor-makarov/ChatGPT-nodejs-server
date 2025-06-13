@@ -34,7 +34,8 @@
     "showdown": "^1.9.1",
     "showdown-highlight": "^3.1.0",
     "svgson": "^5.3.1",
-    "unicodeit": "^0.7.5"
+    "unicodeit": "^0.7.5",
+    "xml2js": "^0.6.2"
   },
   "main": "server.js",
   "scripts": {

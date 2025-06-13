@@ -301,6 +301,8 @@ class Dialogue extends EventEmitter {
 
         const currentRole = "user"
 
+        const datetimeStr = new Date().toISOString();
+
         let promptObj = {
             sourceid: requestInstance.msgId,
             createdAtSourceTS: requestInstance.msgTS,
@@ -312,7 +314,7 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 1,
-            content: [{type:"text",text:text}]
+            content: [{type:"text",text:text + `\n\n${datetimeStr}`}]
           }
                 
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
@@ -338,7 +340,7 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 0,
-            content: text
+            content: text + `\n\n${datetime.toISOString()}`
           }
 
         const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу

@@ -30,7 +30,7 @@ async function get_rate(baseCurrency="USD", timeout = 10000) {
         timeout:timeout,
         url: `https://v6.exchangerate-api.com/v6/${process.env.ExRate_API_TOKEN}/latest/${baseCurrency}`,
         headers: {
-                "Content-Type": "application"
+                "Content-Type": "application/json"
             }
     }
 
