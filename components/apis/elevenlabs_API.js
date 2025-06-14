@@ -1,5 +1,6 @@
 const { ElevenLabsClient } = require("@elevenlabs/elevenlabs-js");
 const axios = require("axios");
+const FormData = require("form-data");
 
  const elevenLabsClient = new ElevenLabsClient({
         apiKey: process.env.ELEVENLABS_API_TOKEN
@@ -23,6 +24,32 @@ const options = {
     }
     const result = await axios.get(`https://api.elevenlabs.io/v2/voices`, options)
     return result.data.voices;
+}
+
+
+async function speechToText(audioReadStream){
+
+    const formData = new FormData();
+    formData.append("file", audioReadStream);
+    formData.append("model_id", appsettings.voice_to_text.eleven_labs_model_id);
+    formData.append("diarize", "true");
+    
+    const headers = {
+      "xi-api-key": process.env.ELEVENLABS_API_TOKEN,
+      ...formData.getHeaders(),
+    };
+
+  const result =await axios.post(
+          "https://api.elevenlabs.io/v1/speech-to-text",
+          formData,
+          {
+            headers,
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+          }
+        )
+
+      return result.data
 }
 
 async function textToVoiceStream(text,voiceName){
@@ -53,5 +80,6 @@ async function textToVoiceStream(text,voiceName){
 module.exports = {
 getAvailableModels,
 getAvailableVoices,
-textToVoiceStream
+textToVoiceStream,
+speechToText
 }

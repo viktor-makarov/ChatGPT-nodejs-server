@@ -14,7 +14,6 @@ const MdjClient = require("../midjourneyClient.js").mdjClient;
         return msg
 };
 
-
 async function generateHandler(prompt){
 
     let mdjMsg;

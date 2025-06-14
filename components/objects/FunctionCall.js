@@ -339,6 +339,7 @@ async selectAndExecuteFunction() {
         "imagine_midjourney": () => this.ImagineMdjRouter(),
         "custom_midjourney": () => this.CustomQueryMdjRouter(),
         "extract_text_from_file": () => this.extract_text_from_file_router(),
+        "speech_to_text": () => this.speechToText(),
         "fetch_url_content": () => this.fetchUrlContentRouter(),
         "create_pdf_file": () => this.createPDFFile(),
         "create_excel_file": () => this.createExcelFile(),
@@ -445,7 +446,7 @@ async get_user_guide(){
 
         const url = appsettings.other_options.pdf_guide_url
 
-        const extractedObject = await func.extractTextFromFile(url,"application/pdf")
+        const extractedObject = await func.extractTextFromFile(url,"application/pdf",this.#user)
         if(extractedObject.success===1){
             return {success:1,resource_url:url,text:extractedObject.text}
         } else {
@@ -816,7 +817,7 @@ validateRequiredFieldsFor_createExcelFile(){
             
         }
 
-        const filebuffer = await func.htmlToPdfBuffer(formatedHtml)
+        const filebuffer = await func.htmlToPdfBuffer(formatedHtml,this.#timeout_ms)
         const mimetype = "application/pdf"
         
         const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
@@ -967,9 +968,9 @@ validateRequiredFieldsFor_createExcelFile(){
         };
 
 
-    async extractTextFromFileWraper(resource_url,resource_mine_type,index){
+    async extractTextFromFileWraper(resource_url,resource_mine_type,sizeBytes,index){
             try{
-                const extractedObject = await func.extractTextFromFile(resource_url,resource_mine_type)
+                const extractedObject = await func.extractTextFromFile(resource_url,resource_mine_type,sizeBytes,this.#user)
                 return {...extractedObject,index,resource_url,resource_mine_type}
                 
             } catch(err){
@@ -990,6 +991,79 @@ validateRequiredFieldsFor_createExcelFile(){
         return stringSplit
     }
 
+    async speechToTextWraper(userInstance,resource_url,resource_mine_type,duration,sizeBytes,index){
+
+            try{
+                const extractedObject = await func.transcribeAudioFile(userInstance,resource_url,resource_mine_type,duration,sizeBytes)
+                return {...extractedObject,index,resource_url,resource_mine_type}
+                
+            } catch(err){
+                return {success:0,index,resource_url,resource_mine_type, error:`${err.message}\n ${err.stack}`}
+            }
+    }
+
+    async speechToText(){
+
+        try {
+        this.validateRequiredFieldsFor_speechToText()
+
+        const sourceid_list_array = this.#argumentsJson.resources
+        const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
+        resources.sort((a, b) => {
+            return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
+        });
+
+        if(resources.length===0){
+            return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
+        }
+
+        const extractFunctions = resources.map((resource,index) => this.speechToTextWraper(this.#user,resource.fileUrl,resource.fileMimeType,resource.fileDurationSeconds,resource.fileSizeBytes,index))
+        
+        let results = await Promise.all(extractFunctions)
+        
+        if(this.#isCanceled){return}
+
+        results.sort((a, b) => a.index - b.index);
+
+        const firstFailedResult = results.findIndex(result => result.success === 0);
+        if(firstFailedResult != -1){
+            return {success:0,resource_index:firstFailedResult,resource_url:results.at(firstFailedResult).resource_url,resource_mine_type:results.at(firstFailedResult).resource_mine_type,error: results.at(firstFailedResult).error,instructions:"Fix the error in the respective resource and re-call the entire function."}
+        }
+
+        const concatenatedText = results.map(obj => obj.text).join(' ');      
+
+        const fullContent = {
+            reff:Date.now(), //Used as unique numeric identifier for the extracted content
+            fileids: this.#argumentsJson.resources,
+            fileNames: resources.map(obj => obj.fileName),
+            results
+        }
+
+        const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
+        console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
+
+        if(numberOfTokens > this.#tokensLimitPerCall){
+            return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, 
+            error: `The volume of the file content (${numberOfTokens} tokens) exceeds the token limit (${this.#tokensLimitPerCall} tokens) and cannot be included in the dialogue.`, 
+            instructions:`Inform the user that content size exceeds the dialog limits and therefore cannot be included in the dialogue.`}
+        }
+
+        return {
+            success:1,
+            content_reff:fullContent.reff,
+            text:concatenatedText,
+            supportive_data:{
+                fullContent
+            },
+            instructions:`Inform the user that: the text has been extracted successfully.`
+        }
+
+        } catch(err){
+                err.place_in_code = err.place_in_code || "speechToText";
+                throw err;
+            }
+    }
+
     async extract_text_from_file_router(){
 
             try{
@@ -1006,7 +1080,7 @@ validateRequiredFieldsFor_createExcelFile(){
                     return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
                 }
 
-                const extractFunctions = resources.map((resource,index) => this.extractTextFromFileWraper(resource.fileUrl,resource.fileMimeType,index))
+                const extractFunctions = resources.map((resource,index) => this.extractTextFromFileWraper(resource.fileUrl,resource.fileMimeType,resource.fileSizeBytes,index))
                 
                 let results = await Promise.all(extractFunctions)
                 
@@ -1047,7 +1121,6 @@ validateRequiredFieldsFor_createExcelFile(){
                 return {
                     success:1,
                     content_reff:fullContent.reff,
-                    constent_reff:fullContent.reff,
                     text:concatenatedText,
                     metadata: metadataText,
                     supportive_data:{
@@ -1213,6 +1286,14 @@ validateRequiredFieldsFor_createExcelFile(){
             const btnsDescription = func.generateButtonDescription(labels,buttonsShownBefore)
             await this.#dialogue.metaSetMdjButtonsShown(labels)
 
+            mongo.insertCreditUsage({
+                    userInstance: this.#user,
+                    creditType: "midjourney",
+                    creditSubType: "create",
+                    usage: 1,
+                    details: {place_in_code:"CreateMdjImageRouter"}
+                })
+
             return {
                     success:1,
                     result:"The image has been generated and successfully sent to the user with several options to handle the image.",
@@ -1250,6 +1331,14 @@ validateRequiredFieldsFor_createExcelFile(){
                 const btnsDescription = func.generateButtonDescription(labels,buttonsShownBefore)
                 await this.#dialogue.metaSetMdjButtonsShown(labels)
 
+                mongo.insertCreditUsage({
+                    userInstance: this.#user,
+                    creditType: "midjourney",
+                    creditSubType: buttonPushed.task_type === "upscale" ? "upscale" : "create",
+                    usage: 1,
+                    details: {place_in_code:"CustomQueryMdjRouter"}
+                })
+
                 return {
                         success:1,
                         result:"The command was executed and sent to the user with several options to handle further.",
@@ -1284,6 +1373,14 @@ validateRequiredFieldsFor_createExcelFile(){
                 const labels = buttons.map(button => button.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
                 const btnsDescription = func.generateButtonDescription(labels,buttonsShownBefore)
+
+                mongo.insertCreditUsage({
+                    userInstance: this.#user,
+                    creditType: "midjourney",
+                    creditSubType: "create",
+                    usage: 1,
+                    details: {place_in_code:"ImagineMdjRouter"}
+                })
 
                 return {
                         success:1,
@@ -1548,6 +1645,31 @@ validateRequiredFieldsFor_createExcelFile(){
             error.message = `'content_reff' array is empty.`
             throw error;
         }
+    }
+
+
+    validateRequiredFieldsFor_speechToText(){
+
+        const resources = this.#argumentsJson.resources
+
+        let error = new Error();
+        error.assistant_instructions = "Fix the error and retry the function."
+
+        if(!resources){
+            error.message = `'resources' parameter is missing.`
+            throw error;
+        }
+
+        if(!Array.isArray(resources)){
+            error.message = `'resources' parameter is not an array.`
+            throw error;
+        }
+
+        if(resources.length === 0){
+            error.message = `'resources' array is empty.`
+            throw error;
+        }
+
     }
 
     validateRequiredFieldsFor_extractTextFromFile(){

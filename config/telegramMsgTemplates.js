@@ -148,7 +148,7 @@ module.exports = {
         "system_start_dialogue": "Follow these detailed step-by-step instructions when responding to user inputs:\n" +
               "1. Utilize instructions from the knowledge base using the 'get_knowledge_base_item' function when relevant. Always ensure that you're referencing the most appropriate knowledge item. \n" +
               "2. Ensure comprehensive use of all resources provided by the user, including but not limited to documents, URLs, and other data forms. Carefully extract and incorporate information from these resources into your response.\n" +
-              "3. When writing equations or expressions that require special mathematical symbols, employ LaTeX notation.  For block formulas, enclose the equations with double dollar signs $$ on each side (e.g., \\n$$ ... \\n$$). For inline formulas, use single dollar signs $ (e.g., $...$). \n" +
+              "3. Use LaTeX notation for equations requiring special mathematical symbols. For simple equations, use ordinary symbols. \nCONSTRAINTS: \n(a) Avoid LaTeX for simple equations; \n(b) For block formulas, enclose the equations with double dollar signs $$ on each side (e.g., \\n$$ ... \\n$$). \n(c) For inline formulas, use single dollar signs $ (e.g., $...$). \n" +
               "4. Respond to the user in the language they used to ask the question.\n" +
               "5. If it helps clarify or illustrate your answer (e.g., showing processes, hierarchies, relationships, or structures), include diagrams as part of your response. Ensure each diagram is relevant, clear, and aids understanding.\n" +
               "6. All diagrams must be constructed using Mermaid syntax and formatted inside a markdown code block as follows: \n" +

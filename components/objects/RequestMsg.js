@@ -38,10 +38,9 @@ class RequestMsg{
 #fileExtention;
 #fileMimeType;
 #fileId;
+#duration_seconds;
 #fileUniqueId;
 #fileSize;
-#voiceToTextFoleSizeLimit = modelSettings.voicetotext.filesize_limit_mb * 1024 * 1024;
-#voiceToTextAllowedMimeTypes = modelSettings.voicetotext.mime_types;
 #fileLink;
 
 #msgIdsForDbCompletion =[];
@@ -51,6 +50,7 @@ constructor(obj) {
  
     this.#user = obj.userInstance
     this.#botInstance = obj.botInstance
+
     if(obj.requestMsg.data){
 
         this.#callbackId = obj.requestMsg.id;
@@ -109,31 +109,53 @@ constructor(obj) {
         } else if(obj.requestMsg.audio){ 
             this.#inputType = "file"
             this.#fileType = "audio"
+            this.#duration_seconds = obj.requestMsg?.audio?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileMimeType = obj.requestMsg.audio.mime_type
             this.#fileId = obj.requestMsg.audio.file_id
             this.#fileUniqueId = obj.requestMsg.audio.file_unique_id
             this.#fileSize = obj.requestMsg.audio.file_size
+            this.#fileCaption = obj.requestMsg?.caption;
             
         } else if(obj.requestMsg.voice){ 
             this.#inputType = "file"
-            this.#fileType = "audio"
+            this.#fileType = "voice"
+            this.#duration_seconds = obj.requestMsg?.voice?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileMimeType = obj.requestMsg.voice.mime_type
             this.#fileId = obj.requestMsg.voice.file_id
             this.#fileUniqueId = obj.requestMsg.voice.file_unique_id
             this.#fileSize = obj.requestMsg.voice.file_size
+            this.#fileCaption = obj.requestMsg?.caption;
             
         } else if(obj.requestMsg.video_note){ 
             this.#inputType = "file"
             this.#fileType = "video_note"
+            this.#duration_seconds = obj.requestMsg?.video_note?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileMimeType = "video_note"
             this.#fileId = obj.requestMsg.video_note.file_id
             this.#fileUniqueId = obj.requestMsg.video_note.file_unique_id
             this.#fileSize = obj.requestMsg.video_note.file_size    
+            this.#fileCaption = obj.requestMsg?.caption;
+
+        } else if(obj.requestMsg.video){ 
+            this.#inputType = "file"
+            this.#fileType = "video"
+            this.#fileName = obj.requestMsg.video?.file_name
+            this.#duration_seconds = obj.requestMsg?.video?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
+            this.#fileMimeType = obj.requestMsg.video.mime_type
+            this.#fileId = obj.requestMsg.video.file_id
+            this.#fileUniqueId = obj.requestMsg.video.file_unique_id
+            this.#fileSize = obj.requestMsg.video.file_size    
+            this.#fileCaption = obj.requestMsg?.caption;
             
         } else if(obj.requestMsg.photo){
             
             this.#inputType = "file"
             this.#fileType = "image"
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             const photoParts = obj.requestMsg.photo
             const lastPart = photoParts.at(-1)
             this.#fileId = lastPart.file_id
@@ -146,7 +168,7 @@ constructor(obj) {
             
             this.#inputType = "file"
             this.#fileType = "document"
-
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileName = obj.requestMsg.document?.file_name
             this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
             this.#fileMimeType = obj.requestMsg.document?.mime_type
@@ -185,22 +207,7 @@ extractFileNameFromURL(fileLink){
     return parts[parts.length-1]
 }
 
-voiceToTextConstraintsCheck(){
 
-if(!this.#voiceToTextAllowedMimeTypes.includes(this.#fileMimeType)){
- return {success:0,response:{text:msqTemplates.audiofile_format_limit_error}}
-}
-
-if(this.#fileSize > this.#voiceToTextFoleSizeLimit){
-
-    return {success:0,response:{text:msqTemplates.audiofile_format_limit_error.replace(
-        "[size]",
-        modelSettings.voicetotext.filesize_limit_mb.toString()
-      )}}
-}
-
- return {success:1}
-}
 
 authenticateRequest(){
 
@@ -304,21 +311,6 @@ isAllowedFileType(){
     }
 }
 
-extentionNormaliser(filename,mimeType){
-
-    const mimeTypeArray = mimeType.split("/")
-    const mimeSybtype = mimeTypeArray.pop()
-    let fileNameArray = filename.split(".")
-    const fileExtention = fileNameArray.pop()
-    const fileBaseName =  fileNameArray.join(".")
-
-    if(mimeSybtype==="ogg"&&fileExtention==="oga"){
-        return fileBaseName+"."+mimeSybtype
-    } else {
-        return filename
-    }
-}
-
 async audioReadableStreamFromTelegram(){
     const response = await axios({
         url: this.#fileLink,
@@ -328,10 +320,11 @@ async audioReadableStreamFromTelegram(){
     const fileData = Buffer.from(response.data, "binary");  
     var audioReadStream = Readable.from(fileData);
     const fileLinkParts = this.#fileLink.split("/")
-    const fileName = this.extentionNormaliser(fileLinkParts[fileLinkParts.length-1],this.#fileMimeType)
+    const fileName = otherFunctions.extentionNormaliser(fileLinkParts[fileLinkParts.length-1],this.#fileMimeType)
     audioReadStream.path = fileName;
     return audioReadStream
 };
+
 
 print(){
     console.log(
@@ -372,6 +365,10 @@ get fileType(){
     return this.#fileType
 }
 
+get isForwarded(){
+    return this.#isForwarded
+}
+
 get uploadFileError(){
     return this.#uploadFileError
 }
@@ -404,6 +401,10 @@ get botInstance(){
 
 get user(){
     return this.#user;
+}
+
+get duration_seconds(){
+   return this.#duration_seconds
 }
 
 get msgIdsForDbCompletion() {

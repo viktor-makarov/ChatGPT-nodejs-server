@@ -314,7 +314,7 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 1,
-            content: [{type:"text",text:text + `\n\n${datetimeStr}`}]
+            content: [{type:"text",text:text + `\n\n${datetimeStr} (UTC)`}]
           }
                 
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
@@ -340,7 +340,7 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: currentRole,
             roleid: 0,
-            content: text + `\n\n${datetime.toISOString()}`
+            content: text + `\n\n${datetime.toISOString()} (UTC)`
           }
 
         const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
@@ -392,8 +392,6 @@ class Dialogue extends EventEmitter {
 
     };
 
-
-
     async commitImageToDialogue(url,base64,descriptionJson){
         
         const currentRole = "user"
@@ -437,6 +435,7 @@ class Dialogue extends EventEmitter {
             content: content
           }
 
+
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
 
         console.log("USER IMAGE")
@@ -466,6 +465,8 @@ class Dialogue extends EventEmitter {
             fileCaption:this.#requestMsg.fileCaption,
             fileExtention:this.#requestMsg.fileExtention,
             fileMimeType:this.#requestMsg.fileMimeType,
+            fileSizeBytes: this.#requestMsg.fileSize,
+            fileDurationSeconds: this.#requestMsg.duration_seconds,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
@@ -548,12 +549,29 @@ class Dialogue extends EventEmitter {
             
             this.metaUpdateTotalTokens(tokenUsage?.total_tokens)
 
-            await mongo.insertTokenUsage({
+            mongo.insertTokenUsage({
               userInstance:this.#user,
               prompt_tokens:tokenUsage.prompt_tokens,
               completion_tokens:tokenUsage.completion_tokens,
               model:completionObject.model
               })
+
+            mongo.insertCreditUsage({
+                userInstance: this.#user,
+                creditType: "text_tokens",
+                creditSubType: "prompt",
+                usage: tokenUsage.prompt_tokens,
+                details: {place_in_code:"finalizeTokenUsage"}
+            })
+
+            mongo.insertCreditUsage({
+                userInstance: this.#user,
+                creditType: "text_tokens",
+                creditSubType: "completion",
+                usage: tokenUsage.completion_tokens,
+                details: {place_in_code:"finalizeTokenUsage"}
+            })
+            
         }
         }
 

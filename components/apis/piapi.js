@@ -66,7 +66,6 @@ async generateImage(prompt,timeout = 180000) {
         throw error;
     }
 
-    console.log("Task completed:", taskResult.data.output.image_url);
     const imageBuffer = await otherFunctions.getImageByUrl(taskResult.data.output.image_url)
    
     return {

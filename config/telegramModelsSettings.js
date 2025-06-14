@@ -221,23 +221,6 @@ module.exports = {
         "url_path":'/v1/chat/completions',
         "default_dialogue_ttl_ms":3600000,
     },
-    "voicetotext":{
-        "header_msg":"Голос в текст",
-        "welcome_msg":"Преобразовывает аудио или видео запись в текст. Пришлите голосовое сообщение, видео заметку Телеграм или файл с любой другой записью следующего формата: mp3, mpeg, mpga, m4a, wav, or webm и размером не более [size] Mb.",
-        "name":"Голос в текст",
-        "hostname":`https://${process.env.OAI_URL}`,
-        "default_model":'whisper-1',
-        "url_path":'/v1/audio/transcriptions',
-        "response_format":"json",
-        "mime_types":['audio/ogg','audio/mpeg','audio/mpeg','audio/wav','video_note','audio/mp4'],
-        "filesize_limit_mb":25,
-        "options_desc":"У функции Голос в текст нет параметров",
-        "options":{
-            "back":{
-                "name":"<< Назад"
-            }
-        }
-    },
     "texttospeech":{
         "header_msg":"Текст в голос | [voice]",
         "welcome_msg":"Преобразовывает текст в аудио запись. Пришлите текст, который нужно преобразовать. Длина текста не должна превышать [limit] символов.",

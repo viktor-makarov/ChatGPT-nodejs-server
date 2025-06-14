@@ -10,7 +10,6 @@ const reg_log_collection = global.mongoConnection.model(global.appsettings.mongo
 const token_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_tokens_log,scheemas.TokensLogSheema);
 const function_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_functions_log,scheemas.FunctionUsageLogSheema);
 const feature_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_feature_log,scheemas.FeatureUsageLogSheema);
-const callback_usage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_callback_log,scheemas.CallbackUsageLogSheema);
 const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
 const dialog_meta_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_dialogue_meta,scheemas.DialogMetaSheema);
 const function_queue_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_function_queue,scheemas.FunctionQueueSheema);
@@ -57,31 +56,6 @@ async function saveExchangeRateInternational(object){
   }
 }
 
-async function upsertCallbackUsage(requestMsgInstance,duration,success=-1, error){
-
-  try {
-    return await callback_usage_collection.updateOne(
-      { message_id: requestMsgInstance.callbackId},
-      {
-        message_id: requestMsgInstance.callbackId,
-        callback_event:requestMsgInstance.callback_event,
-        callback_data:requestMsgInstance.callback_data,
-        callback_error:error,
-        datetimeUTC: new Date(),
-        userid: requestMsgInstance.user.userid,
-        userFirstName: requestMsgInstance.user.user_first_name,
-        userLastName: requestMsgInstance.user.user_last_name,
-        username: requestMsgInstance.user.user_username,
-        duration: duration,
-        success: success
-      },
-      { upsert: true }
-    );
-  } catch (err) {
-    err.code = "MONGO_ERR";
-    throw err;
-  }
-}
 
 
 async function getFunctionQueueByName(queue_name){
@@ -561,7 +535,7 @@ async function getUploadedFilesBySourceId(sourceid_list){
     
     return await dialog_collection.find(
       filter
-      ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,fileName:1,_id:0}
+      ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,fileName:1,fileSizeBytes:1,fileDurationSeconds:1,_id:0}
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
@@ -571,7 +545,6 @@ async function getUploadedFilesBySourceId(sourceid_list){
 
 async function upsertPrompt(promptObj){
   try {
-
     return await dialog_collection.updateOne(
       { sourceid: promptObj.sourceid, role: promptObj.role },
       promptObj,
@@ -1627,7 +1600,6 @@ module.exports = {
   getFunctionQueueByName,
   addFunctionToQueue,
   removeFunctionFromQueue,
-  upsertCallbackUsage,
   getExtractedTextByReff,
   registerBotUser,
   insertFeatureUsage,

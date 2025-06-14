@@ -24,27 +24,25 @@ async function getModels() {
     const models = await axios(options)
     
     return models.data
- 
 };
 
-async function VoiceToText(requestMsgInstance) {
+async function VoiceToText(audioReadStream,openAIToken,userInstance) {
   try {
 
-    await requestMsgInstance.getFileLinkFromTgm()
-    const audioReadStream = await requestMsgInstance.audioReadableStreamFromTelegram()
+    
     const formData = new FormData();
     formData.append("file", audioReadStream);
-    formData.append("model", modelSettings.voicetotext.default_model);
+    formData.append("model", appsettings.voice_to_text.oai_model_id);
 
     const headers = {
-      Authorization: `Bearer ${requestMsgInstance.user.openAIToken}`,
-      "Content-Type": "multipart/form-data",
+      Authorization: `Bearer ${openAIToken}`,
       ...formData.getHeaders(),
     };
+
     var openai_resp;
     try {
       openai_resp = await axios.post(
-        modelSettings.voicetotext.hostname + modelSettings.voicetotext.url_path,
+        `https://${process.env.OAI_URL}/v1/audio/transcriptions`,
         formData,
         {
           headers,
@@ -69,10 +67,10 @@ async function VoiceToText(requestMsgInstance) {
     }
 
     await mongo.insertTokenUsage({
-      userInstance:requestMsgInstance.user,
+      userInstance:userInstance,
       prompt_tokens:null,
       completion_tokens:null,
-      mode:modelSettings.voicetotext.default_model
+      mode:appsettings.voice_to_text.oai_model_id
     });
     return transcript;
   } catch (err) {

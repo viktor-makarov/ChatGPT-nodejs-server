@@ -9,7 +9,7 @@ const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const awsApi = require("./AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
 const toolsCollection  = require("./objects/toolsCollection.js");
-const { usage } = require("@elevenlabs/elevenlabs-js/api/index.js");
+const telegramErrorHandler = require("./telegramErrorHandler.js");
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -27,6 +27,8 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   let responses = [];
   
   const current_regime = requestMsgInstance.user.currentRegime
+  const userInstance = requestMsgInstance.user;
+  const fileCaption =  requestMsgInstance.fileCaption
 
   mongo.insertFeatureUsage({
     userInstance: requestMsgInstance.user,
@@ -35,132 +37,158 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     featureType: "fileUploaded"
   })
 
-  if(current_regime === "voicetotext"){
-        if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
-          const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
-          if(checkResult.success===0){
-            responses.push(checkResult.response)
-            return
-          }
-          const result = await replyMsgInstance.sendAudioListenMsg()
-          const transcript = await openAIApi.VoiceToText(requestMsgInstance)
-          replyMsgInstance.text = transcript;
-          await replyMsgInstance.simpleMessageUpdate(transcript,
-            {
-            chat_id:replyMsgInstance.chatId,
-            message_id:result.message_id
+
+ if (["chat","translator","texteditor"].includes(current_regime) === false){
+    responses.push({text:msqTemplates.file_handler_wrong_regime})
+    return responses;
+ }
+
+
+  if(current_regime==="translator" || current_regime === "texteditor"){
+        await resetNonDialogueHandler(requestMsgInstance)
+        const devPrompt = otherFunctions.getLocalizedPhrase(`${current_regime}_prompt`,requestMsgInstance.user.language_code)
+        await dialogueInstance.commitDevPromptToDialogue(devPrompt)
+  }
+
+  await requestMsgInstance.getFileLinkFromTgm()
+
+  if (requestMsgInstance.fileType === "voice" && !requestMsgInstance.isForwarded){
+      const waitMsgResult = await replyMsgInstance.sendAudioListenMsg()
+      const audioReadStream = await requestMsgInstance.audioReadableStreamFromTelegram()
+
+      let transcript;
+      try {
+          const api_result = await elevenLabsApi.speechToText(audioReadStream)
+          const {text} = api_result
+          transcript = text;
+          mongo.insertCreditUsage({
+            userInstance: requestMsgInstance.user,
+            creditType: "speech_to_text",
+            creditSubType: "elevenlabs",
+            usage:requestMsgInstance.duration_seconds || 0,
+            details: {place_in_code:"fileRouter"}
           })
-        } else {
-          responses.push({text:msqTemplates.file_type_cannot_be_converted_to_text})
-        }
-    }  else if (current_regime === "chat" || current_regime === "translator" || current_regime === "texteditor"){
-      
 
-      if(current_regime==="translator"){
-        await resetTranslatorDialogHandler(requestMsgInstance)
-        const devPrompt = otherFunctions.getLocalizedPhrase("translator_prompt",requestMsgInstance.user.language_code)
-        await dialogueInstance.commitDevPromptToDialogue(devPrompt)
-      } else if (current_regime === "texteditor"){
-        await resetTexteditorDialogHandler(requestMsgInstance)
-        const devPrompt = otherFunctions.getLocalizedPhrase("texteditor_prompt",requestMsgInstance.user.language_code)
-        await dialogueInstance.commitDevPromptToDialogue(devPrompt)
-      }
-
-      if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
-        const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
+      } catch(err){
+        err.mongodblog = err.mongodblog || true
+        err.sendToUser=false
+        err.adminlog=false
+        err.code=="ELEVENLABS_ERR"
+        telegramErrorHandler.main(
+        {
+          replyMsgInstance:replyMsgInstance,
+          error_object:err
+        })
+        const checkResult = otherFunctions.voiceToTextConstraintsCheck(requestMsgInstance.fileMimeType,requestMsgInstance.fileSize)
         if(checkResult.success===0){
           responses.push(checkResult.responce)
           return responses;
+        }
+        transcript = await openAIApi.VoiceToText(audioReadStream,userInstance.openAIToken,userInstance)
       }
-        const result = await replyMsgInstance.sendAudioListenMsg()
-        const transcript = await openAIApi.VoiceToText(requestMsgInstance)
-        replyMsgInstance.text = transcript;
-        await replyMsgInstance.simpleMessageUpdate(transcript,
-          {
-          chat_id:replyMsgInstance.chatId,
-          message_id:result.message_id
-        })
-        await dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
-        dialogueInstance.emit('callCompletion')
 
-      } else if(requestMsgInstance.fileType === "document"){
+      replyMsgInstance.text = transcript;
+      const parallelTasks = [
+        replyMsgInstance.simpleMessageUpdate(transcript,
+          {chat_id:replyMsgInstance.chatId,
+            message_id:waitMsgResult.message_id
+          }),
+        dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
+      ]
+      await Promise.all(parallelTasks)
+
+      dialogueInstance.emit('callCompletion')
+
+  } else if(requestMsgInstance.fileType === "voice" || requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note" || requestMsgInstance.fileType === "video"){
+    
+    const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+
+    if(s3UploadResult.success === 0){
+      //Add info to the dialogue and notify user about problems with the file upload
+      await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
+      await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
+      return responses;
+    }
+
+    const url = s3UploadResult.Location
+    await dialogueInstance.commitFileToDialogue(url)
+    // await dialogueInstance.sendSuccessFileMsg(devPrompt)
+    if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+    }
+
+    console.log("fileCaption",fileCaption)
+
+    if(fileCaption){
+      dialogueInstance.emit('callCompletion')
+    } else if (current_regime === "translator" || current_regime === "texteditor"){
+      dialogueInstance.emit('callCompletion')
+    }
+
+  } else if(requestMsgInstance.fileType === "document"){
+
+    const isAllowedFileType = requestMsgInstance.isAllowedFileType()
+    const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+
+    if(s3UploadResult.success === 0 || !isAllowedFileType){
+      //Add info to the dialogue and notify user about problems with the file upload
+      await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
+      await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
+      return responses;
+    }
+
+    const url = s3UploadResult.Location
+    const devPrompt = await dialogueInstance.commitFileToDialogue(url)
+    // await dialogueInstance.sendSuccessFileMsg(devPrompt)
+    if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+    }
+    
+
+    if(fileCaption){
+      dialogueInstance.emit('callCompletion')
+    } else if (current_regime === "translator" || current_regime === "texteditor"){
+      dialogueInstance.emit('callCompletion')
+    }
+    
+  } else if(requestMsgInstance.fileType === "image"){
+
+    const fileHandlersPromises = [
+      uploadFileToS3Handler(requestMsgInstance),
+      downloadFileBufferFromTgm(requestMsgInstance)
+    ]
+
+    const [s3UploadResult,downloadBufferResult] = await Promise.all(fileHandlersPromises)
+    
+    const isAllowedFileType = requestMsgInstance.isAllowedFileType()
+
+    if(s3UploadResult.success === 0 || downloadBufferResult.success === 0 || !isAllowedFileType){
+      //Add info to the dialogue and notify user about problems with the file upload
+      await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
+      await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
+      return responses;
+    }
+
+      const url = s3UploadResult.Location
+      const base64 = downloadBufferResult.buffer.toString('base64')
         
-        const fileCaption =  requestMsgInstance.fileCaption
-
-        await requestMsgInstance.getFileLinkFromTgm()
-
-        const isAllowedFileType = requestMsgInstance.isAllowedFileType()
-
-        const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
-        
-
-        if(s3UploadResult.success === 0 || !isAllowedFileType){
-          //Add info to the dialogue and notify user about problems with the file upload
-          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-
-        } else {
-
-            const url = s3UploadResult.Location
-            const devPrompt = await dialogueInstance.commitFileToDialogue(url)
-           // await dialogueInstance.sendSuccessFileMsg(devPrompt)
-            if(fileCaption){
-              await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
-            }
-        }
-
-        if(fileCaption){
-          dialogueInstance.emit('callCompletion')
-        } else if (current_regime === "translator" || current_regime === "texteditor"){
-          dialogueInstance.emit('callCompletion')
-        }
-        
-      } else if(requestMsgInstance.fileType === "image"){
-
-        const fileCaption =  requestMsgInstance.fileCaption
-
-        await requestMsgInstance.getFileLinkFromTgm()
-
-        const fileHandlersPromises = [
-          uploadFileToS3Handler(requestMsgInstance),
-          downloadFileBufferFromTgm(requestMsgInstance)
-        ]
-
-        const [s3UploadResult,downloadBufferResult] = await Promise.all(fileHandlersPromises)
-        
-        const isAllowedFileType = requestMsgInstance.isAllowedFileType()
-
-        if(s3UploadResult.success === 0 || downloadBufferResult.success === 0 || !isAllowedFileType){
-          //Add info to the dialogue and notify user about problems with the file upload
-          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-
-        } else {
-
-            const url = s3UploadResult.Location
-            const base64 = downloadBufferResult.buffer.toString('base64')
-             
-            const fileComment = {
-              fileid:requestMsgInstance.msgId,
-              context:"User has sent the image to the bot.",
-              public_url:url
-            }
-            if(fileCaption){
-              fileComment.user_prompt = fileCaption
-            }
-            await dialogueInstance.commitImageToDialogue(url,base64,fileComment)
-        }
-
-        if(fileCaption){
-          dialogueInstance.emit('callCompletion')
-        } else if (current_regime === "translator" || current_regime === "texteditor"){
-          dialogueInstance.emit('callCompletion')
-        }
+      const fileComment = {
+        fileid:requestMsgInstance.msgId,
+        context:"User has sent the image to the bot.",
+        public_url:url
       }
-      
-    } else {
-          responses.push({text:msqTemplates.file_handler_wrong_regime})
+      if(fileCaption){
+        fileComment.user_prompt = fileCaption
       }
+      await dialogueInstance.commitImageToDialogue(url,base64,fileComment)
+  
+
+    if(fileCaption){
+      dialogueInstance.emit('callCompletion')
+    } else if (current_regime === "translator" || current_regime === "texteditor"){
+      dialogueInstance.emit('callCompletion')
+    }
+  }
 
   return responses
 }
@@ -169,9 +197,6 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
   let responses =[];
 
   switch(requestMsgInstance.user.currentRegime) {
-    case "voicetotext":
-      responses.push({text:msqTemplates.error_voicetotext_doesnot_process_text})
-    break;   
     case "chat":
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
       dialogueInstance.emit('callCompletion')
@@ -201,14 +226,16 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
 async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgInstance){
 
   const cmpName = requestMsgInstance.commandName
-  const isRegistered = requestMsgInstance.user.isRegistered
-  const isAdmin = requestMsgInstance.user.isAdmin
+  const userInstance = requestMsgInstance.user;
+  const isRegistered = userInstance.isRegistered
+  const isAdmin = userInstance.isAdmin
+  
   let responses =[];
 
   mongo.insertFeatureUsage({
-    userInstance: requestMsgInstance.user,
+    userInstance: userInstance,
     feature: cmpName,
-    regime: requestMsgInstance.user.currentRegime,
+    regime: userInstance.currentRegime,
     featureType: "command"
   })
 
@@ -238,7 +265,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
           responses.push({ text: msqTemplates.already_used_code })
         break;
       };
-      requestMsgInstance.user.isRegistered =true
+      userInstance.isRegistered =true
     }
 
   }  else if(cmpName==="resetchat" || cmpName==="Перезапустить диалог"){
@@ -265,9 +292,9 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     let response = await settingsOptionsHandler(requestMsgInstance);
     responses.push(response)
 
-  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor" || cmpName==="voicetotext"){
+  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor"){
    
-    requestMsgInstance.user.currentRegime = cmpName
+    userInstance.currentRegime = cmpName
    
     responses = await changeRegimeHandlerPromise({
       newRegime:cmpName,
@@ -282,7 +309,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     if(prompt){
 
     const functionName = "imagine_midjourney"
-    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogueInstance.userInstance)
+    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,userInstance)
     const functionArguments = {prompt}    
 
     const toolCallExtended = {
@@ -310,11 +337,13 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     const fileComment = {
       midjourney_prompt:outcome?.supportive_data?.midjourney_prompt,
       public_url:outcome.supportive_data?.image_url,
-      context:otherFunctions.getLocalizedPhrase("imagine",requestMsgInstance.user.language_code,placeholders)
+      context:otherFunctions.getLocalizedPhrase("imagine",userInstance.language_code,placeholders)
     }
     
     await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,outcome.supportive_data?.base64,fileComment)
-    } else {
+    
+  
+  } else {
       dialogueInstance.emit('callCompletion');
     }
     
@@ -384,7 +413,6 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   try{
     replyMsg.sendTypingStatus()
     replyMsg.answerCallbackQuery(requestMsg.callbackId)
-    await mongo.upsertCallbackUsage(requestMsg)
 
     mongo.insertFeatureUsage({
     userInstance: requestMsg.user,
@@ -647,7 +675,9 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       public_url:outcome.supportive_data.image_url,
       midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
+    
     await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,outcome.supportive_data?.base64,fileComment)
+    
     } else {
       dialogue.emit('callCompletion');
     }
@@ -656,13 +686,10 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     responses = [{text:msqTemplates.unknown_callback}]
   }
 
-  const callbackDuration = ((new Date() - callbackExecutionStart) / 1000).toFixed(2);
-  await mongo.upsertCallbackUsage(requestMsg,callbackDuration,1)
   return responses
 
 } catch(err){
   err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query";
-  await mongo.upsertCallbackUsage(requestMsg,null,0,{message:err.message,stack:err.stack})
   throw err
 }
 
@@ -994,24 +1021,6 @@ async function changeRegimeHandlerPromise(obj){
           text: modelSettings[obj.newRegime].welcome_msg
         });
 
-      } else if (obj.newRegime == "voicetotext") {
-
-        responses.push({
-          text: modelSettings[obj.newRegime].header_msg,
-          pin: true,
-          buttons:{
-            reply_markup: {
-            remove_keyboard: true,
-            }
-          }
-        });
-
-        responses.push({
-          text: modelSettings[obj.newRegime].welcome_msg.replace(
-            "[size]",
-            modelSettings.voicetotext.filesize_limit_mb.toString()
-          )
-        });
       }
 
     return responses;
@@ -1048,17 +1057,11 @@ async function createNewFreeAccount(){
   return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/${process.env.TELEGRTAM_BOT_NAME}?start=${accountToken}`}
 }
 
-async function resetTranslatorDialogHandler(requestMsgInstance) {
-  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "translator");
-  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,"translator") //to delete tater
-  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"translator")
-  return;
-}
 
-async function resetTexteditorDialogHandler(requestMsgInstance) {
-  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "texteditor");
-  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,"texteditor") //to delete tater
-  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"texteditor")
+async function resetNonDialogueHandler(requestMsgInstance) {
+  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], requestMsgInstance.user.currentRegime);
+  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
+  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
   return;
 }
 

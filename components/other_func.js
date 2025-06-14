@@ -4,7 +4,6 @@ const { Script } = require('vm');
 const cryptofy = require('crypto');
 const axios = require("axios");
 const awsApi = require("./AWS_API.js")
-const unicodeit = require('unicodeit');
 const mjAPI = require('mathjax-node');
 const mongo = require("./mongo");
 const googleApi = require("./apis/google_API.js");
@@ -14,6 +13,8 @@ const { PDFDocument } = require('pdf-lib');
 const Excel = require('exceljs');
 const cheerio = require('cheerio');
 const preloadedFiles = preloadFiles();
+const openAIApi = require("./apis/openAI_API.js");
+const elevenLabsApi = require("./apis/elevenlabs_API.js");
 
 const showdown  = require('showdown'), showdownHighlight = require("showdown-highlight");
 
@@ -794,10 +795,10 @@ function wireHtml(text){
     const unixTimestamp = Math.floor(firstMinuteOfTodayUTC.getTime() / 1000);
 
     return {iso4217String,unixTimestamp}
-    
+
   }
 
-  async function htmlToPdfBuffer(htmlString, pdfOptions = {}) {
+  async function htmlToPdfBuffer(htmlString, pdfOptions = {},timeout = 18000) {
 
     const page = await global.chromeBrowserHeadless.newPage();
     try {
@@ -888,7 +889,91 @@ async function countTokensLambda(text,model){
   }
 }
 
-async function extractTextFromFile(url,mine_type){
+async function transcribeAudioFile(userInstance,url,mine_type,duration,sizeBytes){
+
+  const readableStream = await audioReadableStream(url,mine_type);
+  let transcript;
+
+  try{
+        try {
+            const {words} = await elevenLabsApi.speechToText(readableStream)
+            transcript = textByRolesFromWords(words);
+
+            mongo.insertCreditUsage({
+              userInstance: userInstance,
+              creditType: "speech_to_text",
+              creditSubType: "elevenlabs",
+              usage:duration || 0,
+              details: {place_in_code:"transcribeAudioFile"}
+            })
+
+        } catch(err){
+          const checkResult = voiceToTextConstraintsCheck(mine_type,sizeBytes);
+          if(checkResult.success===0){
+            responses.push(checkResult.responce)
+            return responses;
+          }
+          transcript = await openAIApi.VoiceToText(readableStream,userInstance.openAIToken,userInstance)
+
+        }
+
+        console.log("transcript:",transcript)
+        return {success:1,text:transcript}
+
+      } catch(err){
+      return {success:0,error:err.message}
+    }
+}
+
+function voiceToTextConstraintsCheck(mine_type,sizeBytes){
+
+if(!appsettings.voice_to_text.wisper_mime_types.includes(mine_type)){
+ return {success:0,response:{text:msqTemplates.audiofile_format_limit_error}}
+}
+
+if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
+
+    return {success:0,response:{text:msqTemplates.audiofile_format_limit_error.replace(
+        "[size]",
+        appsettings.voice_to_text.filesize_limit_mb.toString()
+      )}}
+}
+
+ return {success:1}
+}
+
+
+function extentionNormaliser(filename,mimeType){
+
+    const mimeTypeArray = mimeType.split("/")
+    const mimeSybtype = mimeTypeArray.pop()
+    let fileNameArray = filename.split(".")
+    const fileExtention = fileNameArray.pop()
+    const fileBaseName =  fileNameArray.join(".")
+
+    if(mimeSybtype==="ogg"&&fileExtention==="oga"){
+        return fileBaseName+"."+mimeSybtype
+    } else {
+        return filename
+    }
+}
+
+
+async function audioReadableStream(url,mime_type){
+    const response = await axios({
+        url: url,
+        method: "GET",
+        responseType: 'stream',
+        timeout: 5000
+      });
+    var audioReadStream = response.data;
+    const fileLinkParts = url.split("/")
+    const fileName = extentionNormaliser(fileLinkParts[fileLinkParts.length-1],mime_type)
+    audioReadStream.path = fileName;
+    return audioReadStream
+};
+
+async function extractTextFromFile(url,mine_type,sizeBytes,useInstance){
 
   try{
     if(mine_type==="image/jpeg" || mine_type ==="image/gif"){
@@ -896,7 +981,15 @@ async function extractTextFromFile(url,mine_type){
       const fileBuffer = await fileDownload(url)
       const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
       const text = ocrResult.text
-    
+
+      mongo.insertCreditUsage({
+                  userInstance: useInstance,
+                  creditType: "ocr",
+                  creditSubType: "image",
+                  usage: sizeBytes || 0,
+                  details: {place_in_code:"extractTextFromFile"}
+                })
+      
       return {success:1,text:text}
 
     } else if (mine_type === "application/pdf") {
@@ -915,6 +1008,9 @@ async function extractTextFromFile(url,mine_type){
       if(numpages <= appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk){
         const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
         ocr_text = ocrResult.text
+
+
+
       } else {
 
         const pageChunks = await splitPDFByPageChunks(fileBuffer,appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk)
@@ -930,6 +1026,14 @@ async function extractTextFromFile(url,mine_type){
           ocr_text += result.text
         })
       }
+
+      mongo.insertCreditUsage({
+            userInstance: useInstance,
+            creditType: "ocr",
+            creditSubType: "pdf",
+            usage: sizeBytes || 0,
+            details: {place_in_code:"extractTextFromFile"}
+          })
 
       return {success:1,text:ocr_text}
       
@@ -1628,6 +1732,40 @@ function restoredLatexBlocks(html){
    return restored
 }
 
+function textByRolesFromWords(words){
+
+// Определяем, сколько уникальных спикеров в объекте
+  const speakers = Array.from(new Set(words.map(word => word.speaker_id).filter(Boolean)));
+
+  if (speakers.length === 1) {
+    return words.map(word => word.text).join('');
+  }
+
+  let result = '';
+  let currentSpeaker = null;
+  let buffer = [];
+  for (const word of words) {
+    if (word.type === 'word' || word.type === 'spacing') {
+      // Если сменился спикер, фиксируем блок
+      if (word.speaker_id !== currentSpeaker) {
+        if (buffer.length) {
+          result += buffer.join('');
+          buffer = [];
+        }
+        currentSpeaker = word.speaker_id;
+        result += `\n\n${currentSpeaker}:\n`;
+      }
+      buffer.push(word.text);
+    }
+  }
+  // Добавим всё, что осталось после цикла
+  if (buffer.length) {
+    result += buffer.join('');
+  }
+  return result.trim();
+
+}
+
 function markdownToHtml(markdownText,filename) {
 
   const textWithSecuredLatex = secureLatexBlocks(markdownText)
@@ -1915,5 +2053,10 @@ module.exports = {
   arrayToObjectByKey,
   handleTextLengthForTextToVoice,
   markdownToHtmlPure,
-  firstMinuteOfToday
+  firstMinuteOfToday,
+  textByRolesFromWords,
+  transcribeAudioFile,
+  extentionNormaliser,
+  audioReadableStream,
+  voiceToTextConstraintsCheck
 };

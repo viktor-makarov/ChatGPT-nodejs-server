@@ -204,6 +204,40 @@ const list = [
         {
             type:"function",
             function:{
+                name: "speech_to_text",
+                description: `Transcribes audio and video files to text.`,
+                strict: true,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        function_description:{
+                            type: "string",
+                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                        },
+                        resources:{
+                            type: "array",
+                            description: `List of fileid numbers for transcribtion. Files are processd in the order they are provided in the list.`,
+                            items: {
+                                type: "number",
+                                description: "fileid"
+                        }
+                    }
+                    },
+                    required: ["resources","function_description"],
+                    additionalProperties: false
+                    }
+            },
+            friendly_name: "Распознавание речи",
+            timeout_ms:180000,
+            try_limit: 3,
+            availableInRegimes: ["chat"],
+            availableForGroups: ["admin","basic"],
+            availableForToolCalls: true,
+            depricated:false
+        },
+        {
+            type:"function",
+            function:{
                 name: "create_midjourney_image",
                 description: "Create an image with Midjourney service. ",
                 parameters: {
@@ -467,11 +501,11 @@ const list = [
 
         },
         friendly_name:"Создание PDF",
-        timeout_ms:60000,
+        timeout_ms:90000,
         try_limit:3,
         long_wait_notes: [
-            {time_ms:15000,comment:"Если в файле должно быть изображение, то обычно требуется больше времени. Подождем ... ☕️"},
-            {time_ms:30000,comment:"Похоже, файл действительно болшой. Подождем еще немного ... Но если через 30 секунд не закончит, то придется отменить."},
+            {time_ms:30000,comment:"Если в файле должно быть изображение, то обычно требуется больше времени. Подождем ... ☕️"},
+            {time_ms:60000,comment:"Похоже, файл действительно болшой. Подождем еще немного ... Но если через 30 секунд не закончит, то придется отменить."},
         ],
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
@@ -809,7 +843,7 @@ const list = [
         type:"function",
         function:{
             name: "get_currency_rates",
-            description: "Produces currency historical exchange rates for given dates. Must be used only for dates in the past. Avoid using for the current date.",
+            description: "Produces currency historical exchange rates for given dates. Designed to efficiently process multiple date and currency pair queries in a single call. Must be used only for dates in the past. Avoid using for the current date.",
             strict: true,
             parameters: {
                 type: "object",
@@ -820,7 +854,7 @@ const list = [
                     },
                     exchange_rates: {
                         type: "array",
-                        description: "Array of queries for exchange rates, each specifying a date and currency pair.",
+                        description: "Array of queries for exchange rates, allowing multiple date and currency pair requests to be processed simultaneously. Each item specifies a date and currency pair.",
                         items: {
                                 type: "object",
                                 properties: {

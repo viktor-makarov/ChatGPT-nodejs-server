@@ -142,6 +142,7 @@ async function eventRouter(event,botInstance){
 
   } catch (err) {
     err.place_in_code = err.place_in_code || "routerTelegram.eventRouter";
+    
     telegramErrorHandler.main(
       {
         replyMsgInstance:replyMsg,
