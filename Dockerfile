@@ -26,6 +26,8 @@ WORKDIR /chatbot
 
 COPY package*.json ./
 
+RUN npm install -g @mermaid-js/mermaid-cli
+
 # Installing dependencies
 RUN npm install --omit=dev
 

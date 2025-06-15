@@ -15,6 +15,7 @@ const cheerio = require('cheerio');
 const preloadedFiles = preloadFiles();
 const openAIApi = require("./apis/openAI_API.js");
 const elevenLabsApi = require("./apis/elevenlabs_API.js");
+const { execSync } = require("child_process");
 
 const showdown  = require('showdown'), showdownHighlight = require("showdown-highlight");
 
@@ -299,7 +300,7 @@ function generateButtonDescription(buttonLabels,buttonsShownBefore){
       description[label] = descriptionSource[label]
   }
 
-  return description
+  return JSON.stringify(description)
   }
 
 
@@ -1701,13 +1702,28 @@ function secureLatexBlocks(markdownText) {
         });
 
       convertedText = convertedText.replace(/^\s*```\s*mermaid\s*([\s\S]*?)^\s*```/gm, (match, content) => {
-          const encoded = Buffer.from(content.trim()).toString('base64');
+
+          const contentTrimed = content.trim();
+
+          validateMermaidDiagram(contentTrimed);
+
+          const encoded = Buffer.from(contentTrimed).toString('base64');
           return 'DIAGRAMMPLACEHOLDERSTART' + encoded + 'DIAGRAMMPLACEHOLDEREND\n';
       });
 
       return convertedText
 }
 
+async function validateMermaidDiagram(diagram) {
+  // Вызов mmdc, stdin — опция -i -
+  const cmd = 'mmdc -i - -o - -q';
+  
+  try {
+    execSync(cmd, { input: diagram });
+  } catch (error) {
+    console.error("Синтаксическая ошибка Mermaid:\n", error.stderr?.toString() || error.message);
+  }
+}
 
 function restoredLatexBlocks(html){
 

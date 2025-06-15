@@ -332,7 +332,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     const outcome = await functionInstance.router();
 
     if(outcome.success === 1){
-    const placeholders = [{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
+    const placeholders = [{key:"[btnsDsc]",filler:outcome.buttonsDescription}]
     
     const fileComment = {
       midjourney_prompt:outcome?.supportive_data?.midjourney_prompt,
@@ -668,7 +668,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     if(outcome.success === 1){
     const choosenButton = jsonDecoded.label
     const choosenBtnsDescription = otherFunctions.generateButtonDescription([choosenButton],[])
-    const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
+    const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:outcome.buttonsDescription}]
     
     const fileComment = {
       context: otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders),
