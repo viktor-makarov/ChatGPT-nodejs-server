@@ -778,7 +778,7 @@ const list = [
         type:"function",
         function:{
             name: "currency_converter",
-            description: "Converts currencies using current exchange rates. Must be used for current date. Prohibited to use for dates in the past. Always returns a JSON object with two fields: amount (number, rounded to two decimal places), ex_rate (number, rounded to four decimal places) and timestamp (ISO 8601 date and time when the rate was current).",
+            description: "Converts currencies using current exchange rates. Designed to efficiently process multiple amount and currency pair queries in a single call. Must be used for current date. Prohibited to use for dates in the past.",
             strict: true,
             parameters: {
                 type: "object",
@@ -787,25 +787,36 @@ const list = [
                             type: "string",
                             description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    amount: {
-                        type: "number",
-                        description: "Amount of money to convert. Must be a positive number."
-                    },
-                    from_currency: {
-                        type: "string",
-                        enum:ExRateAPI.availableCurrencies,
-                        description: "Currency code to convert from."
-                    },
-                    to_currency: {
-                        type: "string",
-                        enum:ExRateAPI.availableCurrencies,
-                        description: "Currency code to convert to."
+                    conversion_queries: {
+                        type: "array",
+                        description: "Array of queries for currency conversion, allowing multiple amount and currency pair requests to be processed simultaneously. Each item specifies an amount and currency pair.",
+                        items: {
+                            type: "object",
+                            properties: {
+                                amount: {
+                                    type: "number",
+                                    description: "Amount of money to convert. Must be a positive number."
+                                },
+                                from_currency: {
+                                    type: "string",
+                                    enum:ExRateAPI.availableCurrencies,
+                                    description: "Currency code to convert from."
+                                },
+                                to_currency: {
+                                    type: "string",
+                                    enum:ExRateAPI.availableCurrencies,
+                                    description: "Currency code to convert to."
+                                }
+                            },
+                            required: ["amount","from_currency","to_currency"],
+                            additionalProperties: false
+                        }
                     }
                 },
-                required: ["function_description","amount","from_currency","to_currency"],
+                required: ["function_description","conversion_queries"],
                 additionalProperties: false
             }
-        },
+            },
         friendly_name:"Конвертер курсов",
         timeout_ms:15000,
         try_limit:3,

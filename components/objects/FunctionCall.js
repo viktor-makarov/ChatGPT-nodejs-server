@@ -570,7 +570,19 @@ async get_data_from_mongoDB_by_pipepine(table_name){
         async currencyConverter(){
 
             this.validateRequiredFieldsFor_currencyConverter()
-            const {amount,from_currency,to_currency} = this.#argumentsJson
+
+            const {conversion_queries} = this.#argumentsJson
+
+            const queryPromises = conversion_queries.map(query => this.handleConversionQuery(query))
+            const promiseResult = await Promise.all(queryPromises)
+
+            return {success:1, result: promiseResult,instructions:"Provide the user with the specific date and time when the exchange rate was applied based on timestamp provided, as well as the exact exchange rate value that was used for the calculation."}
+        }
+
+
+        async handleConversionQuery(query_params){
+
+            const {amount,from_currency,to_currency} = query_params
 
             const {iso4217String,unixTimestamp} = func.firstMinuteOfToday()
 
@@ -590,15 +602,28 @@ async get_data_from_mongoDB_by_pipepine(table_name){
                 mongo.saveExchangeRateInternational(api_result) //intentionally async
             }
 
-            return {success:1,result:{number:converted_amount,ex_rate:Math.round(ex_rate * 10000) / 10000,timestamp:iso4217String},instructions:"Provide the user with the specific date and time when the exchange rate was applied, as well as the exact exchange rate value that was used for the calculation."}
+            return {amount,from_currency,to_currency,result:Math.round(converted_amount * 100) / 100,ex_rate:Math.round(ex_rate * 10000) / 10000,timestamp:iso4217String}
         }
+
 
 validateRequiredFieldsFor_currencyConverter(){
 
-const {amount,from_currency,to_currency} = this.#argumentsJson
+
+const {conversion_queries} = this.#argumentsJson
+
+
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
+
+        if(!conversion_queries || !Array.isArray(conversion_queries) || conversion_queries.length === 0){
+            error.message = `'conversion_queries' parameter is missing or not an array.`
+            throw error
+        }
+
+    for(let i = 0; i < conversion_queries.length; i++){
+
+        const {amount,from_currency,to_currency} = conversion_queries[i]
 
         if(amount <= 0 ){
             error.message = `'amount' parameter must be above zero. Provide the value for the argument.`
@@ -614,6 +639,7 @@ const {amount,from_currency,to_currency} = this.#argumentsJson
             error.message = `'to_currency' parameter is not supported. Provide the value for the argument from the list of available currencies: ${ExRateAPI.availableCurrencies.join(", ")}`
             throw error
         }
+    }
 }
 
 

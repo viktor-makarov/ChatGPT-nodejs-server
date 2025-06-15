@@ -442,7 +442,6 @@ const functionsUsageByAggPipeline = async (agg_pipeline) => {
 
 async function insertTokenUsage(obj){
   try {
-
     const newTokenUsage = new token_collection({
       userid: obj.userInstance.userid,
       userFirstName: obj.userInstance.user_first_name,
