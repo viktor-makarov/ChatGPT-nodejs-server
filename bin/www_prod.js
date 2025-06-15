@@ -14,13 +14,13 @@ console.time('Server startup');
 console.log(new Date(),"Telegram bot is launching...")
 const mongoClient = require("../components/mongoClient")
 global.mongoConnection = await mongoClient.connectToMongo()
-const chromeBrowser = require("../components/chromeBrowser")
+const chromeBrowser = require("../components/apis/chromeBrowser")
 global.chromeBrowserHeadless = await chromeBrowser.launchBrowserHeadless()
 
 //const mdjCLient = require("../components/midjourneyClient")
 //await mdjCLient.initClient()
 const TelegramBot = require('node-telegram-bot-api');
-const telegramRouter = require("../routerTelegram")
+const telegramRouter = require("../components/mainRouter")
 
 let options = {
     polling:true
@@ -69,7 +69,7 @@ startServer()
 process.on('uncaughtException', async (error) => {
     console.error(new Date(), "Uncaught Exception:", error);
     try {
-        const mongoClient = require("../components/mongo")
+        const mongoClient = require("../components/apis/mongo")
         const modifiedCount = await mongoClient.resetAllInProgressDialogueMeta()
         console.log(new Date(), "resetAllInProgressDialogueMeta result:", modifiedCount);
         if(global.chromeBrowserHeadless){

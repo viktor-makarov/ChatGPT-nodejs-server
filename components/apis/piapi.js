@@ -1,6 +1,6 @@
 
 const axios = require("axios");
-const otherFunctions = require("../other_func.js");
+const otherFunctions = require("../common_functions.js");
 
 
 class PIAPI{

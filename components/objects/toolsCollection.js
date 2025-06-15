@@ -1,6 +1,6 @@
 
-const mongo = require("../mongo.js");
-const scheemas = require("../mongo_Schemas.js");
+const mongo = require("../apis/mongo.js");
+const scheemas = require("../apis/mongo_Schemas.js");
 const ExRateAPI = require("../apis/exchangerate_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
 
@@ -773,31 +773,6 @@ const list = [
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
         depricated:false
-    },
-    {
-        type:"function",
-        function:{
-            name: "get_current_datetime",
-            description: "Use this function to answer user's questions which require current date and time. This function returns value of date and time at the moment of request.",
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                    }
-                },
-                required: ["function_description"]
-            }
-        },
-        friendly_name:"Дата и время",
-        timeout_ms:15000,
-        try_limit:3,
-        availableInRegimes: ["chat"],
-        availableForGroups: ["admin","basic"],
-        availableForToolCalls: false,
-        depricated:false,
-        queue_name:"test"
     },
     {
         type:"function",

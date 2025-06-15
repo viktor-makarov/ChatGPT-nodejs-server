@@ -1,4 +1,4 @@
-const func = require("../other_func.js");
+const func = require("../common_functions.js");
 const axios = require("axios");
 const https = require('https');
 const cheerio = require('cheerio');

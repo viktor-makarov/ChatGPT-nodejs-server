@@ -1,15 +1,15 @@
-const telegramCmdHandler = require("./components/telegramCmdHandler.js");
-const openAIApi = require("./components/apis/openAI_API.js");
-const elevenLabsApi = require("./components/apis/elevenlabs_API.js");
-const telegramErrorHandler = require("./components/telegramErrorHandler.js");
-const mongo = require("./components/mongo");
-const msqTemplates = require("./config/telegramMsgTemplates.js");
-const ReplyMsg = require("./components/objects/ReplyMsg.js");
-const RequestMsg  = require("./components/objects/RequestMsg.js");
-const User = require("./components/objects/User.js");
-const Dialogue = require("./components/objects/Dialogue.js");
-const MdjApi = require("./components/apis/midjourney_API.js");
-const otherFunctions = require("./components/other_func.js");
+const telegramCmdHandler = require("./msgRouter.js");
+const openAIApi = require("./apis/openAI_API.js");
+const elevenLabsApi = require("./apis/elevenlabs_API.js");
+const telegramErrorHandler = require("./errorHandler.js");
+const mongo = require("./apis/mongo.js");
+const msqTemplates = require("../config/telegramMsgTemplates.js");
+const ReplyMsg = require("./objects/ReplyMsg.js");
+const RequestMsg  = require("./objects/RequestMsg.js");
+const User = require("./objects/User.js");
+const Dialogue = require("./objects/Dialogue.js");
+const MdjApi = require("./apis/midjourney_API.js");
+const otherFunctions = require("./common_functions.js");
 
 async function MdjAccountInfo(){
   const info = await MdjApi.executeInfo()
@@ -142,7 +142,7 @@ async function eventRouter(event,botInstance){
 
   } catch (err) {
     err.place_in_code = err.place_in_code || "routerTelegram.eventRouter";
-    
+
     telegramErrorHandler.main(
       {
         replyMsgInstance:replyMsg,

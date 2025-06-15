@@ -1016,8 +1016,8 @@ const setDefaultVauesForNonExiting = async () => {
 
 async function replaceProfileValues(dry_run = true) {
 
-  const replacemant_lists = require("../config/replacement_lists.js");
-  const func = require("./other_func.js")
+  const replacemant_lists = require("../../config/replacement_lists.js");
+  const func = require("../common_functions.js")
 
   const replacementList = replacemant_lists.profile
 

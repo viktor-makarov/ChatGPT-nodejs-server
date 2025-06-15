@@ -1,15 +1,15 @@
-const mongo = require("./mongo");
-const msqTemplates = require("../config/telegramMsgTemplates");
-const modelSettings = require("../config/telegramModelsSettings");
+const mongo = require("./apis/mongo.js");
+const msqTemplates = require("../config/telegramMsgTemplates.js");
+const modelSettings = require("../config/telegramModelsSettings.js");
 const reports = require("../config/telegramReportsConfig.js");
-const otherFunctions = require("./other_func");
-const modelConfig = require("../config/modelConfig");
+const otherFunctions = require("./common_functions.js");
+const modelConfig = require("../config/modelConfig.js");
 const openAIApi = require("./apis/openAI_API.js");
 const elevenLabsApi = require("./apis/elevenlabs_API.js");
-const awsApi = require("./AWS_API.js")
+const awsApi = require("./apis/AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
 const toolsCollection  = require("./objects/toolsCollection.js");
-const telegramErrorHandler = require("./telegramErrorHandler.js");
+const telegramErrorHandler = require("./errorHandler.js");
 
 async function messageBlock(requestInstance){
   let responses =[];

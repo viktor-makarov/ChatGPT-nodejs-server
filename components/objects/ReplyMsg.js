@@ -1,7 +1,7 @@
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
-const otherFunctions = require("../other_func");
-const ErrorHandler = require("../telegramErrorHandler");
+const otherFunctions = require("../common_functions");
+const ErrorHandler = require("../errorHandler");
 const FormData = require("form-data");
 const axios = require("axios");
 

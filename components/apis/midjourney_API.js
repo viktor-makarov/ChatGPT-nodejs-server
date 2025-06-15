@@ -1,5 +1,5 @@
-const func = require("../other_func.js");
-const MdjClient = require("../midjourneyClient.js").mdjClient;
+const func = require("../common_functions.js");
+const MdjClient = require("./midjourneyClient.js").mdjClient;
 
   async function executeImagine(prompt) {
     

@@ -1,6 +1,6 @@
 const modelSettings = require("../../config/telegramModelsSettings");
 const msqTemplates = require("../../config/telegramMsgTemplates");
-const otherFunctions = require("../other_func");
+const otherFunctions = require("../common_functions");
 const axios = require("axios");
 const mime = require('mime-types');
 const { Readable } = require("stream");

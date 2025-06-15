@@ -1,6 +1,6 @@
-const mongo = require("./mongo");
+const mongo = require("./apis/mongo");
 const msqTemplates = require("../config/telegramMsgTemplates");
-const otherFunctions = require("./other_func");
+const otherFunctions = require("./common_functions");
 
 async function main(obj){
 

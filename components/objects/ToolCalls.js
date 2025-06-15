@@ -1,7 +1,7 @@
 const modelConfig = require("../../config/modelConfig");
 const toolsCollection = require("./toolsCollection.js");
-const mongo = require("../mongo");
-const telegramErrorHandler = require("../telegramErrorHandler.js");
+const mongo = require("../apis/mongo.js");
+const telegramErrorHandler = require("../errorHandler.js");
 
 const FunctionCall  = require("./FunctionCall.js");
 

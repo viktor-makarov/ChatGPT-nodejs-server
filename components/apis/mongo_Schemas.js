@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
-const modelSettings = require("../config/telegramModelsSettings");
+const modelSettings = require("../../config/telegramModelsSettings");
 
 const ProfileSheema = new Schema(
   {
@@ -30,7 +30,10 @@ const ProfileSheema = new Schema(
       texteditor: {
         temperature: { type: Number, default: 1 },
         model: { type: String, default: modelSettings.texteditor.default_model },
-      }
+      },
+      texttospeech: {
+        voice: { type: String, default: appsettings.text_to_speach.default_voice_name}
+        },
     },
     token: {type: String},
     plan:{type: String},

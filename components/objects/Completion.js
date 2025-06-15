@@ -1,10 +1,10 @@
 const { StringDecoder } = require('string_decoder');
 const { Transform } = require('stream');
 const msqTemplates = require("../../config/telegramMsgTemplates");
-const otherFunctions = require("../other_func");
-const mongo = require("../mongo");
+const otherFunctions = require("../common_functions.js");
+const mongo = require("../apis/mongo.js");
 const modelConfig = require("../../config/modelConfig");
-const telegramErrorHandler = require("../telegramErrorHandler.js");
+const telegramErrorHandler = require("../errorHandler.js");
 const openAIApi = require("../apis/openAI_API.js");
 const { error } = require('console');
 const { language } = require('@elevenlabs/elevenlabs-js/api/resources/dubbing/resources/resource/index.js');

@@ -1,11 +1,11 @@
 const fs = require('fs');
-const modelConfig = require("../config/modelConfig");
+const modelConfig = require("../config/modelConfig.js");
 const { Script } = require('vm');
 const cryptofy = require('crypto');
 const axios = require("axios");
-const awsApi = require("./AWS_API.js")
+const awsApi = require("./apis/AWS_API.js")
 const mjAPI = require('mathjax-node');
-const mongo = require("./mongo");
+const mongo = require("./apis/mongo.js");
 const googleApi = require("./apis/google_API.js");
 const path = require('path');
 const pdf = require('pdf-parse');
@@ -401,7 +401,7 @@ const sharp = require('sharp');
 const svgson = require('svgson');
 
 const { encode, decode } = require("gpt-3-encoder");
-const msqTemplates = require("../config/telegramMsgTemplates");
+const msqTemplates = require("../config/telegramMsgTemplates.js");
 const { convert } = require('html-to-text');
 
 async function getSvgDimensions(svg) {
@@ -1114,7 +1114,7 @@ function startDeveloperPrompt(userInstance){
 
 function getLocalizedPhrase(phrase_key,locale,placeholders){
 
-  const msqTemplates = require("../config/telegramMsgTemplates");
+  const msqTemplates = require("../config/telegramMsgTemplates.js");
 
   const langOption = locale ? (locale === "ru" ? "ru" : "en") : "ru"
   const phraseByKey = msqTemplates[phrase_key]
