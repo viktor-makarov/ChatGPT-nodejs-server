@@ -720,7 +720,7 @@ function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
         return `${placeholder}${index}${placeholder}`;
       });
 
-      convertedText = convertedText.replace(/`([^`]+)`/g, (_, code) => {
+      convertedText = convertedText.replace(/(?<!`)`([^`]+?)`(?!`)/g, (_, code) => {
         const index = Object.keys(codeObj).length;
         codeObj[index]= (`<code>${code}</code>`);
         return `${placeholder}${index}${placeholder}`;
