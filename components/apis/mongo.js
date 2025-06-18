@@ -782,14 +782,15 @@ const getDocByTgmBtnsFlag = async (userid, regime) => {
   }
 };
 
-const getDialogueByUserId = async (userid, regime) => {
 
+const getDocByTgmRegenerateBtnFlag = async (userid, regime) => {
+  
   try {
-    const filter = { userid: userid, regime: regime };
+    const filter = { userid: userid, regime: regime,telegramMsgRegenerateBtns: true };
     const result = await dialog_collection
       .find(
         filter,
-        { role: 1, sourceid: 1,createdAtSourceDT_UTC: 1, name: 1, content: 1, content_latex_formula: 1, tool_calls: 1, tool_reply: 1, tokens: 1, telegramMsgId:1, telegramMsgBtns:1, completion_version:1,fileName:1,fileUrl:1,fileCaption:1,fileAIDescription:1}
+        { telegramMsgId: 1,sourceid:1,telegramMsgReplyMarkup:1}
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
@@ -800,7 +801,6 @@ const getDialogueByUserId = async (userid, regime) => {
     throw err;
   }
 };
-
 
 
 async function getLastCompletion(userid, regime) {
@@ -1567,7 +1567,6 @@ module.exports = {
   insertFunctionUsagePromise,
   getUserProfileByid,
   deleteMsgFromDialogById,
-  getDialogueByUserId,
   upsertPrompt,
   updateInputMsgTokenUsage,
   updateCurrentRegimeSetting,
@@ -1606,5 +1605,6 @@ module.exports = {
   update_elevenlabs_voices_list,
   insertCreditUsage,
   getExchangeRateInternational,
-  saveExchangeRateInternational
+  saveExchangeRateInternational,
+  getDocByTgmRegenerateBtnFlag
 };

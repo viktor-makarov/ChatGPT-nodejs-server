@@ -67,7 +67,7 @@ class Dialogue extends EventEmitter {
             dialogueClass:this
         })
 
-        this.deletePreviousRegenerateButtons() //made async on purpose
+        this.deleteRegenerateButton() //made async on purpose
 
         await this.#completionInstance.router()
     }
@@ -132,13 +132,9 @@ class Dialogue extends EventEmitter {
         return this.#regenerateCompletionFlag;
     }
 
-    async deletePreviousRegenerateButtons() {
+    async deleteAllInlineButtons() {
 
-        if(this.regenerateCompletionFlag){
-            return
-        }
-
-        const documentsWithBtns = await mongo.getDocByTgmBtnsFlag(this.#user.userid,this.#user.currentRegime,true)
+        const documentsWithBtns = await mongo.getDocByTgmBtnsFlag(this.#user.userid,this.#user.currentRegime)
         
         if(documentsWithBtns.length === 0){
             return
@@ -152,7 +148,6 @@ class Dialogue extends EventEmitter {
             }
         });
      
-        //console.log("documentsWithBtns",documentsWithBtns.length,lastTgmMsgIdsFromCompletions)
         if(lastTgmMsgIdsFromCompletions.size === 0){
             return
         }
@@ -162,18 +157,58 @@ class Dialogue extends EventEmitter {
                 const reply_markup = {one_time_keyboard: true,inline_keyboard: []};
                 await this.#replyMsg.updateMessageReplyMarkup(msgId,reply_markup)
             } catch(err){
-                console.log("Error in deletePreviousRegenerateButtons",err.message)
+                console.log("Error in deleteAllInlineButtons",err.message)
             }
         }
-            await mongo.updateCompletionInDb({
-                filter: {telegramMsgId:{"$in":Array.from(lastTgmMsgIdsFromCompletions)}},
-                updateBody:{telegramMsgBtns:false}
-        })
         }
+
+
+    async deleteRegenerateButton(){
+
+        if(this.regenerateCompletionFlag){
+            return
+        }
+
+        const documentsWithRegenerateBtns = await mongo.getDocByTgmRegenerateBtnFlag(this.#user.userid,this.#user.currentRegime)
+
+        if(documentsWithRegenerateBtns.length === 0){
+            return
+        }
+
+        for (const doc of documentsWithRegenerateBtns){
+
+
+            const {sourceid,telegramMsgReplyMarkup,telegramMsgId} = doc;
+            if (telegramMsgId && Array.isArray(telegramMsgId) && telegramMsgId.length > 0) {
+
+                let newInlineKeyboard = [];
+                telegramMsgReplyMarkup.inline_keyboard.forEach(row => {
+                    const newRow = row.filter(button => button.text !== "🔄");
+                    newInlineKeyboard.push(newRow);
+                })
+                telegramMsgReplyMarkup.inline_keyboard = newInlineKeyboard;
+
+                const parallelCommands = [
+                this.#replyMsg.updateMessageReplyMarkup(telegramMsgId.at(-1),telegramMsgReplyMarkup),
+                mongo.updateCompletionInDb({
+                    filter: {sourceid:sourceid},
+                    updateBody:{telegramMsgRegenerateBtns:false,telegramMsgReplyMarkup:telegramMsgReplyMarkup}
+                })]
+                try{
+                    await Promise.all(parallelCommands)
+                } catch(err){
+                    console.log("Error in deleteAllInlineButtons",err.message)
+                }
+            
+            }
+        };
+
+        
+    }
     
     async resetDialogue(){
 
-        await this.deletePreviousRegenerateButtons()
+        await this.deleteAllInlineButtons()
         await mongo.deleteDialogByUserPromise([this.#userid], "chat");
         await awsApi.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
         const deleteS3Results = await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)),this.#user.currentRegime)

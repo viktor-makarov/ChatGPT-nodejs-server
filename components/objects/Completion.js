@@ -27,6 +27,8 @@ class Completion extends Transform {
 
 
     #telegramMsgBtns = false;
+    #telegramMsgRegenerateBtns = false;
+    #telegramMsgReplyMarkup = null;
     #telegramMsgIds = []
 
     #requestMsg;
@@ -274,10 +276,6 @@ class Completion extends Transform {
       return this.#timeout  
     }
 
-    set telegramMsgBtns(value){
-      this.#telegramMsgBtns = value
-    }
-
     get completionFieldsToUpdate(){
       
       this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
@@ -287,6 +285,8 @@ class Completion extends Transform {
         telegramMsgId:this.#telegramMsgIds,
      //   telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
         telegramMsgBtns:this.#telegramMsgBtns,
+        telegramMsgRegenerateBtns:this.#telegramMsgRegenerateBtns,
+        telegramMsgReplyMarkup:this.#telegramMsgReplyMarkup,
         content: this.#completionPreviousVersionsContent,
         content_latex_formula:this.#completionPreviousVersionsLatexFormulas
       }
@@ -519,7 +519,7 @@ class Completion extends Transform {
 
             if(completion_delivered){ //final run when all messages are sent
               this.#telegramMsgIds = Array.from(sentMsgIds)
-              this.#telegramMsgBtns = true;
+              
               await this.msgDeliveredUpdater({sourceid:this.#completionId})
               return {success:1,completion_delivered}
             }
@@ -663,6 +663,11 @@ class Completion extends Transform {
 
             const isLastChunk = index === htmls.length - 1 && completionEnded;
             const reply_markup = isLastChunk ? await this.craftReplyMarkup(text) : null;
+            if(reply_markup){
+              this.#telegramMsgBtns = true;
+              this.#telegramMsgRegenerateBtns = true
+              this.#telegramMsgReplyMarkup = reply_markup;
+            }
             messages.push([html,reply_markup,"HTML",additionalMsgOptions]);
         index ++
       }

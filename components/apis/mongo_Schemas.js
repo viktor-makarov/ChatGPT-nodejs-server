@@ -251,7 +251,6 @@ const CreditsUsageLogSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_creadits_usage}
 );
 
-
 const ExchangeRates = new Schema(
   {
     time_last_update_unix: { type: Number, index: true },
@@ -269,6 +268,8 @@ const TelegramDialogSheema = new Schema(
     createdAtSourceDT_UTC: { type: Date },
     telegramMsgId:{type: Object},
     telegramMsgBtns:{type: Boolean},
+    telegramMsgRegenerateBtns:{type: Boolean},
+    telegramMsgReplyMarkup:{type: Object},
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
