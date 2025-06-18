@@ -12,10 +12,11 @@ const pdf = require('pdf-parse');
 const { PDFDocument } = require('pdf-lib');
 const Excel = require('exceljs');
 const cheerio = require('cheerio');
-const preloadedFiles = preloadFiles();
+const cssFiles = preloadFiles();
 const openAIApi = require("./apis/openAI_API.js");
 const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const { execSync } = require("child_process");
+const pako = require('pako');
 
 const showdown  = require('showdown'), showdownHighlight = require("showdown-highlight");
 
@@ -24,13 +25,24 @@ showdown.setOption('tables', 'true');
 showdown.setOption('ghCodeBlocks', 'false');
 showdown.setOption('tasklists', 'true');
 
+
+const tableWrapperExtension = {
+  type: 'output',
+  regex: /<table[^>]*>[\s\S]*?<\/table>/gi,
+  replace: function(match) {
+    return '<div class="table-container">' + match + '</div>';
+  }
+};
+
+
  const converter = new showdown.Converter({
     extensions: [
       showdownHighlight({
         supportInline: true,
         pre: true,    
         auto_detection: true // Whether to use hljs' auto language detection, default is true
-        })
+        }),
+        tableWrapperExtension
     ]
 });
 
@@ -661,41 +673,52 @@ function findBrokenTags(text){
   }
 }
 
+function sanitizeMarkdownForTgm(text){
+
+  text = text.replace(/&(?![a-z]+;)/g, '&amp;');
+  text = text.replace(/</g, '&lt;');
+  text = text.replace(/(?<!^)>(?!\s)/gm, '&gt;');
+
+  return text
+}
+
 function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
 
   let convertedText = text
 
       const referenceToPDF = getLocalizedPhrase("pdf_html_reference",user_language_code)
-
-      // Sanitize remaining special HTML characters
-      convertedText = convertedText.replace(/&(?![a-z]+;)/g, '&amp;');
-      convertedText = convertedText.replace(/</g, '&lt;');
-      convertedText = convertedText.replace(/(?<!^)>(?!\s)/gm, '&gt;');
       
       const formulasObj = {};
             // Handle LaTeX block formulas using \[...\]
           convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (_, formula) => {
             const index = Object.keys(formulasObj).length+1;
-            formulasObj[index]= formula.trim();
-            return `<pre><code class="language-LaTeX - ${referenceToPDF}">${formula.trim()}</code></pre>`;
+            const sanitizedFormula = sanitizeMarkdownForTgm(formula)
+            formulasObj[index]= (`<pre><code class="language-LaTeX - ${referenceToPDF}">${sanitizedFormula.trim()}</code></pre>`)
+            return `latexformulsplaceholderstart${index}latexformulsplaceholderend`;
         });
 
         // Handle LaTeX inline formulas using \(...\)
         convertedText = convertedText.replace(/\\\((.*?)\\\)/g, (_, formula) => {
-            return `<code>${formula.trim()}</code>`;
+            const index = Object.keys(formulasObj).length+1;
+            const sanitizedFormula = sanitizeMarkdownForTgm(formula)
+            formulasObj[index]= (`<code>${sanitizedFormula.trim()}</code>`);
+            return `latexformulsplaceholderstart${index}latexformulsplaceholderend`;
         });
 
 
         convertedText = convertedText.replace(/(?:^|\s)\$\$(.*?)\$\$(?=\s|$)/gms, (_, formula) => {
             const index = Object.keys(formulasObj).length+1;
-            formulasObj[index]= formula.trim();
-
-            return `<pre><code class="language-LaTeX - ${referenceToPDF}">${formula.trim()}</code></pre>`;
+            const sanitizedFormula = sanitizeMarkdownForTgm(formula)
+            formulasObj[index]= (`<pre><code class="language-LaTeX - ${referenceToPDF}">${sanitizedFormula.trim()}</code></pre>`);
+            return `latexformulsplaceholderstart${index}latexformulsplaceholderend`;
         });
 
         // Handle LaTeX inline formulas using $...$
         convertedText = convertedText.replace(/(?<=^|\s)\$([^$]*?)\$(?=\s|$|[,.;:])/g, (_, formula) => {
-            return `<code>${formula.trim()}</code>`;
+            const index = Object.keys(formulasObj).length+1;
+            const sanitizedFormula = sanitizeMarkdownForTgm(formula)
+            formulasObj[index]= (`<code>${sanitizedFormula.trim()}</code>`);
+            return `latexformulsplaceholderstart${index}latexformulsplaceholderend`;
         });
 
       // Extract code blocks and replace them with placeholders/ We withdraw code blocks to awoid their altering by other replacements
@@ -705,27 +728,45 @@ function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
       // Inline code handling. 
       convertedText = convertedText.replace(/^[\s]*```markdown?\s+([\s\S]+?)^[\s]*```/gm, (_, code) => {
         const index = Object.keys(codeObj).length;
-        codeObj[index]= (`<pre><code  class="language-markdown">${code}</code></pre>`);
+        const sanitizedCode = sanitizeMarkdownForTgm(code)
+        codeObj[index]= (`<pre><code  class="language-markdown">${sanitizedCode}</code></pre>`);
+        return `${placeholder}${index}${placeholder}`;
+      });
+
+      convertedText = convertedText.replace(/^\s*```\s*mermaid\s*([\s\S]*?)^\s*```/gm, (match, content) => {
+
+        const index = Object.keys(codeObj).length;
+        const mermaidUrlEdit = genPakoLink(content.trim(),"edit");
+        const mermaidUrlView = genPakoLink(content.trim(),"view");
+        const sanitizedContent = sanitizeMarkdownForTgm(content)
+        codeObj[index]= (`<pre><code class="language-mermaid - ${referenceToPDF}">${sanitizedContent.trim()}</code></pre><a href="${mermaidUrlEdit}" target = "_blank">Live edit</a> | <a href="${mermaidUrlView}" target = "_blank">Live view</a>`);
+
         return `${placeholder}${index}${placeholder}`;
       });
 
       convertedText = convertedText.replace(/^[\s]*```([^\s]+)?\s+([\s\S]+?)^[\s]*```/gm, (_, language, code) => {
         const index = Object.keys(codeObj).length;
-        codeObj[index] = `<pre><code class="language-${language === "mermaid" ? `${language} - ${referenceToPDF}` : language }">${code}</code></pre>`;
+        const sanitizedCode = sanitizeMarkdownForTgm(code)
+        codeObj[index] = `<pre><code class="language-${language === "mermaid" ? `${language} - ${referenceToPDF}` : language }">${sanitizedCode}</code></pre>`;
         return `${placeholder}${index}${placeholder}`;
     });
     
       convertedText = convertedText.replace(/`` `([^`]+)` ``/g, (_, code) => {
         const index = Object.keys(codeObj).length;
-        codeObj[index]= (`<code>${code}</code>`);
+        const sanitizedCode = sanitizeMarkdownForTgm(code)
+        codeObj[index]= (`<code>${sanitizedCode}</code>`);
         return `${placeholder}${index}${placeholder}`;
       });
 
       convertedText = convertedText.replace(/(?<!`)`([^`]+?)`(?!`)/g, (_, code) => {
         const index = Object.keys(codeObj).length;
-        codeObj[index]= (`<code>${code}</code>`);
+        const sanitizedCode = sanitizeMarkdownForTgm(code)
+        codeObj[index]= (`<code>${sanitizedCode}</code>`);
         return `${placeholder}${index}${placeholder}`;
       });
+
+      // Sanitize the rest of special HTML characters
+      convertedText = sanitizeMarkdownForTgm(convertedText)
 
       // Replace headers
       convertedText = convertedText.replace(/^##### (.*$)/gim, '<i>$1</i>');
@@ -757,6 +798,8 @@ function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
       
       // Reinsert the code blocks and inline codes
       convertedText = convertedText.replace(new RegExp(`${placeholder}(\\d+)${placeholder}`, 'g'), (_, index) => codeObj[index]);
+      //Reinsert formula blocks
+      convertedText = convertedText.replace(new RegExp(`latexformulsplaceholderstart(\\d+)latexformulsplaceholderend`, 'g'), (_, index) => formulasObj[index]);
 
       let result = {"html":convertedText}
 
@@ -765,7 +808,6 @@ function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
       } else {
         result.latex_formulas = null;
       }
-      
       return result
 }
 
@@ -1194,7 +1236,6 @@ function countTokensProportion(text) {
 
 function charLimitFor(modelname){
 
-  console.log("modelname",modelname)
   const tokenLimit = modelConfig[modelname].request_length_limit_in_tokens
  
   const charLimit = tokenLimit*3.2
@@ -1209,10 +1250,11 @@ function splitTextByCharLimit(text) {
   const limit = charLimitFor(appsettings.functions_options.content_clean_oai_model)
   
   for (let line of lines) {
-    if (line.length <= limit) {
-      result.push(line);
-    } else {
-      let currentLine = '';
+
+      if (line.length <= limit) {
+        result.push(line);
+      } else {
+        let currentLine = '';
       
       // Split into words to avoid breaking words
       const words = line.split(' ');
@@ -1571,35 +1613,97 @@ function saveBufferToTempFile(buffer, filename) {
 
 function formatHtml(html,filename){
 
-  
-  html = html.split('\n').map(line =>
-    line.replace(/^[ ]+/, m => '&nbsp;'.repeat(m.length))
-  ).join('\n')
-  html = html.replace(/<pre>/gi, '<div>').replace(/<\/pre>/gi, '</div>')
+  html = html.replace(/<div\s+class="mermaid">([\s\S]*?)<\/div>/g, (match, content) => {
+        const trimmedContent = content.trim()
+        const mermaidUrlEdit = genPakoLink(trimmedContent,"edit");
+        const mermaidUrlView = genPakoLink(trimmedContent,"view");
+        return `<div class="mermaid">\n${trimmedContent}\n</div>\n<div><a href="${mermaidUrlEdit}" target="_blank">Live edit</a> | <a href="${mermaidUrlView}" target="_blank">Live view</a></div>`;
+    });
 
-  return `<style>
+  html = html.replace(/<pre>([\s\S]*?)<\/pre>/g, (match, content) => {
+        let trimmedContent = content.trim()
+        trimmedContent = trimmedContent.split('\n').map(line => line.replace(/^[ ]+/, m => '&nbsp;'.repeat(m.length))).join('\n')
+        return `<div>\n${trimmedContent}\n</div>`;
+    });
 
-           body {
-            font-family: Arial, sans-serif;
-          }
-           table {
-              border: 1px solid #333;
-              border-collapse: collapse;
-          }
-          td, th {
-            border: 1px solid #333;
-            padding: 2px 4px;
-          }
-          </style>
+      html = html.replace(/<table[\s\S]*?>([\s\S]*?)<\/table>/g, (match, content) => {
+        let trimmedContent = content.trim()
+        trimmedContent = trimmedContent.split('\n').map(line => line.replace(/^[ ]+/, m => '&nbsp;'.repeat(m.length))).join('\n')
+        return `<div class="table-container"><table>\n${trimmedContent}\n</table></div>`;
+    });
+
+  return `
           <html>
           <head>
           <title>${filename}</title>
+          <meta charset="UTF-8">
+              <style>
+              /* Highlight.js styles */
+              ${cssFiles.highlightCss}
+              </style>
+              <style>
+                /* A4 PDF styles */
+                ${cssFiles.a4PdfCss}
+              </style>
+              <style>
+                /* Custom styles */
+                ${cssFiles.customCss}
+              </style>
+          <script>
+            MathJax = {
+            tex: {
+              inlineMath: [['$','$']],
+              displayMath: [['$$','$$']],
+              skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+              ignoreClass: 'tex2jax_ignore',
+              processClass: 'tex2jax_process'
+            },
+            chtml: {
+              displayAlign: 'left',
+              displayIndent: '2em'
+            }
+          };
+          </script>
+          <script id="MathJax-script">${cssFiles.texMmlChtml}</script>
+          <script type="module">
+            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.esm.min.mjs';
+
+            document.addEventListener("DOMContentLoaded", async () => {
+              mermaid.initialize({ startOnLoad: false });
+              document.querySelectorAll('.mermaid').forEach(renderMermaidDiagram);
+            });
+
+            async function renderMermaidDiagram(element, index) {
+              const code = element.textContent;
+              const insertError = (message) => {
+                element.innerHTML = \`<div style="color: red; font-weight: bold;">Описание диаграммы содержит ошибку:<br>\${message}</div>\`;
+              };
+              try {
+              await mermaid.parse(code)
+
+              } catch (e) {
+                console.log("parce error")
+                insertError(e?.message || 'Неизвестная ошибка (parse)');
+                return;
+              }
+              
+            mermaid.render('generatedDiagram' + index, code)
+            .then(({svg}) => {
+              element.innerHTML = svg;
+            })
+            .catch(e => {
+              console.log("render error")
+              insertError(e?.message || 'Неизвестная ошибка (render)');
+            });
+            }
+
+          </script>
           </head>
-          <body>
-          <div>
-          ${html}
-          </div>
-          </body>
+            <body>
+              <div>
+                ${html}
+              </div>
+            </body>
       </html>`
 }
 
@@ -1669,8 +1773,10 @@ function preloadFiles() {
   try {
     const highlightCss = fs.readFileSync(path.join(__dirname, '..','public', 'styles', 'highlight.min.css'), 'utf8');
     const customCss = fs.readFileSync(path.join(__dirname, '..','public', 'styles', 'custom.css'), 'utf8');
+    const a4PdfCss = fs.readFileSync(path.join(__dirname, '..','public', 'styles', 'a4-pdf.css'), 'utf8');
+    const mobileCss = fs.readFileSync(path.join(__dirname, '..','public', 'styles', 'mobile.css'), 'utf8');
     const texMmlChtml = fs.readFileSync(path.join(__dirname, '..','public', 'js', 'tex-mml-chtml.js'), 'utf8');
-    return { highlightCss, customCss,texMmlChtml };
+    return { highlightCss, customCss, a4PdfCss, mobileCss, texMmlChtml };
   } catch (error) {
     console.warn('Failed to load local files:', error.message);
     throw error
@@ -1705,10 +1811,9 @@ function secureLatexBlocks(markdownText) {
 
           const contentTrimed = content.trim();
 
-          validateMermaidDiagram(contentTrimed);
-
           const encoded = Buffer.from(contentTrimed).toString('base64');
-          return 'DIAGRAMMPLACEHOLDERSTART' + encoded + 'DIAGRAMMPLACEHOLDEREND\n';
+          
+          return `DIAGRAMMPLACEHOLDERSTART${encoded}DIAGRAMMPLACEHOLDEREND`;
       });
 
       return convertedText
@@ -1725,28 +1830,62 @@ async function validateMermaidDiagram(diagram) {
   }
 }
 
-function restoredLatexBlocks(html){
+function restoredPlaceholders(html){
 
     let restored = html;
 
     restored = restored.replace(/LATEXBLOCKPLACEHOLDER([A-Za-z0-9+/=]+)PLACEHOLDER/g, (match, content) => {
-            const encoded = Buffer.from(content, 'base64').toString();
-            return 'latex-block\n' + encoded + '\nlatex-block';
+            const decoded = Buffer.from(content, 'base64').toString();
+            return 'latex-block\n' + decoded + '\nlatex-block';
         });
 
     restored = restored.replace(/LATEXINLINEPLACEHOLDER([A-Za-z0-9+/=]+)PLACEHOLDER/g, (match, content) => {
-            const encoded = Buffer.from(content, 'base64').toString();
-            return 'latex-inline' + encoded + 'latex-inline';
+            const decoded = Buffer.from(content, 'base64').toString();
+            return 'latex-inline' + decoded + 'latex-inline';
         });
 
     restored = restored.replace(/DIAGRAMMPLACEHOLDERSTART([A-Za-z0-9+/=]+)DIAGRAMMPLACEHOLDEREND/g, (match, content) => {
-        const encoded = Buffer.from(content, 'base64').toString();
-
-        return '<div  class="mermaid">\n' + encoded + '\n</div>';
+        const decoded = Buffer.from(content, 'base64').toString();
+        const mermaidUrlEdit = genPakoLink(decoded,"edit");
+        const mermaidUrlView = genPakoLink(decoded,"view");
+        return `<div  class="mermaid">\n${decoded}\n</div>\n<div><a href="${mermaidUrlEdit}" target="_blank">Live edit</a> | <a href="${mermaidUrlView}" target="_blank">Live view</a></div>`;
     });
 
    return restored
 }
+
+function jsBtoa(data) {
+  let binary = '';
+  const bytes = new Uint8Array(data);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function genPakoLink(graphMarkdown,type='edit') {
+  const jGraph = {
+    code: graphMarkdown,
+    mermaid: { theme: 'default' },
+  };
+
+  const byteStr = jsStringToByte(JSON.stringify(jGraph));
+
+  const deflated = pako.deflate(byteStr);
+
+  const dEncode = jsBtoa(deflated);
+
+  const link =
+    `https://mermaid.live/${type}#pako:` + dEncode.replace('+', '-').replace('/', '_');
+
+  return link;
+}
+
+function jsStringToByte(data) {
+  return new TextEncoder().encode(data);
+}
+
+
 
 function textByRolesFromWords(words){
 
@@ -1782,49 +1921,92 @@ function textByRolesFromWords(words){
 
 }
 
-function markdownToHtml(markdownText,filename) {
-
-  const textWithSecuredLatex = secureLatexBlocks(markdownText)
+function markdownToHtml(markdownText, filename) {
+  const textWithSecuredLatex = secureLatexBlocks(markdownText);
   
   const htmlBody = converter.makeHtml(textWithSecuredLatex);
-  const restoredLatex = restoredLatexBlocks(htmlBody);
-
+  const restored = restoredPlaceholders(htmlBody);
+  
+  // Load fresh CSS files to ensure all styles are included
+   
   const cssContent = `
-          <style>
-          /* Highlight.js styles */
-          ${preloadedFiles.highlightCss}
-          
-          /* Custom styles */
-          ${preloadedFiles.customCss}
-          </style>`;
+    <style>
+    /* Highlight.js styles */
+    ${cssFiles.highlightCss}
+    </style>
+    <style>
+    /* Custom styles */
+    ${cssFiles.customCss}
+    </style>
+    <style>
+    /* A4 PDF styles */
+    ${cssFiles.a4PdfCss}
+    </style>
+    <style>
+    /* Mobile responsive styles */
+    ${cssFiles.mobileCss}
+    </style>`;
 
   return `<!DOCTYPE html>
-          <html>
-          ${cssContent}
-          <head>
-            <meta charset="UTF-8">
-            <script>
-            MathJax = {
-                    tex: {
-                      inlineMath: [['latex-inline','latex-inline']],
-                      displayMath: [['latex-block','latex-block']],
-                      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
-                      ignoreClass: 'tex2jax_ignore',
-                      processClass: 'tex2jax_process'
-                    }
-                  };
-            </script>
-            <script id="MathJax-script">${preloadedFiles.texMmlChtml}</script>
-            <script type="module">
-              import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.esm.min.mjs';
-              mermaid.initialize({ startOnLoad: true });
-            </script>
-            <title>${filename}</title>
-          </head>
-          <body>
-          ${restoredLatex}
-          </body>
-      </html>`
+<html>
+<head>
+  <meta charset="UTF-8">
+  ${cssContent}
+  <script>
+  MathJax = {
+    tex: {
+      inlineMath: [['latex-inline','latex-inline']],
+      displayMath: [['latex-block','latex-block']],
+      skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+      ignoreClass: 'tex2jax_ignore',
+      processClass: 'tex2jax_process'
+    },
+    chtml: {
+      displayAlign: 'left',
+      displayIndent: '2em'
+    }
+  };
+  </script>
+  <script id="MathJax-script">${cssFiles.texMmlChtml}</script>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.esm.min.mjs';
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      mermaid.initialize({ startOnLoad: false });
+      document.querySelectorAll('.mermaid').forEach(renderMermaidDiagram);
+    });
+
+    async function renderMermaidDiagram(element, index) {
+      const code = element.textContent;
+      const insertError = (message) => {
+        element.innerHTML = \`<div style="color: red; font-weight: bold;">Описание диаграммы содержит ошибку:<br>\${message}</div>\`;
+      };
+      try {
+    	await mermaid.parse(code)
+
+      } catch (e) {
+        console.log("parce error")
+        insertError(e?.message || 'Неизвестная ошибка (parse)');
+        return;
+      }
+      
+    mermaid.render('generatedDiagram' + index, code)
+    .then(({svg}) => {
+      element.innerHTML = svg;
+    })
+    .catch(e => {
+      console.log("render error")
+      insertError(e?.message || 'Неизвестная ошибка (render)');
+    });
+    }
+
+  </script>
+  <title>${filename}</title>
+</head>
+<body>
+${restored}
+</body>
+</html>`;
 }
 
 
@@ -2007,6 +2189,7 @@ function extractFileNameFromURL(fileLink){
 
   return parts[parts.length-1]
 }
+
 
 module.exports = {
   formatObjectToText,

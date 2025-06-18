@@ -203,17 +203,17 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
       
     break;
     case "translator":
-      await resetTranslatorDialogHandler(requestMsgInstance)
-      const devePrompt = otherFunctions.getLocalizedPhrase("translator_prompt",requestMsgInstance.user.language_code)
-      await dialogueInstance.commitDevPromptToDialogue(devePrompt)
+        await resetNonDialogueHandler(requestMsgInstance)
+        const devPrompttranslator = otherFunctions.getLocalizedPhrase(`${requestMsgInstance.user.currentRegime}_prompt`,requestMsgInstance.user.language_code)
+        await dialogueInstance.commitDevPromptToDialogue(devPrompttranslator)
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
       dialogueInstance.emit('callCompletion')
 
     break;
     case "texteditor":
-      await resetTexteditorDialogHandler(requestMsgInstance)
-      const devPrompt = otherFunctions.getLocalizedPhrase("texteditor_prompt",requestMsgInstance.user.language_code)
-      await dialogueInstance.commitDevPromptToDialogue(devPrompt)
+        await resetNonDialogueHandler(requestMsgInstance)
+        const devPrompttexteditor = otherFunctions.getLocalizedPhrase(`${requestMsgInstance.user.currentRegime}_prompt`,requestMsgInstance.user.language_code)
+        await dialogueInstance.commitDevPromptToDialogue(devPrompttexteditor)
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
       dialogueInstance.emit('callCompletion')
 

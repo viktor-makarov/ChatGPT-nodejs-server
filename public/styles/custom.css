@@ -14,16 +14,17 @@ code {
     padding: 0.2em 0.4em;
     border-radius: 3px;
     font-size: 0.97em;
+    word-break: break-word;
 }
 
 blockquote {
-    border-left: 4px solid #b4b4b4;
+    border-left: 2px solid #b4b4b4;
     background: #f9f9f9;
-    margin: 1em 0;
-    padding: 0.8em 1.2em;
+    margin: 0.8em 0;
+    padding: 0.6em 1em;
     color: #555;
     font-style: italic;
-    font-size: 1.05em;
+    font-size: 1em;
 }
 
 pre {
@@ -42,6 +43,8 @@ pre {
     display: block;
     font-family: monospace;
     unicode-bidi: isolate;
+    overflow-x: auto;
+    max-width: 100%;
 }
 
 body {
@@ -49,14 +52,17 @@ body {
     color: #222;
     font-weight: normal;
     line-height: 1.5;
+    padding: 20px;
+    max-width: 100%;
+    margin: 0 auto;
 }
 
 table {
     border: solid 1px #ddd;
     margin-bottom: 1.25rem;
     table-layout: auto;
-    border-collapse: separate;
-    border-spacing: 2px;
+    border-collapse: collapse;
+    border-spacing: 1px;
 }
 
 table thead {
@@ -74,6 +80,98 @@ table tbody tr th,
 table tbody tr td, 
 table tr td {
     line-height: 1.125rem;
-    font-size: 0.875rem;
+    font-size: 0.875rem;   /* размер текста в таблице */
     padding: 0.5rem 0.625rem 0.625rem;
+    border: 1px solid #ddd;
+}
+
+table th, table td {
+    word-wrap: break-word;
+}
+
+.table-container {
+    overflow-x: auto;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-container::-webkit-scrollbar {
+    height: 8px;
+}
+
+.table-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.table-container::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+a {
+    color: #2563eb;
+    text-decoration: underline;
+    word-break: break-word;
+}
+
+a:hover {
+    color: #1d4ed8;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1em auto;
+}
+
+/* SVG general styling */
+svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1em 0;
+}
+
+/* Mermaid diagram styling */
+.mermaid {
+    text-align: left;
+    margin: 1em 0;
+    overflow-x: auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin-top: 1.5em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+h1 { font-size: 2em; }
+h2 { font-size: 1.5em; }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1.1em; }
+h5 { font-size: 1em; }
+h6 { font-size: 0.9em; }
+
+
+ul, ol {
+    margin: 1em 0;
+    padding-left: 2em;
+}
+
+li {
+    margin: 0.25em 0;
+}
+
+/* Horizontal rule */
+hr {
+    border: none;
+    border-top: 1px solid #ddd;
+    margin: 2em 0;
 }

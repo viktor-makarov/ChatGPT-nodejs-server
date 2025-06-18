@@ -1,0 +1,266 @@
+/* Mobile responsive styles for markdownToHtml function */
+
+/* Tablet and smaller desktop */
+@media screen and (max-width: 1024px) {
+    body {
+        padding: 15px;
+    }
+    
+    table {
+        font-size: 15px;
+    }
+    
+    pre {
+        font-size: 15px;
+    }
+}
+
+/* Mobile devices */
+@media screen and (max-width: 768px) {
+    body {
+        font-size: 16px;
+        padding: 10px;
+        line-height: 1.6;
+    }
+
+    .table-container {
+        scrollbar-width: thin;
+        scrollbar-color: #c1c1c1 #f1f1f1;
+    }
+
+      /* Better code block handling on mobile - preserve existing structure */
+    pre {
+        font-size: 14px;
+        padding: 10px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        border-radius: 6px;
+        margin: 15px 0;
+        /* Keep existing background and border from custom.css */
+        background-color: #f8f8f8;
+        border: 1px solid #dfdfdf;        /* Override existing margin values for mobile */
+        margin-top: 15px;
+        margin-bottom: 15px;
+        margin-block: 15px;
+    }
+    
+    code {
+        font-size: 14px;
+        word-break: break-all;
+        /* Keep existing styles from custom.css */
+        background: #f3f3f3;
+        padding: 0.2em 0.4em;
+        border-radius: 3px;
+    }
+    
+    /* Table responsiveness - use wrapper to avoid breaking existing table structure */
+    .table-mobile-wrapper {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+        margin: 15px 0;
+    }
+    
+    .table-mobile-wrapper table {
+        font-size: 14px;
+        margin: 0; /* Remove default margin when inside responsive wrapper */
+        /* Keep existing border settings from custom.css */
+        border: solid 1px #ddd;
+        border-collapse: separate;
+        border-spacing: 2px;
+        width: 100%;
+    }
+    
+    /* Better blockquote on mobile */
+    blockquote {
+        padding: 8px 12px;
+        font-size: 12px;
+        margin: 12px 0;
+        border-left-width: 2px;
+        background: #f9f9f9;
+    }
+    
+    /* Heading adjustments for mobile */
+    h1 { 
+        font-size: 24px; 
+        margin-top: 20px;
+        margin-bottom: 10px;
+    }
+    h2 { 
+        font-size: 22px; 
+        margin-top: 18px;
+        margin-bottom: 8px;
+    }
+    h3 { 
+        font-size: 20px; 
+        margin-top: 16px;
+        margin-bottom: 8px;
+    }
+    h4 { 
+        font-size: 18px; 
+        margin-top: 14px;
+        margin-bottom: 6px;
+    }
+    h5 { 
+        font-size: 16px; 
+        margin-top: 12px;
+        margin-bottom: 6px;
+    }
+    h6 { 
+        font-size: 16px; 
+        margin-top: 12px;
+        margin-bottom: 6px;
+    }
+    
+    /* Image responsiveness */
+    img {
+        max-width: 100%;
+        height: auto;
+        margin: 10px auto;
+    }
+    
+    /* SVG responsiveness */
+    svg {
+        max-width: 100%;
+        height: auto;
+        overflow: visible;
+    }
+    
+    /* Mermaid diagram responsiveness */
+    .mermaid {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        margin: 15px 0;
+        text-align: left;
+    }
+    
+    .mermaid svg {
+        min-width: 300px;
+        max-width: none;
+    }
+    
+    /* List adjustments */
+    ul, ol {
+        padding-left: 20px;
+        margin: 10px 0;
+    }
+    
+    li {
+        margin: 4px 0;
+        line-height: 1.5;
+    }
+    
+    /* Link improvements */
+    a {
+        word-break: break-word;
+        line-height: 1.4;
+    }
+    
+    /* Better touch targets */
+    a, button {
+        min-height: 44px;
+        min-width: 44px;
+        display: inline-block;
+        padding: 8px;
+        margin: 2px;
+        text-align: center;
+        line-height: 1.2;
+    }
+}
+
+/* Small mobile devices */
+@media screen and (max-width: 480px) {
+    body {
+        padding: 8px;
+        font-size: 15px;
+    }    pre {
+        font-size: 12px;
+        padding: 8px;
+        margin: 12px 0;
+        margin-top: 12px;
+        margin-bottom: 12px;
+        margin-block: 12px;
+    }
+    
+    code {
+        font-size: 13px;
+    }
+    
+    .table-mobile-wrapper {
+        margin: 12px 0;
+    }
+    
+    .table-mobile-wrapper table {
+        font-size: 12px;
+    }
+    
+
+    
+    /* Smaller headings for tiny screens */
+    h1 { font-size: 20px; }
+    h2 { font-size: 18px; }
+    h3 { font-size: 17px; }
+    h4 { font-size: 16px; }
+    h5 { font-size: 15px; }
+    h6 { font-size: 15px; }
+    
+    /* Mermaid adjustments for small screens */
+    .mermaid svg {
+        min-width: 280px;
+        transform-origin: top left;
+    }
+    
+    /* Improved list spacing */
+    ul, ol {
+        padding-left: 18px;
+    }
+    
+    /* Horizontal rule */
+    hr {
+        margin: 16px 0;
+    }
+}
+
+/* Extra small screens */
+@media screen and (max-width: 320px) {
+    body {
+        padding: 6px;
+        font-size: 14px;
+    }
+    
+    pre {
+        font-size: 11px;
+        padding: 6px;
+    }
+    
+    code {
+        font-size: 12px;
+    }
+    
+    h1 { font-size: 18px; }
+    h2 { font-size: 16px; }
+    h3 { font-size: 15px; }
+    h4 { font-size: 14px; }
+    h5 { font-size: 14px; }
+    h6 { font-size: 14px; }
+    
+    .mermaid svg {
+        min-width: 260px;
+    }
+}
+
+/* Landscape mobile orientation */
+@media screen and (max-width: 768px) and (orientation: landscape) {
+    body {
+        padding: 8px 15px;
+    }
+      /* Better use of horizontal space */
+    .mermaid svg {
+        max-width: 90vw;
+    }
+    
+    .table-mobile-wrapper {
+        overflow-x: auto;
+    }
+}

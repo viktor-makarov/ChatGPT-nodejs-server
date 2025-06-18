@@ -481,7 +481,13 @@ const list = [
                         },
                     html: {
                         type: "string",
-                        description: "Content for the file in html format. Images should have full public url. Urls to images should be in the format: <img src='https://example.com/image.png'/>. Urls may include parameters. Inline css classes should be in the format: <div style='color:red;'>text</div>. Should not be used together with content_reff.",
+                        description: "Content for the file should be in HTML format. Ensure that images have full public URLs, with URLs for images formatted as follows: <img src='https://example.com/image.png'/>. URLs may include parameters. Use inline CSS within HTML elements, formatted like: <div style='color:red;'>text</div>. The HTML content is prohibited to be used together with content_reff.\n\n" +
+                                     "For equations requiring special mathematical symbols, use LaTeX notation. For simple equations, use ordinary symbols.\n\n" +
+                                     "CONSTRAINTS:\n" +
+                                     "1. Avoid using LaTeX for simple equations.\n" +
+                                     "2. For block formulas, enclose the equations using $$ ... $ notation.\n" +
+                                     "3. For inline formulas, use $ ... $ notation.\n\n" +
+                                     "If you are tasked by the user to create diagrams, use Mermaid syntax within <div class=\"mermaid\"> ... </div>."
                     },
                     content_reff:{
                         type: "number",

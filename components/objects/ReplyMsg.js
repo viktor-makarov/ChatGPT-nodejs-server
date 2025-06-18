@@ -456,6 +456,7 @@ async sendToNewMessageWithCheck(text,reply_markup){
 async deliverNewCompletionVersion(text,reply_markup,parse_mode){
 
     const splitLinesString = '\n';
+    const additionalMsgOptions = {disable_web_page_preview: true};
     let residualText = text;
     const textLastIndex = text.length - 1;
     let startIndex = 0;
@@ -510,7 +511,7 @@ async deliverNewCompletionVersion(text,reply_markup,parse_mode){
     const sendOptions = repairedText.map((text, index) => {
       const conversionResult = otherFunctions.convertMarkdownToLimitedHtml(text,this.#user.language_code);
       const isLastChunk = index === repairedText.length - 1;
-      return [conversionResult.html,isLastChunk ? reply_markup : null,parse_mode,null];
+      return [conversionResult.html,isLastChunk ? reply_markup : null,parse_mode,additionalMsgOptions];
     });
 
     let results = []

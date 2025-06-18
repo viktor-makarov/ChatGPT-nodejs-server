@@ -829,6 +829,7 @@ validateRequiredFieldsFor_createExcelFile(){
         let formatedHtml;
         if(html){
             formatedHtml = func.formatHtml(html,filename)
+            
         } else {
             const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
 

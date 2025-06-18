@@ -576,7 +576,7 @@ class Completion extends Transform {
       }
     }
 
-      splitTextBoarders(text,tgmMsgThreshold){
+    splitTextBoarders(text,tgmMsgThreshold){
 
       let residualText = text;
       const textLastIndex = text.length - 1;
