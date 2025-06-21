@@ -25,6 +25,7 @@ class User{
     #currentVoice
     #settings
     #openAIToken
+    #pinnedHeaderAllowed
 
     constructor(userInfo) {
         this.#userid = userInfo.id;
@@ -48,6 +49,7 @@ class User{
         this.#currentModel = this.#settings[this.#currentRegime]?.model
         this.#active = result[0]?.active
         this.#plan = result[0]?.plan
+        this.#pinnedHeaderAllowed = this.#settings?.pinnedHeaderAllowed
         this.#groups = result[0]?.permissions?.groups
         this.#showSystemMsgs = this.#settings[this.#currentRegime]?.sysmsg
         this.#isRegistered = result[0]?.permissions?.registered
@@ -64,6 +66,38 @@ class User{
     }
     return result
     };
+
+    async updateUserProperties(pathString, value){
+        const pathArray = pathString.split(".")
+        const parameter = pathArray.pop()
+
+        switch (parameter) {
+            case "model":
+                if(pathArray.includes(this.#currentRegime)){
+                    this.#currentModel = value;
+                    this.#settings[this.#currentRegime].model = value;
+                }
+                break;
+            case "temperature":
+                if(pathArray.includes(this.#currentRegime)){
+                    this.#currentTemperature = value;
+                    this.#settings[this.#currentRegime].temperature = value;
+                }
+                break;
+            case "response_style":
+                if(pathArray.includes(this.#currentRegime)){
+                this.#response_style = value;
+                this.#settings[this.#currentRegime].response_style = value;
+                }
+                break;
+
+            case "pinnedHeaderAllowed":
+                this.#pinnedHeaderAllowed = Boolean(value);
+                this.#settings[this.#currentRegime].response_style
+                break;
+
+        }
+    }
 
     get userid(){
         return this.#userid
@@ -142,6 +176,14 @@ class User{
 
     get settings(){
         return this.#settings
+    }
+
+    get pinnedHeaderAllowed(){
+        return this.#pinnedHeaderAllowed
+    }
+
+    set pinnedHeaderAllowed(value){
+        this.#pinnedHeaderAllowed = value
     }
 
     set isRegistered(value){

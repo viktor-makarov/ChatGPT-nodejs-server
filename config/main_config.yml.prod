@@ -65,7 +65,7 @@ telegram_options:
   big_outgoing_message_threshold: 3900 #After this threshold bot makes second message
   commands:
     - command: "/chat"
-      description: "Диалог с Chat-GPT"
+      description: "Основной диалог"
     - command: "/resetchat"
       description: "Перезапустить диалог"
     - command: "/voicetotext"

@@ -1,8 +1,8 @@
 module.exports = {
     "chat":{
-        "header_msg":"Режим диалога | [model] | [response_style]",
-        "welcome_msg": "Напишите сообщение, чтобы начать новый диалог.",
-        "incomplete_msg":"Размер диалога = [previous_dialogue_tokens] токенов (из [request_length_limit_in_tokens]).\n" +
+        "header_msg":"Основной диалог | [model] | [response_style]",
+        "welcome_msg": "<b>Основной диалог</b>\nНапишите сообщение, чтобы начать новый диалог.",
+        "incomplete_msg":"<b>Основной диалог</b>\nРазмер диалога = [previous_dialogue_tokens] токенов (из [request_length_limit_in_tokens]).\n" +
                         "Чтобы начать новый диалог, нажмите здесь: /resetchat. ",
         "name":"Диалог",
         "options_desc":"Параметры работы Диалога:",
@@ -10,7 +10,7 @@ module.exports = {
             "temperature":{
                 "name":"Температура (t°)",
                 "options_desc":"Выберите новое значение температуры:",
-                "templateRespMsg":"Параметр Температура (t°) для функции Диалог изменен на [value].",
+                "templateRespMsg":"Параметр Температура (t°) для функции Диалог изменен на <b>[value]</b>.",
                 "options":{
                 "0":{
                     "name":"0",
@@ -34,7 +34,7 @@ module.exports = {
             "model":{
                 "name":"Версия модели",
                 "options_desc":"Выберите версию модели:",
-                "templateRespMsg":"Модель для функции Диалог изменена на [value].",
+                "templateRespMsg":"Модель для функции Диалог изменена на <b>[value]</b>.",
                 "options":{
                     "gpt-4o":{
                         "name":"gpt-4o",
@@ -64,7 +64,7 @@ module.exports = {
             "response_style":{
                 "name":"Стиль ответов",
                 "options_desc":"Выберите стиль ответов:",
-                "templateRespMsg":"Стиль ответов изменен на [value].",
+                "templateRespMsg":"Стиль ответов изменен на <b>[value]</b>.",
                 "options":{
                     "gentleman":{
                         "name":"Джентльмен",
@@ -109,14 +109,14 @@ module.exports = {
     },
     "translator":{
         "header_msg":"Переводчик | [model]",
-        "welcome_msg":"Достаточно прислать текст. Русский текст будет переведен на английский. Текст на любом другом языке будет переведен на русский." ,
+        "welcome_msg":"<b>Переводчик</b>\nДостаточно прислать текст. Русский текст будет переведен на английский. Текст на любом другом языке будет переведен на русский." ,
         "name":"Переводчик",
         "options_desc":"Параметры работы Переводчика:",
         "options":{
             "temperature":{
                 "name":"Температура (t°)",
                 "options_desc":"Выберите новое значение температуры:",
-                "templateRespMsg":"Параметр Температура (t°) для Переводчика изменен на [value].",
+                "templateRespMsg":"Параметр Температура (t°) для Переводчика изменен на <b>[value]</b>.",
                 "options":{
                 "0":{
                     "name":"0",
@@ -140,7 +140,7 @@ module.exports = {
             "model":{
                 "name":"Версия модели",
                 "options_desc":"Выберите версию модели:",
-                "templateRespMsg":"Модель для режима Переводчик изменена на [value].",
+                "templateRespMsg":"Модель для режима Переводчик изменена на <b>[value]</b>.",
                 "options":{
                     "gpt-4.1":{
                         "name":"GPT-4.1",
@@ -166,14 +166,14 @@ module.exports = {
     },
     "texteditor":{
         "header_msg":"Редактор | [model]",
-        "welcome_msg":"Просто пришлите Ваш текст в виде сообщения и я помогу его отредактировать." ,
+        "welcome_msg":"<b>Редактор</b>\nПросто пришлите Ваш текст в виде сообщения и я помогу его отредактировать." ,
         "name":"Редактор",
         "options_desc":"Параметры работы Редактора:",
         "options":{
             "temperature":{
                 "name":"Температура (t°)",
                 "options_desc":"Выберите новое значение температуры:",
-                "templateRespMsg":"Параметр Температура (t°) для Редактора изменен на [value].",
+                "templateRespMsg":"Параметр Температура (t°) для Редактора изменен на <b>[value]</b>.",
                 "options":{
                 "0":{
                     "name":"0",
@@ -197,7 +197,7 @@ module.exports = {
             "model":{
                 "name":"Версия модели",
                 "options_desc":"Выберите версию модели:",
-                "templateRespMsg":"Модель для режима Редактор изменена на [value].",
+                "templateRespMsg":"Модель для режима Редактор изменена на <b>[value]</b>.",
                 "options":{
                     "gpt-4.1":{
                         "name":"GPT-4.1",
@@ -236,7 +236,7 @@ module.exports = {
             "voice":{
                 "name":"Версия голоса",
                 "options_desc":"Выберите версию голоса:",
-                "templateRespMsg":"Голос изменен на [value].",
+                "templateRespMsg":"Голос изменен на <b>[value]</b>.",
                 "options":{
                     "Paul":{
                         "name":"Пол",
@@ -255,6 +255,22 @@ module.exports = {
                 "name":"<< Назад"
             }
         }
+    },
+    "pinnedHeaderAllowed":{
+        "options_desc":"Параметры закрепленного заголовка:",
+        "name":"Закрепленный заголовок",
+        "templateRespMsg":"Текущие настройки закрепленного заголовка изменены на: <b>[value]</b>.",
+        "options":{
+            "true":{
+                "name":"Разрешить отображение",
+            },
+            "false":{
+                "name":"Запретить отображение",
+            },
+            "back":{
+                "name":"<< Назад"
+            }
+    }
     },
     "currentsettings":{
         "name":"Текущие настройки",

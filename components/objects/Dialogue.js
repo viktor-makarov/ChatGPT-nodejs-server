@@ -213,9 +213,8 @@ class Dialogue extends EventEmitter {
         await awsApi.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
         const deleteS3Results = await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)),this.#user.currentRegime)
         const deletedFiles = deleteS3Results.Deleted
-        await this.commitDevPromptToDialogue(otherFunctions.startDeveloperPrompt(this.#user))
-        
         await this.deleteMeta()
+        await this.commitInitialSystemPromptToDialogue("chat")
         await this.createMeta()
 
         const buttons = {
@@ -357,9 +356,42 @@ class Dialogue extends EventEmitter {
         console.log("USER PROMPT")
     };
 
+
+    async commitInitialSystemPromptToDialogue(regime){
+
+        let promptText = "";
+        if(regime === "chat"){
+            promptText = otherFunctions.startDeveloperPrompt(this.#user)
+        } else if (regime === "translator" || regime === "texteditor") {
+            promptText = otherFunctions.getLocalizedPhrase(`${regime}_prompt`,this.#user.language_code)
+        }  else {
+            promptText = ""
+        }
+
+        const datetime = new Date();
+        const sourceid = `initial_dev_prompt_${regime}`
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: regime,
+            role: "developer",
+            roleid: 0,
+            content: promptText + `\n\n${datetime.toISOString()} (UTC)`
+          }
+        
+        await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+        
+        console.log("INITIAL DEVELOPER PROMPT COMMITED")
+    }
+
     async commitDevPromptToDialogue(text){
 
-        let currentRole = "developer"
         
         const datetime = new Date();
         
@@ -373,7 +405,7 @@ class Dialogue extends EventEmitter {
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
-            role: currentRole,
+            role: "developer",
             roleid: 0,
             content: text + `\n\n${datetime.toISOString()} (UTC)`
           }

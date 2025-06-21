@@ -10,6 +10,9 @@ const User = require("./objects/User.js");
 const Dialogue = require("./objects/Dialogue.js");
 const MdjApi = require("./apis/midjourney_API.js");
 const otherFunctions = require("./common_functions.js");
+const modelSettings = require("../config/telegramModelsSettings.js");
+const modelConfig = require("../config/modelConfig.js");
+const { chat } = require("../config/telegramModelsSettings.js");
 
 async function MdjAccountInfo(){
   const info = await MdjApi.executeInfo()
@@ -58,9 +61,38 @@ async function setBotParameters(botInstance) {
 }
 
 function router(botInstance) {
+  
   botInstance.on("message", (event) => eventRouter(event,botInstance))
+  botInstance.on("inline_query", (inlineQuery) => inlineQueryRouter(inlineQuery,botInstance))
   botInstance.on("callback_query", (event) => eventRouter(event,botInstance))
   console.log(new Date(), "Telegram bot started and listening for messages...","TelegramBot options:",botInstance.options);
+}
+
+async function inlineQueryRouter(inlineQuery,botInstance){
+console.log(inlineQuery)
+
+const {query,id} = inlineQuery;
+
+
+console.log(new Date(),"Inline query received:",query,id);
+
+const answerText = query.length > 0
+    ? `Пока данный функционал недоступен.`
+    : `Введите вопрос после @${process.env.TELEGRTAM_BOT_NAME}`;
+
+const results = [{
+    type: 'article',
+    id: 'unique-id-1',
+    title: `Ответ бота`,
+    description: answerText,
+    input_message_content: {
+      message_text: answerText,
+    },
+  }];
+
+await botInstance.answerInlineQuery(id, results);
+
+
 }
 
 async function eventRouter(event,botInstance){
@@ -129,17 +161,24 @@ async function eventRouter(event,botInstance){
     };
 
   for (const response of responses){
-    const result = await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options);
-    if(response.pin){
-      try{
-        await replyMsg.unpinAllChatMessages()
-      } catch(err){
-        console.log("Error unpinning messages",err.message)
-      }
-      await replyMsg.pinChatMessage(result.message_id);
-    }
-  }
 
+    if(response.operation === "updatePinnedMsg" ){
+      user.pinnedHeaderAllowed === true && await updatePinnedMsg(requestMsg,replyMsg)
+    } else if (response.operation === "removePinnedMsg"){
+      await unpinAllChatMessages(replyMsg)
+    } else if(response.operation === "updateSettings") {
+
+      await replyMsg.simpleMessageUpdate(response.text, {
+                chat_id: requestMsg.chatId,
+                message_id: response?.message_id || requestMsg.msgId,
+                reply_markup: response?.buttons?.reply_markup,
+                parse_mode: response?.parse_mode,
+              })
+    } else {
+      await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options)
+    }
+    }
+  
   } catch (err) {
     err.place_in_code = err.place_in_code || "routerTelegram.eventRouter";
 
@@ -150,6 +189,64 @@ async function eventRouter(event,botInstance){
       }
     );
   }
+}
+
+function pinnedMsg(userInstance) {
+  const pinnedMSgText = modelSettings[userInstance.currentRegime].header_msg
+              .replace(
+                "[model]",
+                modelConfig[userInstance.currentModel].name
+              )
+              .replace(
+                "[response_style]",
+                modelSettings[userInstance.currentRegime]?.options.response_style?.options[userInstance?.response_style ?? "neutral"].name
+              )
+        return pinnedMSgText
+}
+
+async function unpinAllChatMessages(replyMsg){
+     try{
+        await replyMsg.unpinAllChatMessages()
+      } catch(err){
+        console.log("Error unpinning messages",err.message)
+      }
+}
+
+async function updatePinnedMsg(requestMsg,replyMsg) {
+
+      const pinnedMsgText = pinnedMsg(requestMsg.user)
+
+      const chatInfo = await requestMsg.getChat()
+      const pinnedMessageId = chatInfo?.pinned_message?.message_id;
+
+      if(pinnedMessageId){       
+        try{
+            await replyMsg.simpleMessageUpdate(pinnedMsgText, {
+                      chat_id: requestMsg.chatId,
+                      message_id: pinnedMessageId,
+                      parse_mode:"HTML",
+                      reply_markup: null
+                    })
+              return "updated";
+        } catch(err){
+
+          if(!err.message.includes("message is not modified")){
+            err.sendToUser = false
+            err.place_in_code = err.place_in_code || "updatePinnedMsg.updatePinnedMsg";
+            telegramErrorHandler.main({replyMsgInstance:replyMsg,error_object:err})
+          }
+        }
+      }
+      
+      try{
+        await replyMsg.unpinAllChatMessages()
+      } catch(err){
+        console.log("Error unpinning messages",err.message)
+      }
+
+      const messageToPin = await replyMsg.sendToNewMessage(pinnedMsgText,null,"HTML",null);
+      await replyMsg.pinChatMessage(messageToPin.message_id);
+      return "inserted";
 }
 
 module.exports = {

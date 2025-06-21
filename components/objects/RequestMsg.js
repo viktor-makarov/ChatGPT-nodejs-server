@@ -276,6 +276,14 @@ acceptHandler(){
     };
 
   }
+
+async getChat(){
+    return await this.#botInstance.getChat(this.#chatId)
+}
+
+async getChatMember(){
+    return await this.#botInstance.getChatMember(this.#chatId,this.#user.userid)
+}
   
 
 

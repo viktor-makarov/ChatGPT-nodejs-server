@@ -12,7 +12,7 @@ global.appsettings = yaml.load(yamlFileContent);
 async function startServer(){
 console.time('Server startup');
 console.log(new Date(),"Telegram bot is launching...")
-const mongoClient = require("../components/mongoClient")
+const mongoClient = require("../components/apis/mongoClient")
 global.mongoConnection = await mongoClient.connectToMongo()
 const chromeBrowser = require("../components/apis/chromeBrowser")
 global.chromeBrowserHeadless = await chromeBrowser.launchBrowserHeadless()

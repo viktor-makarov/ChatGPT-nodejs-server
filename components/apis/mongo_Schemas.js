@@ -17,6 +17,7 @@ const ProfileSheema = new Schema(
     language_code: { type: String },
     settings: {
       current_regime: { type: String, default: "chat" },
+      pinnedHeaderAllowed: { type: Boolean, default: true },
       chat: {
         prefered_name : { type: String },
         response_style: { type: String },
@@ -38,6 +39,7 @@ const ProfileSheema = new Schema(
     token: {type: String},
     plan:{type: String},
     active:{type: Boolean},
+    
     permissions: {
       registered: { type: Boolean },
       registeredDTUTC: { type: Date },

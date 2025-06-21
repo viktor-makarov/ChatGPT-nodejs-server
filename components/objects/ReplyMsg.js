@@ -51,8 +51,6 @@ set text(value){
 };
 
 calculateTextToSend(){
-
-    
     this.#textToSend =  this.#text_prefix ? 
                                 this.#text_prefix + this.#text.slice(this.#sentTextIndex)
                                 :

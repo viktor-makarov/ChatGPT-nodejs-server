@@ -46,8 +46,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
   if(current_regime==="translator" || current_regime === "texteditor"){
         await resetNonDialogueHandler(requestMsgInstance)
-        const devPrompt = otherFunctions.getLocalizedPhrase(`${current_regime}_prompt`,requestMsgInstance.user.language_code)
-        await dialogueInstance.commitDevPromptToDialogue(devPrompt)
+        await this.commitInitialSystemPromptToDialogue(current_regime)
   }
 
   await requestMsgInstance.getFileLinkFromTgm()
@@ -204,18 +203,16 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
     break;
     case "translator":
         await resetNonDialogueHandler(requestMsgInstance)
-        const devPrompttranslator = otherFunctions.getLocalizedPhrase(`${requestMsgInstance.user.currentRegime}_prompt`,requestMsgInstance.user.language_code)
-        await dialogueInstance.commitDevPromptToDialogue(devPrompttranslator)
-      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+        await dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+        await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
       dialogueInstance.emit('callCompletion')
 
     break;
     case "texteditor":
         await resetNonDialogueHandler(requestMsgInstance)
-        const devPrompttexteditor = otherFunctions.getLocalizedPhrase(`${requestMsgInstance.user.currentRegime}_prompt`,requestMsgInstance.user.language_code)
-        await dialogueInstance.commitDevPromptToDialogue(devPrompttexteditor)
-      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-      dialogueInstance.emit('callCompletion')
+        await dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+        await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+        dialogueInstance.emit('callCompletion')
 
     break;
     }
@@ -289,15 +286,17 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     responses.push(response)
     
   } else if(cmpName==="settings"){
-    let response = await settingsOptionsHandler(requestMsgInstance);
-    responses.push(response)
-
+    const settingsResponse = await settingsOptionsHandler(requestMsgInstance);
+    responses = [...responses,...settingsResponse]
+    
   } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor"){
    
+    const previousRegime = userInstance.currentRegime;
     userInstance.currentRegime = cmpName
    
-    responses = await changeRegimeHandlerPromise({
+    responses = await regimeCommandHandle({
       newRegime:cmpName,
+      previousRegime:previousRegime,
       requestMsgInstance:requestMsgInstance,
       dialogueInstance:dialogueInstance
     });
@@ -601,20 +600,12 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if (callback_event === "settings"){
     try{
-      const response = await settingsOptionsHandler(
+      const settingsResponses = await settingsOptionsHandler(
         requestMsg,
         dialogue
       );
+      responses = [...responses,...settingsResponses]
 
-      if(response.operation ==="update"){
-      await replyMsg.simpleMessageUpdate(response.text, {
-        chat_id: requestMsg.chatId,
-        message_id: requestMsg.refMsgId,
-        reply_markup: response?.buttons?.reply_markup,
-      })
-    } else if(response.operation ==="insert"){
-      responses.push(response)
-    }
     } catch(err){
       console.log(err)
       throw err
@@ -960,65 +951,56 @@ async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
   }
 }
 
-async function changeRegimeHandlerPromise(obj){
-   
-   await mongo.updateCurrentRegimeSetting(obj.requestMsgInstance);
-   const responses = []
-      if (obj.newRegime == "chat") {
-        const previous_dialogue_tokens = await obj.dialogueInstance.metaGetTotalTokens()
+async function regimeCommandHandle(obj){
 
-        responses.push({
-          text: modelSettings[obj.newRegime].header_msg
+  const {newRegime, previousRegime,requestMsgInstance, dialogueInstance} = obj
+
+   const responses = []
+  if(newRegime != previousRegime){
+    responses.push({operation:"updatePinnedMsg"})
+  }
+   
+   await mongo.updateCurrentRegimeSetting(requestMsgInstance);
+
+      if (newRegime == "chat") {
+        const previous_dialogue_tokens = await dialogueInstance.metaGetTotalTokens()
+
+        if (previous_dialogue_tokens > 0) {
+          responses.push({
+            text: modelSettings[newRegime].incomplete_msg
+              .replace("[previous_dialogue_tokens]", previous_dialogue_tokens)
               .replace(
-                "[model]",
-                modelConfig[obj.requestMsgInstance.user.currentModel].name
-              )
-              .replace(
-                "[response_style]",
-                modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.settings[obj.newRegime].response_style ?? "neutral"].name
+                "[request_length_limit_in_tokens]",
+                modelConfig[requestMsgInstance.user.currentModel].request_length_limit_in_tokens
               ),
-          pin: true,
           buttons: {
             reply_markup: {
               keyboard: [['Перезапустить диалог']],
               resize_keyboard: true,
               one_time_keyboard: false
             }
-          }
-        })
-
-        if (previous_dialogue_tokens > 0) {
-          responses.push({
-            text: modelSettings[obj.newRegime].incomplete_msg
-              .replace("[previous_dialogue_tokens]", previous_dialogue_tokens)
-              .replace(
-                "[request_length_limit_in_tokens]",
-                modelConfig[obj.requestMsgInstance.user.currentModel].request_length_limit_in_tokens
-              ),
+          },
+          parse_mode: "HTML"
+            
           });
         } else {
           responses.push({
-            text: modelSettings[obj.newRegime].welcome_msg
+            text: modelSettings[newRegime].welcome_msg,
+            buttons: {
+              reply_markup: {
+                keyboard: [['Перезапустить диалог']],
+                resize_keyboard: true,
+                one_time_keyboard: false
+              }
+            },
+          parse_mode: "HTML"
           });
         }
-      } else if (obj.newRegime == "translator" || obj.newRegime == "texteditor") {
+      } else if (newRegime == "translator" || newRegime == "texteditor") {
 
         responses.push({
-          text: modelSettings[obj.newRegime].header_msg
-          .replace(
-            "[model]",
-            modelConfig[obj.requestMsgInstance.user.currentModel].name
-          ),
-          pin: true,
-          buttons:{
-            reply_markup: {
-            remove_keyboard: true,
-            }
-          }
-        });
-
-        responses.push({
-          text: modelSettings[obj.newRegime].welcome_msg
+          text: modelSettings[newRegime].welcome_msg,
+          parse_mode: "HTML"
         });
 
       }
@@ -1065,9 +1047,10 @@ async function resetNonDialogueHandler(requestMsgInstance) {
   return;
 }
 
-
 async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
 
+  const userInstance = requestMsgInstance.user;
+  let responses = [];
   let callbackArray = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
 
   if(requestMsgInstance.callback_data){
@@ -1092,17 +1075,39 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
       objectToParce = objectToParce[part].options;
     });
 
-    const result = await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
+    await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
+    await userInstance.updateUserProperties(pathString, end_value)
 
-    if(callbackArray.includes("response_style") && callbackArray.includes("chat") && end_value !="neutral"){
-      let devPrompt = "";
-      devPrompt +=otherFunctions.getLocalizedPhrase("and_now",requestMsgInstance.user.language_code)
-      devPrompt += otherFunctions.getLocalizedPhrase("response_style_"+end_value,requestMsgInstance.user.language_code)
-      await dialogueInstance.commitDevPromptToDialogue(devPrompt)
+    if(callbackArray.includes("response_style")){
+      await updateInitialDevPrompt(pathString,dialogueInstance)
+    }
+    
+    if(callbackArray.includes(requestMsgInstance.user.currentRegime) && (callbackArray.includes("model") || callbackArray.includes("response_style"))){
+      responses.push({operation:"updatePinnedMsg"})
+    }
+
+    if(callbackArray.includes("pinnedHeaderAllowed")){
+      if(end_value === "true"){
+        responses.push({operation:"updatePinnedMsg"})
+      } else {
+        responses.push({operation:"removePinnedMsg"})
+      }
     }
 
     //console.log("Обновление результатов",result)
-    return {operation:"insert",text:templateResponseMsg.replace("[value]", objectToParce[end_value].name)}
+    responses.push({operation:"insertSettingsResponse",text:templateResponseMsg.replace("[value]", objectToParce[end_value].name),parse_mode:"HTML"})
+    return responses
+}
+
+async function updateInitialDevPrompt(pathString,dialogueInstance){
+
+  const pathArray = pathString.split(".")
+  const regimesArray = ["chat","translator","texteditor"]
+  const matchedRegime = regimesArray.find(regime => pathArray.includes(regime));
+
+  if(matchedRegime){
+    await dialogueInstance.commitInitialSystemPromptToDialogue(matchedRegime)
+  }
 }
 
 async function reportsSendHandler(requestMsgInstance) {
@@ -1259,17 +1264,23 @@ async function reportsOptionsHandler(requestMsgInstance) {
 
 async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
 
-    let callback_data_array = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
+
+    const responses = [];
+    const callsource = requestMsgInstance.commandName ? "command" : "callback";
+    let callback_data_array = [callsource === "command" ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
     if(requestMsgInstance.callback_data){
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
       callback_data_array =  callback_data_array.concat(callback_data)
     }
+    
 
     if(callback_data_array.includes("currentsettings")){
-      return {operation:"insert", text: msqTemplates.current_settings.replace("[settings]",JSON.stringify(requestMsgInstance.user.settings,null,2)) };
+      responses.push({operation:"insertSettingsResponse", text: msqTemplates.current_settings.replace("[settings]",JSON.stringify(requestMsgInstance.user.settings,null,2)) })
+      return responses
     } else if (callback_data_array.includes("back")) {
       callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
+      
       requestMsgInstance.callback_data = await otherFunctions.encodeJson(callback_data.slice(0, callback_data.length - 2)); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
       //console.log("back trigger",callbackArray)
     }
@@ -1302,21 +1313,25 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
       
        
       //console.log("Обновленная клавиатура",settingsKeyboard)
-      return {
-        operation:"update",
+
+      responses.push({
+        operation:callsource === "command" ? "insertSettings" : "updateSettings",
         text: msgText,
+        message_id: callsource === "command" ? null : requestMsgInstance.refMsgId,
         buttons: {
           reply_markup: {
             inline_keyboard: settingsKeyboard,
             resize_keyboard: true,
           },
         },
-      };
+      })
+
+      return responses;
     } else {
       //выполняем изменение конфига
       //console.log("Выполняем действие")
-      const response = await settingsChangeHandler(requestMsgInstance,dialogueInstance);
-      return response;
+      const responses = await settingsChangeHandler(requestMsgInstance,dialogueInstance);
+      return responses;
     }
 };
 
@@ -1389,7 +1404,7 @@ module.exports = {
   noMessageText,
   unregisterHandler,
   infoacceptHandler,
-  changeRegimeHandlerPromise,
+  regimeCommandHandle,
   sendtoallHandler,
   sendtomeHandler,
   adminHandler,
