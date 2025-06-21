@@ -1783,6 +1783,17 @@ function preloadFiles() {
   }
 }
 
+function getManualHTML(language){
+
+  let html;
+ if(language === "ru"){
+  html = fs.readFileSync(path.join(__dirname, '..','user_manual_ru.html'), 'utf8');
+ } else {
+  html = fs.readFileSync(path.join(__dirname, '..','user_manual_ru.html'), 'utf8');
+ }
+ return html;
+}
+
 function secureLatexBlocks(markdownText) {
 
       let convertedText = markdownText;
@@ -2257,5 +2268,6 @@ module.exports = {
   transcribeAudioFile,
   extentionNormaliser,
   audioReadableStream,
-  voiceToTextConstraintsCheck
+  voiceToTextConstraintsCheck,
+  getManualHTML
 };

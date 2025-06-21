@@ -448,6 +448,12 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     await pdfdownloadHandler(replyMsg);
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
+  } else if (callback_event === "manualToHTML"){
+
+    const msgSent = await replyMsg.sendUserManualWaiterMsg()
+    await htmldownloadHandler(replyMsg);
+    await replyMsg.deleteMsgByID(msgSent.message_id)
+
   } else if (callback_event === "respToPDF"){
 
     const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
@@ -745,9 +751,22 @@ async function infoacceptHandler(requestMsgInstance) {
 
 async function pdfdownloadHandler(replyMsgInstance){
   
-  const downloadedFile = await otherFunctions.fileDownload(appsettings.other_options.pdf_guide_url)
-  const fileName = otherFunctions.getLocalizedPhrase(`manual_file`,replyMsgInstance.user.language);
-  await replyMsgInstance.sendDocumentAsBinary(downloadedFile,fileName)
+  const filename = otherFunctions.getLocalizedPhrase(`manual_file_pdf`,replyMsgInstance.user.language);
+  const formatedHtml = otherFunctions.getManualHTML(replyMsgInstance.user.language)
+  const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
+  const mimetype = "application/pdf"
+  await replyMsgInstance.sendDocumentAsBinary(filebuffer,filename,mimetype)
+  
+};
+
+async function htmldownloadHandler(replyMsgInstance){
+  
+  const filename = otherFunctions.getLocalizedPhrase(`manual_file_html`,replyMsgInstance.user.language);
+  const formatedHtml = otherFunctions.getManualHTML(replyMsgInstance.user.language)
+  const filebuffer = otherFunctions.generateTextBuffer(formatedHtml)
+  const mimetype = "text/html"
+  const caption = otherFunctions.getLocalizedPhrase("pdf_html_caption",replyMsgInstance.user.language_code)
+  await replyMsgInstance.sendDocumentAsBinary(filebuffer,filename,mimetype,{caption})
   
 };
 
@@ -1081,7 +1100,7 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
     if(callbackArray.includes("response_style")){
       await updateInitialDevPrompt(pathString,dialogueInstance)
     }
-    
+
     if(callbackArray.includes(requestMsgInstance.user.currentRegime) && (callbackArray.includes("model") || callbackArray.includes("response_style"))){
       responses.push({operation:"updatePinnedMsg"})
     }

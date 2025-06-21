@@ -443,15 +443,8 @@ async get_current_datetime(){
 }
 
 async get_user_guide(){
-
-        const url = appsettings.other_options.pdf_guide_url
-
-        const extractedObject = await func.extractTextFromFile(url,"application/pdf",this.#user)
-        if(extractedObject.success===1){
-            return {success:1,resource_url:url,text:extractedObject.text}
-        } else {
-            return {success:0,resource_url:url,error:extractedObject.error}
-        }
+        const formatedHtml = func.getManualHTML(the.#user.language)
+        return {success:1,resource_url:url,text:formatedHtml}
 }
     
 async get_data_from_mongoDB_by_pipepine(table_name){

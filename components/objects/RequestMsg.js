@@ -248,14 +248,18 @@ authenticateRequest(){
 
 guideHandler() {
 
-    const callback_data = {e:"manualToPDF"}
+    const callback_data1 = {e:"manualToPDF"}
+    const callback_data2 = {e:"manualToHTML"}
     return {
       text: msqTemplates.info,
       parse_mode:"html",
       buttons:{
       reply_markup: {
         inline_keyboard: [
-          [{ text: "Скачать PDF", callback_data: JSON.stringify(callback_data) }],
+          [
+            { text: "PDF", callback_data: JSON.stringify(callback_data1) },
+            { text: "🌐", callback_data: JSON.stringify(callback_data2) }
+          ],
         ],
       },
     }
