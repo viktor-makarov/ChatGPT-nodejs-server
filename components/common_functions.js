@@ -17,6 +17,7 @@ const openAIApi = require("./apis/openAI_API.js");
 const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const { execSync } = require("child_process");
 const pako = require('pako');
+const devPrompts = require("../config/developerPrompts.js");
 
 const showdown  = require('showdown'), showdownHighlight = require("showdown-highlight");
 
@@ -414,7 +415,6 @@ const svgson = require('svgson');
 
 const { encode, decode } = require("gpt-3-encoder");
 const msqTemplates = require("../config/telegramMsgTemplates.js");
-const { convert } = require('html-to-text');
 
 async function getSvgDimensions(svg) {
   const parsedSvg = await svgson.parse(svg);
@@ -1143,13 +1143,13 @@ async function extractContentWithTika(url){
 
 function startDeveloperPrompt(userInstance){
 
-  let prompt = getLocalizedPhrase("system_start_dialogue",userInstance.language_code)
+  let prompt = devPrompts.main_chat_start()
 
   if(userInstance.response_style && userInstance.response_style !="neutral"){
-
-    prompt += "\n\n" + getLocalizedPhrase("response_style_"+userInstance.response_style,userInstance.language_code)
-
+    prompt += "\n\n" + devPrompts.responseStyle(userInstance.response_style)
   }
+    prompt += devPrompts.latex_constraints()
+    prompt += devPrompts.diagram_constraints()
 
   return prompt
 }
@@ -1791,6 +1791,21 @@ function getManualHTML(language){
  } else {
   html = fs.readFileSync(path.join(__dirname, '..','user_manual_ru.html'), 'utf8');
  }
+ 
+ // Read the CSS file and embed it inline
+ try {
+   const cssContent = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles', 'user_manual.css'), 'utf8');
+   
+   // Replace the external CSS link with inline styles
+   html = html.replace(
+     '<link rel="stylesheet" href="public/styles/user_manual.css">',
+     `<style>\n${cssContent}\n</style>`
+   );
+ } catch (error) {
+   console.warn('Failed to embed CSS file:', error.message);
+   // If CSS file can't be read, keep the original link
+ }
+ 
  return html;
 }
 

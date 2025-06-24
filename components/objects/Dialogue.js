@@ -5,6 +5,7 @@ const awsApi = require("../apis/AWS_API.js")
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const ToolCalls  = require("./ToolCalls.js");
 const Completion = require("./Completion.js");
+const devPrompts = require("../../config/developerPrompts.js");
 
 class Dialogue extends EventEmitter {
 
@@ -362,8 +363,10 @@ class Dialogue extends EventEmitter {
         let promptText = "";
         if(regime === "chat"){
             promptText = otherFunctions.startDeveloperPrompt(this.#user)
-        } else if (regime === "translator" || regime === "texteditor") {
-            promptText = otherFunctions.getLocalizedPhrase(`${regime}_prompt`,this.#user.language_code)
+        } else if (regime === "translator") {
+            promptText = devPrompts.translator_start_prompt()
+        } else if (regime === "texteditor") {
+            promptText = devPrompts.texteditor_start_prompt()
         }  else {
             promptText = ""
         }

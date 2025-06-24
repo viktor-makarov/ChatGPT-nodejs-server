@@ -1,4 +1,4 @@
-/* User Manual CSS - Modern and Professional Styling */
+/* User Manual CSS - Professional Styling */
 
 * {
     margin: 0;
@@ -9,7 +9,7 @@
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     line-height: 1.6;
-    color: #333;
+    color: #2c3e50;
     background-color: #f8f9fa;
     margin: 0;
     padding: 0;
@@ -20,7 +20,7 @@ body {
     margin: 0 auto;
     padding: 20px;
     background-color: #ffffff;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     border-radius: 8px;
     margin-top: 20px;
     margin-bottom: 20px;
@@ -30,39 +30,102 @@ body {
 .header {
     text-align: center;
     margin-bottom: 40px;
-    padding: 30px 0;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    padding: 40px 0;
+    background-color: #2c3e50;
+    color: white !important;
     border-radius: 8px;
     margin: -20px -20px 40px -20px;
 }
 
 .header h1 {
     font-size: 2.5em;
-    font-weight: 300;
+    font-weight: 600;
     margin-bottom: 10px;
-    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+    color: white !important;
 }
 
 .header .subtitle {
     font-size: 1.2em;
     opacity: 0.9;
     font-weight: 300;
+    text-align: center;
+    color: white !important;
+}
+
+/* Hero Section */
+.hero-section {
+    background-color: #f8f9fa;
+    padding: 60px 40px;
+    margin: -20px -20px 60px -20px;
+    text-align: center;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.value-proposition h2 {
+    font-size: 2.5em;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 25px;
+    line-height: 1.2;
+}
+
+.value-proposition .lead {
+    font-size: 1.3em;
+    color: #5a6c7d;
+    margin-bottom: 50px;
+    max-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.key-benefits {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 40px;
+    margin-top: 40px;
+}
+
+.benefit-item {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    text-align: left;
+    transition: transform 0.3s ease;
+    border: 1px solid #e9ecef;
+}
+
+.benefit-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.benefit-item h3 {
+    font-size: 1.4em;
+    font-weight: 600;
+    color: #2c3e50;
+    margin-bottom: 15px;
+}
+
+.benefit-item p {
+    color: #5a6c7d;
+    line-height: 1.6;
 }
 
 /* Table of Contents */
 .toc {
-    background-color: #f8f9fa;
-    border: 1px solid #e9ecef;
+    background-color: #2c3e50;
+    padding: 30px;
     border-radius: 8px;
-    padding: 20px;
-    margin: 30px 0;
+    margin-bottom: 40px;
+    color: white;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .toc h2 {
-    color: #495057;
-    margin-bottom: 15px;
-    font-size: 1.3em;
+    color: white;
+    margin-bottom: 20px;
 }
 
 .toc ul {
@@ -75,20 +138,18 @@ body {
 }
 
 .toc ul li a {
-    color: #007bff;
+    color: white;
     text-decoration: none;
-    padding: 5px 10px;
-    border-radius: 4px;
-    transition: background-color 0.3s ease;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    padding: 8px 12px;
+    border-radius: 6px;
+    display: inline-block;
 }
 
 .toc ul li a:hover {
-    background-color: #e3f2fd;
-}
-
-.toc ul ul {
-    padding-left: 20px;
-    margin-top: 5px;
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateX(5px);
 }
 
 /* Typography */
@@ -96,31 +157,34 @@ h1 {
     color: #2c3e50;
     font-size: 2.2em;
     margin: 40px 0 20px 0;
-    border-bottom: 3px solid #3498db;
-    padding-bottom: 10px;
     font-weight: 600;
 }
 
 h2 {
-    color: #34495e;
+    color: #2c3e50;
     font-size: 1.8em;
     margin: 35px 0 15px 0;
     font-weight: 500;
-    border-left: 4px solid #3498db;
-    padding-left: 15px;
 }
 
 h3 {
-    color: #4a5568;
+    color: #2c3e50;
     font-size: 1.4em;
     margin: 25px 0 12px 0;
+    font-weight: 500;
+}
+
+h4 {
+    color: #2c3e50;
+    font-size: 1.2em;
+    margin: 20px 0 10px 0;
     font-weight: 500;
 }
 
 p {
     margin: 15px 0;
     text-align: justify;
-    color: #4a5568;
+    color: #5a6c7d;
 }
 
 /* Lists */
@@ -131,11 +195,25 @@ ul, ol {
 
 li {
     margin: 8px 0;
-    color: #4a5568;
+    color: #5a6c7d;
 }
 
 li p {
     margin: 5px 0;
+}
+
+/* Format list - simple styling */
+.format-list {
+    list-style: none;
+    padding-left: 0;
+}
+
+.format-list li {
+    background-color: #ffffff;
+    padding: 10px 15px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
 }
 
 /* Code blocks and pre-formatted text */
@@ -149,7 +227,7 @@ pre {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
     line-height: 1.4;
-    color: #212529;
+    color: #2c3e50;
 }
 
 code {
@@ -159,35 +237,34 @@ code {
     padding: 2px 6px;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 0.9em;
-    color: #e83e8c;
+    color: #2c3e50;
 }
 
 /* Command examples */
 .command {
-    background-color: #2d3748;
-    color: #e2e8f0;
+    background-color: #2c3e50;
+    color: #ffffff;
     border-radius: 6px;
     padding: 12px 15px;
     margin: 15px 0;
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    border-left: 4px solid #4299e1;
 }
 
 .command::before {
     content: "$ ";
-    color: #4299e1;
+    color: #ffffff;
     font-weight: bold;
 }
 
 /* Links */
 a {
-    color: #3498db;
+    color: #5a6c7d;
     text-decoration: none;
     transition: color 0.3s ease;
 }
 
 a:hover {
-    color: #2980b9;
+    color: #2c3e50;
     text-decoration: underline;
 }
 
@@ -196,7 +273,7 @@ img {
     max-width: 100%;
     height: auto;
     border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     margin: 10px 0;
 }
 
@@ -209,260 +286,176 @@ img {
 
 /* Sections */
 .section {
-    margin: 40px 0;
-    padding: 20px 0;
+    margin-bottom: 40px;
+    padding: 35px;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    background-color: #ffffff;
+    border: 1px solid #e9ecef;
 }
 
-.section:not(:last-child) {
-    border-bottom: 1px solid #e9ecef;
-}
-
-/* Feature boxes */
-.feature-box {
+/* Alternating section backgrounds */
+.section:nth-child(even) {
     background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
+}
+
+/* Professional styles for key sections */
+#quick-start {
+    background-color: #f8f9fa;
+}
+
+#introduction {
+    background-color: #ffffff;
+}
+
+#work-modes {
+    background-color: #f8f9fa;
+}
+
+#capabilities {
+    background-color: #ffffff;
+}
+
+#settings {
+    background-color: #f8f9fa;
+}
+
+#faq {
+    background-color: #ffffff;
+}
+
+#commands {
+    background-color: #f8f9fa;
+}
+
+/* Content boxes - simplified and unified */
+.content-box {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    padding: 25px;
     border-radius: 8px;
+    margin: 20px 0;
+}
+
+.content-box h3,
+.content-box h4 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+}
+
+/* Lists - simplified styling */
+.simple-list {
+    list-style: none;
+    padding-left: 0;
+}
+
+.simple-list li {
+    background-color: #ffffff;
+    padding: 12px 18px;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e9ecef;
+}
+
+/* Setup steps */
+.setup-steps {
+    list-style: decimal;
+    padding-left: 20px;
+}
+
+.setup-steps li {
+    margin-bottom: 10px;
+    background: none;
+    box-shadow: none;
+    border: none;
+    padding: 0;
+}
+
+/* Examples and code blocks */
+.example-box {
+    background-color: #2c3e50;
     padding: 20px;
-    margin: 20px 0;
-    border-left: 4px solid #28a745;
-}
-
-.feature-box h3 {
-    color: #28a745;
-    margin-top: 0;
-}
-
-/* Warning/Note boxes */
-.note {
-    background-color: #fff3cd;
-    border: 1px solid #ffeaa7;
     border-radius: 8px;
-    padding: 15px;
     margin: 20px 0;
-    border-left: 4px solid #f39c12;
 }
 
-.note h4 {
-    color: #f39c12;
-    margin: 0 0 10px 0;
-    font-size: 1.1em;
+.example-box pre {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 12px 15px;
+    border-radius: 6px;
+    margin: 10px 0;
 }
 
-.warning {
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
-    border-radius: 8px;
-    padding: 15px;
-    margin: 20px 0;
-    border-left: 4px solid #dc3545;
-}
-
-.warning h4 {
-    color: #dc3545;
-    margin: 0 0 10px 0;
-    font-size: 1.1em;
-}
-
-/* FAQ section */
+/* FAQ items */
 .faq-item {
-    margin: 25px 0;
+    background-color: #ffffff;
     border: 1px solid #e9ecef;
     border-radius: 8px;
-    overflow: hidden;
+    padding: 25px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .faq-question {
-    background-color: #f8f9fa;
-    padding: 15px 20px;
+    color: #2c3e50;
     font-weight: 600;
-    color: #495057;
-    border-bottom: 1px solid #e9ecef;
+    margin-bottom: 15px;
 }
 
 .faq-answer {
-    padding: 20px;
-    background-color: white;
+    color: #5a6c7d;
 }
 
-/* Commands section */
-.command-list {
+/* Command sections - simplified */
+.command-container {
     background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    padding: 25px;
     border-radius: 8px;
-    padding: 20px;
-    margin: 20px 0;
+    margin-bottom: 30px;
 }
 
 .command-item {
-    margin: 15px 0;
-    padding: 10px 0;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.command-item:last-child {
-    border-bottom: none;
+    background-color: #ffffff;
+    padding: 15px;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e9ecef;
 }
 
 .command-name {
-    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-    background-color: #2d3748;
-    color: #e2e8f0;
+    color: #2c3e50;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+    display: inline-block;
+    background-color: #f8f9fa;
     padding: 4px 8px;
     border-radius: 4px;
-    font-weight: bold;
-    display: inline-block;
     margin-right: 10px;
 }
 
-/* Enhanced styles for improved document structure */
-
-/* Quick start section highlight */
-#quick-start {
-    background: linear-gradient(135deg, #667eea10 0%, #764ba240 100%);
-    border-radius: 12px;
-    padding: 25px;
-    margin: 30px 0;
-    border-left: 5px solid #667eea;
+.command-item span:last-child,
+.command-item p {
+    color: #5a6c7d;
 }
 
-#quick-start h1 {
-    color: #667eea;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-/* Emoji spacing for headings */
-h1, h2 {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* Enhanced feature boxes with icons */
-.feature-box h3 {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* Improved note and warning boxes */
-.note, .warning {
-    position: relative;
-    padding-left: 50px;
-}
-
-.note h4::before {
-    content: "💡";
-    position: absolute;
-    left: 15px;
-    font-size: 1.2em;
-}
-
-.warning h4::before {
-    content: "⚠️";
-    position: absolute;
-    left: 15px;
-    font-size: 1.2em;
-}
-
-/* Enhanced command items with better spacing */
-.command-item {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 15px;
-    border-radius: 8px;
-    transition: background-color 0.2s ease;
-}
-
-.command-item:hover {
-    background-color: #f8f9fa;
-}
-
-.command-item span {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    line-height: 1.4;
-}
-
-/* Enhanced FAQ items with icons */
-.faq-question strong {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-/* Better spacing for examples */
-pre {
-    margin: 15px 0;
-    position: relative;
-}
-
-pre::before {
-    content: "💬";
-    position: absolute;
-    left: -25px;
-    top: 12px;
-    font-size: 1.1em;
-}
-
-/* Improved readability for lists */
-ul li, ol li {
-    margin: 10px 0;
-    padding-left: 5px;
-}
-
-/* Enhanced table of contents with better hierarchy */
-.toc ul li a {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-radius: 6px;
-    transition: all 0.2s ease;
-}
-
-.toc ul li a:hover {
-    background-color: #e3f2fd;
-    transform: translateX(5px);
-}
-
-/* Section spacing improvements */
-.section {
-    scroll-margin-top: 20px;
-}
-
-/* Better visual hierarchy for articles */
+/* Articles - clean and simple */
 article {
-    margin: 30px 0;
-    padding: 20px 0;
+    background-color: rgba(255, 255, 255, 0.9);
+    padding: 25px;
+    border-radius: 8px;
+    margin: 25px 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e9ecef;
 }
 
-article:not(:last-child) {
-    border-bottom: 1px solid #e9ecef;
-}
-
-/* Responsive emoji sizing */
-@media (max-width: 768px) {
-    h1, h2 {
-        font-size: calc(1.5em + 1vw);
-        gap: 6px;
-    }
-    
-    .note, .warning {
-        padding-left: 35px;
-    }
-    
-    .note h4::before, .warning h4::before {
-        left: 10px;
-        font-size: 1em;
-    }
-    
-    pre::before {
-        left: -20px;
-        font-size: 1em;
-    }
+article h2 {
+    color: #2c3e50;
+    margin-bottom: 20px;
 }
 
 /* Responsive design */
@@ -498,6 +491,11 @@ article:not(:last-child) {
     .toc {
         padding: 15px;
     }
+    
+    .key-benefits {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
 }
 
 @media (max-width: 480px) {
@@ -516,6 +514,10 @@ article:not(:last-child) {
     ul, ol {
         padding-left: 20px;
     }
+    
+    .section {
+        padding: 20px;
+    }
 }
 
 /* Print styles */
@@ -532,9 +534,17 @@ article:not(:last-child) {
     }
     
     .header {
-        background: none;
-        color: black;
+        background-color: #2c3e50 !important;
+        color: white !important;
         text-align: left;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    
+    .section {
+        background-color: white !important;
+        border: none;
+        box-shadow: none;
     }
     
     a {
@@ -545,432 +555,28 @@ article:not(:last-child) {
     pre {
         border: 1px solid #ccc;
     }
-}
-
-/* Print styles for A4 PDF optimization */
-@media print {
-    /* A4 page setup */
-    @page {
-        size: A4;
-        margin: 2.5cm 2cm 2.5cm 2cm;
-        
-        /* Header for each page */
-        @top-center {
-            content: "R2D2: Руководство пользователя";
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 10pt;
-            color: #666;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 5pt;
-        }
-        
-        /* Footer with page numbers */
-        @bottom-right {
-            content: "Стр. " counter(page);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            font-size: 9pt;
-            color: #666;
-        }
-    }
-      /* Reset for print */
-    * {
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
     
-    body {
-        background: white !important;
-        color: #000 !important;
-        font-size: 11pt;
-        line-height: 1.4;
-        margin: 0;
-        padding: 0;
-    }
-    
-    .container {
-        max-width: none;
-        width: 100%;
-        margin: 0;
-        padding: 0;
-        box-shadow: none;
-        border-radius: 0;
-        background: white;
-    }
-    
-    /* Header styles for print */
-    .header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        text-align: center;
-        padding: 20pt 0;
-        margin: 0 0 30pt 0;
-        border-radius: 0;        page-break-after: avoid;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-    
-    .header h1 {
-        font-size: 24pt;
-        margin: 0 0 8pt 0;
-        color: white !important;
-        text-shadow: none;
-        font-weight: 600;
-    }
-    
-    .header .subtitle {
-        font-size: 14pt;
-        color: white !important;
-        opacity: 1;
-        font-weight: 300;
-    }
-    
-    /* Table of Contents for print */
     .toc {
-        background: #f8f9fa !important;
-        border: 1pt solid #dee2e6;
-        padding: 15pt;
-        margin: 20pt 0;
-        page-break-inside: avoid;
-        page-break-after: auto;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        background-color: #f8f9fa !important;
+        color: black !important;
+        border: 1px solid #ccc;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
     }
     
     .toc h2 {
-        font-size: 14pt;
-        margin: 0 0 12pt 0;
-        color: #333 !important;
-        page-break-after: avoid;
-    }
-    
-    .toc ul {
-        margin: 0;
-        padding-left: 15pt;
-    }
-    
-    .toc ul li {
-        margin: 4pt 0;
-        font-size: 10pt;
-        line-height: 1.3;
-    }
-    
-    .toc ul ul {
-        padding-left: 12pt;
-        margin: 2pt 0;
+        color: black !important;
     }
     
     .toc a {
-        color: #000 !important;
-        text-decoration: none;
-        border-bottom: 1pt dotted #666;
+        color: black !important;
     }
     
-    /* Typography for print */
-    h1 {
-        font-size: 18pt;
-        color: #2c3e50 !important;
-        margin: 25pt 0 12pt 0;
-        border-bottom: 2pt solid #3498db;
-        padding-bottom: 6pt;
-        page-break-after: avoid;
-        page-break-inside: avoid;
+    h1, h2, h3, h4 {
+        color: black !important;
     }
     
-    h2 {
-        font-size: 15pt;
-        color: #34495e !important;
-        margin: 20pt 0 10pt 0;
-        border-left: 3pt solid #3498db;
-        padding-left: 10pt;
-        page-break-after: avoid;
-        page-break-inside: avoid;
-    }
-    
-    h3 {
-        font-size: 13pt;
-        color: #4a5568 !important;
-        margin: 15pt 0 8pt 0;
-        page-break-after: avoid;
-        page-break-inside: avoid;
-    }
-    
-    h4 {
-        font-size: 12pt;
-        color: #4a5568 !important;
-        margin: 12pt 0 6pt 0;
-        page-break-after: avoid;
-    }
-    
-    p {
-        margin: 8pt 0;
-        text-align: justify;
-        color: #333 !important;
-        font-size: 11pt;
-        line-height: 1.4;
-        orphans: 3;
-        widows: 3;
-    }
-    
-    /* Lists for print */
-    ul, ol {
-        margin: 8pt 0;
-        padding-left: 18pt;
-        page-break-inside: avoid;
-    }
-    
-    li {
-        margin: 4pt 0;
-        color: #333 !important;
-        font-size: 11pt;
-        line-height: 1.3;
-        page-break-inside: avoid;
-    }
-    
-    /* Code blocks for print */
-    pre {
-        background: #f8f9fa !important;
-        border: 1pt solid #dee2e6;
-        padding: 10pt;
-        margin: 12pt 0;
-        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-        font-size: 9pt;
-        line-height: 1.3;
-        color: #212529 !important;
-        page-break-inside: avoid;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    code {
-        background: #f1f3f4 !important;
-        border: 1pt solid #e1e5e9;
-        padding: 1pt 3pt;
-        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-        font-size: 10pt;
-        color: #d63384 !important;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    /* Command blocks for print */
-    .command, .command-name {
-        background: #2d3748 !important;
-        color: #e2e8f0 !important;
-        border: 1pt solid #4a5568;
-        padding: 8pt 10pt;
-        margin: 10pt 0;
-        font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-        font-size: 9pt;
-        page-break-inside: avoid;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    .command-name {
-        display: inline-block;
-        padding: 2pt 6pt;
-        margin: 0 6pt 0 0;
-        font-weight: bold;
-    }
-    
-    /* Feature boxes for print */
-    .feature-box {
-        background: #f8f9fa !important;
-        border: 1pt solid #dee2e6;
-        border-left: 3pt solid #28a745;
-        padding: 12pt;
-        margin: 15pt 0;
-        page-break-inside: avoid;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    .feature-box h3 {
-        color: #28a745 !important;
-        margin-top: 0;
-        font-size: 12pt;
-    }
-    
-    /* Warning and note boxes for print */
-    .note {
-        background: #fff3cd !important;
-        border: 1pt solid #ffeaa7;
-        border-left: 3pt solid #f39c12;
-        padding: 10pt;
-        margin: 12pt 0;
-        page-break-inside: avoid;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    .note h4 {
-        color: #f39c12 !important;
-        margin: 0 0 6pt 0;
-        font-size: 11pt;
-    }
-    
-    .warning {
-        background: #f8d7da !important;
-        border: 1pt solid #f5c6cb;
-        border-left: 3pt solid #dc3545;
-        padding: 10pt;
-        margin: 12pt 0;
-        page-break-inside: avoid;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    .warning h4 {
-        color: #dc3545 !important;
-        margin: 0 0 6pt 0;
-        font-size: 11pt;
-    }
-    
-    /* FAQ section for print */
-    .faq-item {
-        border: 1pt solid #dee2e6;
-        margin: 15pt 0;
-        page-break-inside: avoid;
-        overflow: hidden;
-    }
-    
-    .faq-question {
-        background: #f8f9fa !important;
-        padding: 10pt 12pt;
-        font-weight: 600;
-        color: #495057 !important;
-        border-bottom: 1pt solid #dee2e6;
-        font-size: 11pt;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    .faq-answer {
-        padding: 12pt;
-        background: white !important;
-        color: #333 !important;
-        font-size: 11pt;
-        line-height: 1.4;
-    }
-    
-    /* Command list for print */
-    .command-list {
-        background: #f8f9fa !important;
-        padding: 12pt;
-        margin: 15pt 0;
-        border: 1pt solid #dee2e6;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    .command-item {
-        margin: 10pt 0;
-        padding: 8pt 0;
-        border-bottom: 1pt solid #dee2e6;
-        page-break-inside: avoid;
-    }
-    
-    .command-item:last-child {
-        border-bottom: none;
-    }
-    
-    /* Sections and page breaks */
-    .section {
-        margin: 20pt 0;
-        padding: 0;
-        border-bottom: none;
-    }
-    
-    .section:not(:last-child) {
-        page-break-after: auto;
-    }
-    
-    /* Hide interactive elements */
-    .menu-icon {
-        display: none;
-    }
-    
-    /* Links for print */
-    a {
-        color: #000 !important;
-        text-decoration: underline;
-    }
-    
-    a[href^="http"]:after {
-        content: " (" attr(href) ")";
-        font-size: 9pt;
-        color: #666 !important;
-        font-style: italic;
-    }
-    
-    a[href^="#"]:after {
-        content: "";
-    }
-    
-    /* Images for print */
-    img {
-        max-width: 100% !important;
-        height: auto !important;
-        page-break-inside: avoid;
-        border: 1pt solid #ddd;
-    }
-    
-    /* Ensure proper page breaks */
-    article {
-        page-break-inside: avoid;
-    }
-    
-    /* Table styles if any */
-    table {
-        border-collapse: collapse;
-        width: 100%;
-        margin: 15pt 0;
-        page-break-inside: auto;
-    }
-    
-    th, td {
-        border: 1pt solid #dee2e6;
-        padding: 6pt 8pt;
-        text-align: left;
-        font-size: 10pt;
-    }
-    
-    th {
-        background: #f8f9fa !important;
-        font-weight: 600;
-        -webkit-print-color-adjust: exact; print-color-adjust: exact;
-    }
-    
-    /* Optimize for A4 width */
-    @page :first {
-        margin-top: 3cm;
-    }
-    
-    /* Avoid page breaks after headings */
-    h1, h2, h3, h4, h5, h6 {
-        page-break-after: avoid;
-    }
-    
-    /* Avoid widows and orphans */
     p, li {
-        orphans: 3;
-        widows: 3;
-    }
-    
-    /* Ensure content fits A4 */
-    .container {
-        max-width: 19cm; /* A4 width minus margins */
-    }
-}
-
-/* Additional print utilities */
-@media print {
-    .print-page-break {
-        page-break-before: always;
-    }
-    
-    .print-no-break {
-        page-break-inside: avoid;
-    }
-    
-    .print-hide {
-        display: none !important;
-    }
-    
-    .print-only {
-        display: block !important;
+        color: black !important;
     }
 }
