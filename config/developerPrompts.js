@@ -116,6 +116,7 @@ flowchart TD
 - labels do not require wiring with double quites ""
 - Use '<br />' to separate words between lines (e.g. Frontend<br />Web App);
 - Use only actor and participant keywords;
+- NEver use 'box' to unite messages, it can be used only to group actors and participants;
 - Never use creation and deletion commands;
 - Always use transparent boxes;
 - Use 'autonumber' when you need to number the sequence of messages;

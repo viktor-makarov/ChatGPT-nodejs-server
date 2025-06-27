@@ -137,10 +137,10 @@ function enrichErrorObject(err,replyMsgInstance){
         //Ничего не меняем
     } else if(err.code && err.code.includes("MDJ_ERR")){
 
-        if (err.message.includes("run out of hours")) {
+        if (err.message.includes("run out of hours") || err.message.includes("account credit not enough")) {
             err.internal_code = "MDJ_ERR1"
             err.user_message = msqTemplates.MDJ_ERR1
-        }   else if (err.message.includes("403 ")){
+        } else if (err.message.includes("403 ")){
             err.internal_code = "MDJ_ERR2"
             err.user_message = msqTemplates.MDJ_ERR2
             err.mongodblog = false //Don't log this error to MongoDB

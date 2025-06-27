@@ -7,10 +7,71 @@ const modelConfig = require("../../config/modelConfig.js");
 const { Readable } = require("stream");
 const mongo = require("./mongo.js");
 const toolsCollection = require("../objects/toolsCollection.js");
-const { StringDecoder } = require('string_decoder');
 const otherFunctions = require("../common_functions.js");
-
 const axios = require("axios");
+const OpenAI = require("openai");
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
+
+async function responseStream(dialogueClass,instructions = null) {
+
+const userInstance = dialogueClass.userInstance
+const toolCallsInstance = dialogueClass.toolCallsInstance
+const model = userInstance.currentModel
+const input = await dialogueClass.getDialogueForRequest()
+
+const options = {
+    model: model,
+    input: input,
+    stream: true,
+    store:false,
+    background: false,
+}
+
+if (instructions){
+    options.instructions = instructions;
+}
+
+const modelCanUseTemperature = modelConfig[model].canUseTemperature
+
+if (modelCanUseTemperature) {
+    options.temperature = userInstance.currentTemperature;
+}
+
+const available_tools =  await toolsCollection.getAvailableToolsForCompletion(userInstance)
+const modelCanUseTools = modelConfig[model].canUseTool
+
+if(available_tools && available_tools.length>0 && modelCanUseTools){
+      options.tools = available_tools;
+      options.tool_choice = toolCallsInstance.tool_choice
+  }
+
+let responseStream;
+try {
+    responseStream = await openai.responses.create(options);
+} catch (error) {
+      console.log("Error in responseStream:", error.message);
+      const errorAugmented = await OpenAIErrorHandle(error,dialogueClass);
+      throw errorAugmented
+}
+
+return responseStream;
+}
+
+async function responseSync(model,instructions, input,temperature = 0) {
+
+const response = await openai.responses.create({
+    model: model,
+    instructions: instructions,
+    input: input,
+    temperature: temperature,
+    store:false,
+    background: false,
+});
+
+return response;
+}
 
 async function getModels() {
     const options = {
@@ -213,24 +274,21 @@ async function chatCompletionStreamAxiosRequest(
     }
 }
 
-    async function OpenAIErrorHandle(error,dialogueClass) {
+async function OpenAIErrorHandle(error,dialogueClass) {
 
-        const oai_response_status = error.response ? error.response.status : null;
-        let newErr = new Error(error.message);
-
-        newErr.message_from_response = await deriveErrorDetailsFromOAIResponse(error)
+        let newErr = error;
         newErr.place_in_code = newErr.place_in_code || "openAi_API.OpenAIErrorHandle";
 
-        if (oai_response_status === 400 || error.message.includes("400")) {
+        if (error.status === 400 || error.message.includes("400")) {
 
           newErr.code = "OAI_ERR_400";
-          newErr.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",error?.message_from_response?.message ?? "отсутствует");
+          newErr.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",error?.message ?? "отсутствует");
           
           // Regular expression to check if the error message indicates that the context length limit has been exceeded
           const contentExceededPattern = new RegExp(/context_length_exceeded/);
-          const contentIsExceeded = contentExceededPattern.test(error.message_from_response)
+          const contentIsExceeded = contentExceededPattern.test(error.message)
           const imageSizeExceededPattern = new RegExp(/image size is (\d+(?:\.\d+)?[KMG]B), which exceeds the allowed limit of (\d+(?:\.\d+)?[KMG]B)/);
-          const imageSizeIsExceededMatch = newErr.message_from_response.match(imageSizeExceededPattern)
+          const imageSizeIsExceededMatch = newErr.message.match(imageSizeExceededPattern)
           
           if(contentIsExceeded){
             newErr.resetDialogue = {
@@ -245,23 +303,23 @@ async function chatCompletionStreamAxiosRequest(
           }
             return newErr;
           
-        } else if (oai_response_status === 401 || error.message.includes("401")) {
+        } else if (error.status === 401 || error.message.includes("401")) {
           newErr.code = "OAI_ERR_401";
-          newErr.user_message = msqTemplates.OAI_ERR_401.replace("[original_message]",err?.message_from_response?.message ?? "отсутствует");
+          newErr.user_message = msqTemplates.OAI_ERR_401.replace("[original_message]",newErr?.message ?? "отсутствует");
           return newErr;
-        } else if (oai_response_status === 429 || error.message.includes("429")) {
+        } else if (error.status === 429 || error.message.includes("429")) {
           newErr.code = "OAI_ERR_429";
           newErr.data = error.data
-          newErr.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",newErr?.message_from_response?.message ?? "отсутствует");
+          newErr.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",newErr?.message ?? "отсутствует");
           newErr.mongodblog = false;
           return newErr;
-        } else if (oai_response_status === 501 || error.message.includes("501")) {
+        } else if (error.status === 501 || error.message.includes("501")) {
           newErr.code = "OAI_ERR_501";
-          newErr.user_message = msqTemplates.OAI_ERR_501.replace("[original_message]",newErr?.message_from_response?.message ?? "отсутствует");
+          newErr.user_message = msqTemplates.OAI_ERR_501.replace("[original_message]",newErr?.message ?? "отсутствует");
           return newErr;
-        } else if (oai_response_status === 503 || error.message.includes("503")) {
+        } else if (error.status === 503 || error.message.includes("503")) {
           newErr.code = "OAI_ERR_503";
-          newErr.user_message = msqTemplates.OAI_ERR_503.replace("[original_message]",newErr?.message_from_response?.message ?? "отсутствует");
+          newErr.user_message = msqTemplates.OAI_ERR_503.replace("[original_message]",newErr?.message ?? "отсутствует");
           return newErr;
         }  else if (error.code === "ECONNABORTED") {
             newErr.code = "OAI_ERR_408";
@@ -273,27 +331,6 @@ async function chatCompletionStreamAxiosRequest(
           return newErr;
         }
       }
-      
-      async function deriveErrorDetailsFromOAIResponse(error){
-        const errorStream = error.response.data;
-        const decoder = new StringDecoder("utf8"); 
-        let errorDetails = "";
-        const failedExtractionMsg = "Unable to derive error details from the service reply.";
-        try {
-          if (errorStream && typeof errorStream[Symbol.asyncIterator] === 'function') {
-            for await (const chunk of errorStream) {
-              errorDetails += decoder.write(chunk);
-            }
-          } else {
-            errorDetails = typeof errorStream === 'string' ? errorStream : failedExtractionMsg;
-          }
-          return errorDetails || failedExtractionMsg;
-        } catch (err) {
-          return failedExtractionMsg;
-        } finally {
-          decoder.end();
-        }
-      }
 
 
 
@@ -302,4 +339,6 @@ module.exports = {
   chatCompletionStreamAxiosRequest,
   VoiceToText,
   TextToVoice,
+  responseStream,
+  responseSync
 };

@@ -44,8 +44,6 @@ class Dialogue extends EventEmitter {
             dialogueInstance:this
           })
 
-        this.on('triggerToolCall', (toolCallsArr) => this.#toolCallsInstance.router(toolCallsArr))
-
         this.on('callCompletion', () => this.triggerCallCompletion())
       };
 
@@ -84,32 +82,25 @@ class Dialogue extends EventEmitter {
         const dialogueFromDB = await mongo.getDialogueForCompletion(this.#user.userid,this.#user.currentRegime) || []
         return dialogueFromDB.map(doc =>{
 
-            let newDoc = {
-                role:doc.role
-            };
+            const {role,content,status,type,function_name,respoonseId,tool_call_id,function_arguments} = doc;
 
-            if(doc.content && Array.isArray(doc.content) && doc.content.length >0 && doc.role === "assistant"){
-                const contentIndex = doc.completion_version ? doc.completion_version - 1 : 0
-                if(contentIndex > doc.content.length-1 || contentIndex < 0){
-                    newDoc.content = doc.content.at(-1)
-                } else {
-                    newDoc.content = doc.content[contentIndex]
+            if(type === "message"){
+                return {role,status,type,content};
+            } else if(type === "function_call_output"){
+                return {type,
+                    call_id: tool_call_id,
+                    output: content
+                }
+            } else if (type === "function_call"){
+                return {type,
+                    call_id: tool_call_id,
+                    name:function_name,
+                    arguments:function_arguments
                 }
             } else {
-                newDoc.content = doc.content
-            };
-
-            if(doc?.tool_calls  &&  doc.tool_calls.length > 0){
-                newDoc['tool_calls'] = doc.tool_calls;
-            } else if (doc?.tool_reply){
-                newDoc['content'] = doc.tool_reply?.content;  //Перезаписываем
-                newDoc['name'] = doc.tool_reply?.name;
-                newDoc['tool_call_id'] = doc.tool_reply?.tool_call_id;
+                return null
             }
-
-            return newDoc;
-
-         })
+         }).filter(doc => doc !== null);
     }
 
     get toolCallsInstance(){
@@ -171,6 +162,7 @@ class Dialogue extends EventEmitter {
         }
 
         const documentsWithRegenerateBtns = await mongo.getDocByTgmRegenerateBtnFlag(this.#user.userid,this.#user.currentRegime)
+
 
         if(documentsWithRegenerateBtns.length === 0){
             return
@@ -348,8 +340,9 @@ class Dialogue extends EventEmitter {
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
             role: currentRole,
-            roleid: 1,
-            content: [{type:"text",text:text + `\n\n${datetimeStr} (UTC)`}]
+            content: [{type:"input_text",text:text + `\n\n${datetimeStr} (UTC)`}],
+            status:"completed",
+            type:"message"
           }
                 
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
@@ -384,8 +377,12 @@ class Dialogue extends EventEmitter {
             userLastName: this.#user.user_last_name,
             regime: regime,
             role: "developer",
-            roleid: 0,
-            content: promptText + `\n\n${datetime.toISOString()} (UTC)`
+            content: [{
+                text:promptText + `\n\n${datetime.toISOString()} (UTC)`,
+                type:"input_text"
+            }],
+            status:"completed",
+            type:"message"
           }
         
         await mongo.upsertPrompt(systemObj); //записываем prompt в базу
@@ -395,7 +392,6 @@ class Dialogue extends EventEmitter {
 
     async commitDevPromptToDialogue(text){
 
-        
         const datetime = new Date();
         
         const sourceid = otherFunctions.valueToMD5(datetime.toISOString())
@@ -409,8 +405,12 @@ class Dialogue extends EventEmitter {
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
             role: "developer",
-            roleid: 0,
-            content: text + `\n\n${datetime.toISOString()} (UTC)`
+            content: [{
+                text:text + `\n\n${datetime.toISOString()} (UTC)`,
+                type:"input_text"
+            }],
+            status:"completed",
+            type:"message"
           }
 
         const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
@@ -464,7 +464,6 @@ class Dialogue extends EventEmitter {
 
     async commitImageToDialogue(url,base64,descriptionJson){
         
-        const currentRole = "user"
         const datetime = new Date();
         const sourceid = otherFunctions.valueToMD5(datetime.toISOString())+"_"+"image_url"
         const unixTimestamp = Math.floor(datetime.getTime() / 1000)
@@ -472,9 +471,9 @@ class Dialogue extends EventEmitter {
         let text_content ={};
 
         if(base64){
-            content.push({type:"image_url",image_url: {url:`data:image/jpeg;base64,${base64}`}})
+            content.push({type:"input_image",image_url: `data:image/jpeg;base64,${base64}`,detail:"auto"})
         } else if (url){
-            content.push({type:"image_url",image_url: {url:url}})
+            content.push({type:"input_image",image_url: url,detail:"auto"})
         } else {
             text_content.error = "Здесь должно было быть изображение, но с ним какие-то проблемы"
         };
@@ -483,7 +482,7 @@ class Dialogue extends EventEmitter {
             text_content = {...text_content,...descriptionJson}
         }
         
-        content.push({type:"text",text:JSON.stringify(text_content)})
+        content.push({type:"input_text",text:JSON.stringify(text_content)})
 
         let promptObj = {
             sourceid: sourceid,
@@ -500,9 +499,10 @@ class Dialogue extends EventEmitter {
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
-            role: currentRole,
-            roleid: 1,
-            content: content
+            role: "user",
+            content: content,
+            status:"completed",
+            type:"message"
           }
 
 
@@ -513,7 +513,6 @@ class Dialogue extends EventEmitter {
 
     async commitFileToDialogue(url){
 
-        const currentRole = "developer"
         const fileid = this.#requestMsg.msgId
         const sourceid = String(this.#requestMsg.msgId)+"_"+"file_uploaded"
         const obj = {
@@ -541,76 +540,88 @@ class Dialogue extends EventEmitter {
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
-            role: currentRole,
-            roleid: 0,
-            content: [{type:"text",text:devPrompt}]
+            role: 'user',
+            content: [{type:"input_text",text:devPrompt}],
+            status:"completed",
+            type:"message"
           }      
           
-
-        const savedSystem = await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
+        await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
 
         console.log("FILE UPLOAD added to dialogue")    
         return fileSystemObj
 
     };
 
+    async commitFunctionCallToDialogue(functionCall){
 
-    async preCommitToolReply(toolCall){
-
-        const currentRole = "tool"
         const userInstance = this.#user
 
-        let toolObject = {
-            sourceid:toolCall.tool_call_id,
+        let functionObject = {
+            sourceid:functionCall.sourceid,
+            responseId:functionCall.responseId,
+            output_item_index:functionCall.output_item_index,
             userFirstName:userInstance.user_first_name,
             userLastName:userInstance.user_last_name,
             userid:userInstance.userid,
             regime:userInstance.currentRegime,
-            tool_reply:{
-                content:"result is pending ...",
-                name:toolCall.function_name,
-                duration: 0,
-                success:0,
-                tool_call_id:toolCall.tool_call_id,
-                functionFriendlyName:toolCall.tool_config.friendly_name,
-            },
+            tool_call_id:functionCall.tool_call_id,
+            function_name:functionCall.function_name,
+            function_arguments:functionCall.function_arguments,
+            status:functionCall.status,
+            type:functionCall.type,
+            functionFriendlyName:functionCall.tool_config.friendly_name,
             createdAtSourceDT_UTC: new Date(),
             createdAtSourceTS:Math.ceil(Number(new Date())/1000),
-            roleid:0,
-            role:currentRole
         };
 
-        const savedDoc = await mongo.insertToolCallResult(toolObject)
+        await mongo.insertFunctionObject(functionObject)
 
-        console.log("TOOL MESSAGE PRECOMMITED")
+        console.log("FUNCTION CALL COMMITED")
+
+    }
+
+
+    async preCommitFunctionReply(functionReply){
+
+        const userInstance = this.#user
+
+        let functionObject = {
+            sourceid:functionReply.sourceid,
+            userFirstName:userInstance.user_first_name,
+            userLastName:userInstance.user_last_name,
+            userid:userInstance.userid,
+            regime:userInstance.currentRegime,
+            content:"result is pending ...",
+            tool_call_id:functionReply.tool_call_id,
+            function_name:functionReply.function_name,
+            output_item_index:functionReply.output_item_index,
+            status:functionReply.status,
+            type:functionReply.type,
+            duration: 0,
+            success:0,
+            functionFriendlyName:functionReply.tool_config.friendly_name,
+            createdAtSourceDT_UTC: new Date(),
+            createdAtSourceTS:Math.ceil(Number(new Date())/1000),
+        };
+
+        await mongo.insertFunctionObject(functionObject)
+
+        console.log("TOOL REPLY PRECOMMITED")
     }
 
     async updateCommitToolReply(result){
 
        await mongo.updateToolCallResult(result)
 
-       console.log("TOOL MESSAGE UPDATED")
+       console.log("TOOL REPLY UPDATED")
     }
 
-    async commitFunctionErrorToDialogue(errorObject){
-
-
-    }
 
     async commitCompletionDialogue(completionObject){
-
-        const currentRole = "assistant"
-
         await mongo.upsertCompletionPromise(completionObject);
-        
-        const contentTextLength = completionObject.content[completionObject.completion_version-1].length
-        
-        if(contentTextLength < 5){
-            await this.deleteTGMProgressMsg(this.#replyMsg.lastMsgSentId)
-        }
-
         console.log("COMPLETION MESSAGE COMMIT")
-        
+        return completionObject.output_item_index
     }
 
     async finalizeTokenUsage(completionObject,tokenUsage){
@@ -621,27 +632,26 @@ class Dialogue extends EventEmitter {
 
             mongo.insertTokenUsage({
               userInstance:this.#user,
-              prompt_tokens:tokenUsage.prompt_tokens,
-              completion_tokens:tokenUsage.completion_tokens,
+              prompt_tokens:tokenUsage.input_tokens,
+              completion_tokens:tokenUsage.output_tokens,
               model:completionObject.model
               })
 
             mongo.insertCreditUsage({
                 userInstance: this.#user,
                 creditType: "text_tokens",
-                creditSubType: "prompt",
-                usage: tokenUsage.prompt_tokens,
+                creditSubType: "input",
+                usage: tokenUsage.input_tokens,
                 details: {place_in_code:"finalizeTokenUsage"}
             })
 
             mongo.insertCreditUsage({
                 userInstance: this.#user,
                 creditType: "text_tokens",
-                creditSubType: "completion",
-                usage: tokenUsage.completion_tokens,
+                creditSubType: "output",
+                usage: tokenUsage.output_tokens,
                 details: {place_in_code:"finalizeTokenUsage"}
             })
-            
         }
         }
 

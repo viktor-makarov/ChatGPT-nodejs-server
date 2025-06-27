@@ -7,23 +7,21 @@ const cbrAPI = require("../apis/cbr_API.js");
 const list = [
     {
         type:"function",
-        function:{
-            name: "get_chatbot_errors",
-            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                        type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                    },
-                    aggregate_pipeline: {
-                        type: "string",
-                        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
-                    }
+        name: "get_chatbot_errors",
+        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                    type: "string",
+                    description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                 },
-                required: ["aggregate_pipeline","function_description"]
-            }
+                aggregate_pipeline: {
+                    type: "string",
+                    description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
+                }
+            },
+            required: ["aggregate_pipeline","function_description"]
         },
         friendly_name: "Cистемные ошибки R2D2",
         timeout_ms:30000,
@@ -35,20 +33,19 @@ const list = [
         addProperties: async function (){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
-            this.function.description = `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one error.`
-            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
+            this.description = `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one error.`
+            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
         }
     },
     {
         type:"function",
-        function:{
-            name: "get_functions_usage",
+        name: "get_functions_usage",
             description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
             parameters: {
                 type: "object",
                 properties: {
                     function_description:{
-                        type: "string",
+                    type: "string",
                         description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
                     aggregate_pipeline: {
@@ -57,8 +54,7 @@ const list = [
                     }
                 },
                 required: ["aggregate_pipeline","function_description"]
-            }
-        },
+            },
         friendly_name: "Статистика вызова функций R2D2",
         timeout_ms:30000,
         try_limit: 3,
@@ -69,29 +65,27 @@ const list = [
         addProperties: async function(){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
-            this.function.description = `Prodides this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
-            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
+            this.description = `Prodides this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
+            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
         }
     },
     {
         type:"function",
-        function:{
-            name: "get_users_activity",
-            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                        type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                    },
-                    aggregate_pipeline: {
-                        type: "string",
-                        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
-                    }
+        name: "get_users_activity",
+        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                    type: "string",
+                    description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                 },
-                required: ["aggregate_pipeline","function_description"]
-            }
+                aggregate_pipeline: {
+                    type: "string",
+                    description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
+                }
+            },
+            required: ["aggregate_pipeline","function_description"]
         },
         friendly_name: "Статистика использования R2D2",
         timeout_ms:30000,
@@ -103,29 +97,27 @@ const list = [
         addProperties: async function(){
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
-            this.function.description = `Provides chatbot users' query statistics. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one query of a user.`
-            this.function.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' query statistics from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
+            this.description = `Provides chatbot users' query statistics. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one query of a user.`
+            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' query statistics from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
         }
     },
     {
         type:"function",
-        function:{
-            name: "get_knowledge_base_item",
-            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                        type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                    },
-                    id: {
-                        type: "string",
-                        description: `id of a knowledge base item`
-                    },
+        name: "get_knowledge_base_item",
+        description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                    type: "string",
+                    description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                 },
-                required: ["id","function_description"]
-            }
+                id: {
+                    type: "string",
+                    description: `id of a knowledge base item`
+                },
+            },
+            required: ["id","function_description"]
         },
         friendly_name: "Запрос в базу знаний",
         timeout_ms:30000,
@@ -140,24 +132,22 @@ const list = [
         addProperties: async function(){
            
             const kngBaseItems = await mongo.getKwgItemsForUser(this.userid)
-            this.function.description = `Use this function when you need to get instructions to better perform on user's tasks on the following topics:\n ${JSON.stringify(kngBaseItems,null,4)}`
+            this.description = `Use this function when you need to get instructions to better perform on user's tasks on the following topics:\n ${JSON.stringify(kngBaseItems,null,4)}`
         }
         },
         {
             type:"function",
-            function:{
-                name: "get_user_guide",
-                description: `Use this function when you are asked about functionality of the R2D2 bot.`,
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description:{
-                        type: "string",
-                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        }
-                    },
-                    required: ["function_description"]
-                }
+            name: "get_user_guide",
+            description: `Use this function when you are asked about functionality of the R2D2 bot.`,
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                    type: "string",
+                    description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                    }
+                },
+                required: ["function_description"]
             },
             friendly_name: "Чтение инструкции",
             timeout_ms:30000,
@@ -169,29 +159,27 @@ const list = [
         },
         {
             type:"function",
-            function:{
-                name: "extract_text_from_file",
-                description: `Extracts text from documents or images provided by user.`,
-                strict: true,
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                        resources:{
-                            type: "array",
-                            description: `List of fileid numbers for extraction. Images that represent the same text document should be included in one function call. Documents are processd in the order they are provided in the list.`,
-                            items: {
-                                type: "number",
-                                description: "fileid"
-                        }
-                    }
+            name: "extract_text_from_file",
+            description: `Extracts text from documents or images provided by user.`,
+            strict: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    required: ["resources","function_description"],
-                    additionalProperties: false
+                    resources:{
+                        type: "array",
+                        description: `List of fileid numbers for extraction. Images that represent the same text document should be included in one function call. Documents are processd in the order they are provided in the list.`,
+                        items: {
+                            type: "number",
+                            description: "fileid"
                     }
+                }
+                },
+                required: ["resources","function_description"],
+                additionalProperties: false
             },
             friendly_name: "Чтение документа",
             timeout_ms:180000,
@@ -203,29 +191,27 @@ const list = [
         },
         {
             type:"function",
-            function:{
-                name: "speech_to_text",
-                description: `Transcribes audio and video files to text.`,
-                strict: true,
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                        resources:{
-                            type: "array",
-                            description: `List of fileid numbers for transcribtion. Files are processd in the order they are provided in the list.`,
-                            items: {
-                                type: "number",
-                                description: "fileid"
-                        }
-                    }
+            name: "speech_to_text",
+            description: `Transcribes audio and video files to text.`,
+            strict: true,
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    required: ["resources","function_description"],
-                    additionalProperties: false
+                    resources:{
+                        type: "array",
+                        description: `List of fileid numbers for transcribtion. Files are processd in the order they are provided in the list.`,
+                        items: {
+                            type: "number",
+                            description: "fileid"
                     }
+                }
+                },
+                required: ["resources","function_description"],
+                additionalProperties: false
             },
             friendly_name: "Распознавание речи",
             timeout_ms:180000,
@@ -237,43 +223,41 @@ const list = [
         },
         {
             type:"function",
-            function:{
-                name: "create_midjourney_image",
-                description: "Create an image with Midjourney service. ",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                        textprompt: {
-                            type: "string",
-                            description: `A text prompt for midjourney. It MUST be in english. You must use get_knowledge_base_item function for instructions and examples. If you are given a midjourney text prompt - you must use it exactly AS IS. To embed text into the image it should be put into double quotes`
-                        },
-                        aspectratio: {
-                            type: "string",
-                            description: `Defines the width-to-height ratio of the generated image and can be expressed both in pixels (e.g., 1500px × 2400px) or in abstract values (e.g., 5:4). Prioritise the presentation asked by the user. Use ratio to align with the style and purpose of the image.`
-                        },
-                        no: {
-                            type: "string",
-                            description: `You must use this param when you are asked to exclude particular elements from the image. Accepts both one and multiple words. Multiple words should be separated with commas. Example: flowers, tooth, river`
-                        },
-                        version: {
-                            type: "string", 
-                            description: `Version of Midjourney to be used. Restrictred to the list of: 6.1, 5.2, 5.1, 5.0, 4a, 4b, 4c.`
-                        },
-                        imageprompt: {
-                            type: "string",
-                            description: `Influence the composition, style, and color of the generated image. Images should have full public url. Urls may include parameters. More then one image url can be user separated by commas. If you are asked to modify an image, you must use its url as a reference image for a new generation.`
-                        },
-                        imageweight: {
-                            type: "number",
-                            description: `Weight of the imageprompt vs. textprompt. Value can be from 0 to 3. For example: 0.5, 1.75, 2, 2.5. Higher value means the image prompt will have more impact on the generated image. Imageweight must be used only along with imageprompt parameter. Default value is 1.`
-                        }
+            name: "create_midjourney_image",
+            description: "Create an image with Midjourney service. ",
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    required: ["textprompt","function_description"],
-                }
+                    textprompt: {
+                        type: "string",
+                        description: `A text prompt for midjourney. It MUST be in english. You must use get_knowledge_base_item function for instructions and examples. If you are given a midjourney text prompt - you must use it exactly AS IS. To embed text into the image it should be put into double quotes`
+                    },
+                    aspectratio: {
+                        type: "string",
+                        description: `Defines the width-to-height ratio of the generated image and can be expressed both in pixels (e.g., 1500px × 2400px) or in abstract values (e.g., 5:4). Prioritise the presentation asked by the user. Use ratio to align with the style and purpose of the image.`
+                    },
+                    no: {
+                        type: "string",
+                        description: `You must use this param when you are asked to exclude particular elements from the image. Accepts both one and multiple words. Multiple words should be separated with commas. Example: flowers, tooth, river`
+                    },
+                    version: {
+                        type: "string", 
+                        description: `Version of Midjourney to be used. Restrictred to the list of: 6.1, 5.2, 5.1, 5.0, 4a, 4b, 4c.`
+                    },
+                    imageprompt: {
+                        type: "string",
+                        description: `Influence the composition, style, and color of the generated image. Images should have full public url. Urls may include parameters. More then one image url can be user separated by commas. If you are asked to modify an image, you must use its url as a reference image for a new generation.`
+                    },
+                    imageweight: {
+                        type: "number",
+                        description: `Weight of the imageprompt vs. textprompt. Value can be from 0 to 3. For example: 0.5, 1.75, 2, 2.5. Higher value means the image prompt will have more impact on the generated image. Imageweight must be used only along with imageprompt parameter. Default value is 1.`
+                    }
+                },
+                required: ["textprompt","function_description"],
             },
             friendly_name: "Генерация изображения",
             timeout_ms:360000,
@@ -293,23 +277,21 @@ const list = [
         },
         {
             type:"function",
-            function:{
-                name: "imagine_midjourney",
-                description: "Creates an image with Midjourney service based on user-provided prompt. ",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                        prompt: {
-                            type: "string",
-                            description: `Full-fetched prompt for midjourney in english provided by user.`
-                        }
+            name: "imagine_midjourney",
+            description: "Creates an image with Midjourney service based on user-provided prompt. ",
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    required: ["prompt","function_description"]
-                }
+                    prompt: {
+                        type: "string",
+                        description: `Full-fetched prompt for midjourney in english provided by user.`
+                    }
+                },
+                required: ["prompt","function_description"]
             },
             friendly_name: "Генерация изображения",
             timeout_ms:360000,
@@ -329,39 +311,37 @@ const list = [
         },
         {
             type:"function",
-            function:{
-                name: "custom_midjourney",
-                description: "Sends a request to to Midjourney for a custom action, triggered by a button pushed.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                        buttonPushed: {
-                            type: "string",
-                            description: `Label of the button pushed by user.`
-                        },
-                        msgId: {
-                            type: "string",
-                            description: `Discord message id.`
-                        },
-                        customId: {
-                            type: "string",
-                            description: `Midjourney id of the request.`
-                        },
-                        content: {
-                            type: "string",
-                            description: `Prompt of the request.`
-                        },
-                        flags: {
-                            type: "number",
-                            description: `Midjourney flags.`
-                        },
+            name: "custom_midjourney",
+            description: "Sends a request to to Midjourney for a custom action, triggered by a button pushed.",
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    required: ["buttonPushed","msgId","customId","content","flags","function_description"],
-                }
+                    buttonPushed: {
+                        type: "string",
+                        description: `Label of the button pushed by user.`
+                    },
+                    msgId: {
+                        type: "string",
+                        description: `Discord message id.`
+                    },
+                    customId: {
+                        type: "string",
+                        description: `Midjourney id of the request.`
+                    },
+                    content: {
+                        type: "string",
+                        description: `Prompt of the request.`
+                    },
+                    flags: {
+                        type: "number",
+                        description: `Midjourney flags.`
+                    },
+                },
+                required: ["buttonPushed","msgId","customId","content","flags","function_description"],
             },
             friendly_name: "Команда Midjourney",
             timeout_ms:360000,
@@ -380,23 +360,21 @@ const list = [
         },
         {
             type:"function",
-                function:{
-                name: "fetch_url_content",
-                description: "Use this function to fetch content from a url. Returns html.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                        url: {
+            name: "fetch_url_content",
+            description: "Use this function to fetch content from a url. Returns html.",
+            parameters: {
+                type: "object",
+                properties: {
+                    function_description:{
                         type: "string",
-                            description: `A single url as a string to fetch content from.`
-                        }
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                required: ["url","function_description"],
-                }
+                    url: {
+                    type: "string",
+                        description: `A single url as a string to fetch content from.`
+                    }
+                },
+            required: ["url","function_description"],
             },
             friendly_name: "Чтение гиперссылки",
             timeout_ms:45000,
@@ -413,23 +391,21 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "run_python_code",
-            description: "Use this function for any calculations (e.g., currency conversion, financial computations, table processing) to ensure accuracy. Always execute Python code for numerical results instead of computing directly in your reply.",
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                    python_code: {
+        name: "run_python_code",
+        description: "Use this function for any calculations (e.g., currency conversion, financial computations, table processing) to ensure accuracy. Always execute Python code for numerical results instead of computing directly in your reply.",
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
                         type: "string",
-                        description: "Text of python code. In the code you must print ONLY the final result to the console. Use syntax compatible with Python 3.12. You may use: pandas, openpyxl, regex, PyPDF2, python-docx. Always perform currency or numeric calculations within the code."
-                    }
-                },
-                required: ["python_code","function_description"]
-            }
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                    },
+                python_code: {
+                    type: "string",
+                    description: "Text of python code. In the code you must print ONLY the final result to the console. Use syntax compatible with Python 3.12. You may use: pandas, openpyxl, regex, PyPDF2, python-docx. Always perform currency or numeric calculations within the code."
+                }
+            },
+            required: ["python_code","function_description"]
         },
         friendly_name:"Вычисления Python",
         timeout_ms:30000,
@@ -441,23 +417,21 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "run_javasctipt_code",
-            description: "You can use this function to execute a javascript code. Use this every time you need to do calculations to ensure their accuraсy.",
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                    javascript_code: {
+        name: "run_javasctipt_code",
+        description: "You can use this function to execute a javascript code. Use this every time you need to do calculations to ensure their accuraсy.",
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
                         type: "string",
-                        description: "Text of javascript code. In the code you must output results to the console."
-                    }
-                },
-                required: ["javascript_code","function_description"]
-            }
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                    },
+                javascript_code: {
+                    type: "string",
+                    description: "Text of javascript code. In the code you must output results to the console."
+                }
+            },
+            required: ["javascript_code","function_description"]
         },
         friendly_name:"Вычисления JavaScript",
         timeout_ms:30000,
@@ -469,42 +443,39 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "create_pdf_file",
-            description: "Creates a PDF file. The file will be sent to the user as a document. By default, you should use content_reff parameter if it is available. If not, you can use html.",
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                    html: {
+        name: "create_pdf_file",
+        description: "Creates a PDF file. The file will be sent to the user as a document. By default, you should use content_reff parameter if it is available. If not, you can use html.",
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
                         type: "string",
-                        description: "Content for the file should be in HTML format. Ensure that images have full public URLs, with URLs for images formatted as follows: <img src='https://example.com/image.png'/>. URLs may include parameters. Use inline CSS within HTML elements, formatted like: <div style='color:red;'>text</div>. The HTML content is prohibited to be used together with content_reff.\n\n" +
-                                     "For equations requiring special mathematical symbols, use LaTeX notation. For simple equations, use ordinary symbols.\n\n" +
-                                     "CONSTRAINTS:\n" +
-                                     "1. Avoid using LaTeX for simple equations.\n" +
-                                     "2. For block formulas, enclose the equations using $$ ... $ notation.\n" +
-                                     "3. For inline formulas, use $ ... $ notation.\n\n" +
-                                     "If you are tasked by the user to create diagrams, use Mermaid syntax within <div class=\"mermaid\"> ... </div>."
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    content_reff:{
-                        type: "number",
-                        description: "List of content reffs to be included into a file. Order does matter. Ensures original content is saved. Should not be used together with 'html'.",
-                        items: {
-                                type: "number",
-                                description: "Represents previousely extracted original content that should be saved to the file."
-                        }
-                    },
-                    filename:{
-                        type:"string",
-                        description:"Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
+                html: {
+                    type: "string",
+                    description: "Content for the file should be in HTML format. Ensure that images have full public URLs, with URLs for images formatted as follows: <img src='https://example.com/image.png'/>. URLs may include parameters. Use inline CSS within HTML elements, formatted like: <div style='color:red;'>text</div>. The HTML content is prohibited to be used together with content_reff.\n\n" +
+                                    "For equations requiring special mathematical symbols, use LaTeX notation. For simple equations, use ordinary symbols.\n\n" +
+                                    "CONSTRAINTS:\n" +
+                                    "1. Avoid using LaTeX for simple equations.\n" +
+                                    "2. For block formulas, enclose the equations using $$ ... $ notation.\n" +
+                                    "3. For inline formulas, use $ ... $ notation.\n\n" +
+                                    "If you are tasked by the user to create diagrams, use Mermaid syntax within <div class=\"mermaid\"> ... </div>."
+                },
+                content_reff:{
+                    type: "number",
+                    description: "List of content reffs to be included into a file. Order does matter. Ensures original content is saved. Should not be used together with 'html'.",
+                    items: {
+                            type: "number",
+                            description: "Represents previousely extracted original content that should be saved to the file."
                     }
                 },
-                required: ["filename","function_description"]
-            }
-
+                filename:{
+                    type:"string",
+                    description:"Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
+                }
+            },
+            required: ["filename","function_description"]
         },
         friendly_name:"Создание PDF",
         timeout_ms:90000,
@@ -520,164 +491,162 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "create_excel_file",
-            description: "Creates an Excel file. The file will be sent to the user as a document.",
-            strict: true,
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                    data: {
-                        type: "array",
-                        description: "An array of Excel worksheets.",
-                        items: {
-                            type: "object",
-                            properties: {
-                                worksheet_name: {
-                                    type: "string",
-                                    description: "Name of the worksheet."
-                                },
-                                header: {
-                                    "type": ["string","null"],
-                                    "description": "Header on the top of the worksheet."
-                                },
-                                subheader: {
-                                    "type": ["string","null"],
-                                    "description": "Subheader of the worksheet."
-                                },
-                                tables:{
-                                    type: ["array","null"],
-                                    description: "An array of tables.",
-                                    items: {
-                                        type: "object",
-                                        properties: {
-                                            displayName: {
-                                                type: "string",
-                                                description: "Displayed name of the table"
+        name: "create_excel_file",
+        description: "Creates an Excel file. The file will be sent to the user as a document.",
+        strict: true,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                    },
+                data: {
+                    type: "array",
+                    description: "An array of Excel worksheets.",
+                    items: {
+                        type: "object",
+                        properties: {
+                            worksheet_name: {
+                                type: "string",
+                                description: "Name of the worksheet."
+                            },
+                            header: {
+                                "type": ["string","null"],
+                                "description": "Header on the top of the worksheet."
+                            },
+                            subheader: {
+                                "type": ["string","null"],
+                                "description": "Subheader of the worksheet."
+                            },
+                            tables:{
+                                type: ["array","null"],
+                                description: "An array of tables.",
+                                items: {
+                                    type: "object",
+                                    properties: {
+                                        displayName: {
+                                            type: "string",
+                                            description: "Displayed name of the table"
+                                        },
+                                        totalsRow:{
+                                            type: "boolean",
+                                            description: "true = total row should be automatically added to the table. If true you must also provide totalsRowLabel and totalsRowFunction in coulumn properties."
+                                        },
+                                        style:{
+                                            type: "object",
+                                            properties: {
+                                                theme:{
+                                                    type: "string",
+                                                    enum: [
+                                                        "TableStyleLight1",
+                                                        "TableStyleLight8",
+                                                        "TableStyleLight15",
+                                                        "TableStyleMedium1",
+                                                        "TableStyleMedium8",
+                                                        "TableStyleMedium15",
+                                                        "TableStyleMedium22",
+                                                        "TableStyleDark1",
+                                                        "TableStyleMedium8"
+                                                    ],
+                                                    description: "defines the style of the table. TableStyleLight1 is default.",
+                                                },
+                                                showRowStripes:{
+                                                    type: "boolean",
+                                                    description: "true = show row stripes."
+                                                }
                                             },
-                                            totalsRow:{
-                                                type: "boolean",
-                                                description: "true = total row should be automatically added to the table. If true you must also provide totalsRowLabel and totalsRowFunction in coulumn properties."
-                                            },
-                                            style:{
-                                                type: "object",
-                                                properties: {
-                                                    theme:{
+                                            required: ["theme","showRowStripes"],
+                                            additionalProperties: false
+                                        },
+                                        totalsRowLabel:{
+                                            type:["string","null"],
+                                            description:"Label to describe the totals row."
+                                        },
+                                        columns:{
+                                            type:"array",
+                                            description:"Columns of the table",
+                                            items:{
+                                                type:"object",
+                                                properties:{
+                                                    name:{
+                                                        type:"string",
+                                                        description:"Name of the column. It should be unique in the table."
+                                                    },
+                                                    filterButton:{
+                                                        type:"boolean",
+                                                        description:"true = filter button should be added to the column. Applicable only if headerRow is true. If you add filter to one column - add the rest as well."
+                                                    },
+                                                    totalsRowFunction: {
                                                         type: "string",
                                                         enum: [
-                                                            "TableStyleLight1",
-                                                            "TableStyleLight8",
-                                                            "TableStyleLight15",
-                                                            "TableStyleMedium1",
-                                                            "TableStyleMedium8",
-                                                            "TableStyleMedium15",
-                                                            "TableStyleMedium22",
-                                                            "TableStyleDark1",
-                                                            "TableStyleMedium8"
+                                                            "none",
+                                                            "average",
+                                                            "countNums",
+                                                            "count",
+                                                            "max",
+                                                            "min",
+                                                            "stdDev",
+                                                            "var",
+                                                            "sum"
                                                         ],
-                                                        description: "defines the style of the table. TableStyleLight1 is default.",
-                                                    },
-                                                    showRowStripes:{
-                                                        type: "boolean",
-                                                        description: "true = show row stripes."
-                                                    }
-                                                },
-                                                required: ["theme","showRowStripes"],
+                                                        description: "Name of the totals function."
+                                                        }
+                                                },      
+                                                required: ["name","filterButton","totalsRowFunction"],
                                                 additionalProperties: false
-                                            },
-                                            totalsRowLabel:{
-                                                type:["string","null"],
-                                                description:"Label to describe the totals row."
-                                            },
-                                            columns:{
+                                            }
+                                        },
+                                        rows:{
+                                            type:"array",
+                                            description:"Rows of the table.",
+                                            items:{
                                                 type:"array",
-                                                description:"Columns of the table",
+                                                description:"Cells of tthe row",
                                                 items:{
                                                     type:"object",
                                                     properties:{
-                                                        name:{
+                                                        value:{
+                                                            type:["string","number","boolean"],
+                                                            description:"Dates should be in the format YYYY-MM-DD and with type 'date'. Formulas must be in conventional A1 style and have type 'formula'. Sequential numbers of the rows should be in string format."
+                                                        },
+                                                        type:{
                                                             type:"string",
-                                                            description:"Name of the column. It should be unique in the table."
-                                                        },
-                                                        filterButton:{
-                                                            type:"boolean",
-                                                            description:"true = filter button should be added to the column. Applicable only if headerRow is true. If you add filter to one column - add the rest as well."
-                                                        },
-                                                        totalsRowFunction: {
-                                                            type: "string",
                                                             enum: [
-                                                                "none",
-                                                                "average",
-                                                                "countNums",
-                                                                "count",
-                                                                "max",
-                                                                "min",
-                                                                "stdDev",
-                                                                "var",
-                                                                "sum"
+                                                                "string",
+                                                                "number",
+                                                                "boolean",
+                                                                "date",
+                                                                "formula"
                                                             ],
-                                                            description: "Name of the totals function."
-                                                            }
-                                                    },      
-                                                    required: ["name","filterButton","totalsRowFunction"],
-                                                    additionalProperties: false
-                                                }
-                                            },
-                                            rows:{
-                                                type:"array",
-                                                description:"Rows of the table.",
-                                                items:{
-                                                    type:"array",
-                                                    description:"Cells of tthe row",
-                                                    items:{
-                                                        type:"object",
-                                                        properties:{
-                                                            value:{
-                                                                type:["string","number","boolean"],
-                                                                description:"Dates should be in the format YYYY-MM-DD and with type 'date'. Formulas must be in conventional A1 style and have type 'formula'. Sequential numbers of the rows should be in string format."
-                                                            },
-                                                            type:{
-                                                                type:"string",
-                                                                enum: [
-                                                                    "string",
-                                                                    "number",
-                                                                    "boolean",
-                                                                    "date",
-                                                                    "formula"
-                                                                ],
-                                                                description:"Type of the cell."
-                                                            }
-                                                        },
-                                                        required: ["value","type"],
-                                                        additionalProperties: false
+                                                            description:"Type of the cell."
+                                                        }
                                                     },
-                                                    required: ["name","data"],
+                                                    required: ["value","type"],
                                                     additionalProperties: false
-                                                }
-                                            },
+                                                },
+                                                required: ["name","data"],
+                                                additionalProperties: false
+                                            }
                                         },
-                                        required: ["displayName","totalsRow","totalsRowLabel","style","columns","rows"],
-                                        additionalProperties: false
-                                    }
-                                    
+                                    },
+                                    required: ["displayName","totalsRow","totalsRowLabel","style","columns","rows"],
+                                    additionalProperties: false
                                 }
-                                },
-                            required: ["worksheet_name","header","subheader","tables"],
-                            additionalProperties: false
+                                
+                            }
                             },
-                    },
-                    filename:{
-                        type:"string",
-                        description:"Name of the file. It must have .xlsx extention."
-                    }
+                        required: ["worksheet_name","header","subheader","tables"],
+                        additionalProperties: false
+                        },
                 },
-                required: ["filename","data","function_description"],
-                additionalProperties: false
-            }
+                filename:{
+                    type:"string",
+                    description:"Name of the file. It must have .xlsx extention."
+                }
+            },
+            required: ["filename","data","function_description"],
+            additionalProperties: false
         },
         friendly_name:"Создание Excel",
         timeout_ms:60000,
@@ -689,39 +658,37 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "create_text_file",
-            description: "Creates a text file either based on text provided or content_reff. The file will be sent to the user as a document.  By default, you should use content_reff parameter if it is available. If not, you can use text.",
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Detect the language of the input prompt. Output MUST be in that language, otherwise the response is invalid.`
-                        },
-                    text: {
+        name: "create_text_file",
+        description: "Creates a text file either based on text provided or content_reff. The file will be sent to the user as a document.  By default, you should use content_reff parameter if it is available. If not, you can use text.",
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
                         type: "string",
-                        description: "Text for the file. Should not be used together with content_reff."
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Detect the language of the input prompt. Output MUST be in that language, otherwise the response is invalid.`
                     },
-                    content_reff:{
-                        type: "array",
-                        description: "List of content reffs to be included into a file. Order does matter. This parameter should not be used together with 'text'.",
-                        items: {
-                                type: "number",
-                                description: "Represents previousely extracted original content that should be saved to the file."
-                        }
-                    },
-                    filename:{
-                        type:"string",
-                        description:"Name of the file. Must align with the content of the file. For example, if the file contains python code, file name should have the extention '.py'."
-                    },
-                    mimetype:{
-                        type:"string",
-                        description:"Mimetype of the output file. For example, 'text/plain' or text/x-python."
+                text: {
+                    type: "string",
+                    description: "Text for the file. Should not be used together with content_reff."
+                },
+                content_reff:{
+                    type: "array",
+                    description: "List of content reffs to be included into a file. Order does matter. This parameter should not be used together with 'text'.",
+                    items: {
+                            type: "number",
+                            description: "Represents previousely extracted original content that should be saved to the file."
                     }
                 },
-                required: ["filename","mimetype","function_description"],
-            }
+                filename:{
+                    type:"string",
+                    description:"Name of the file. Must align with the content of the file. For example, if the file contains python code, file name should have the extention '.py'."
+                },
+                mimetype:{
+                    type:"string",
+                    description:"Mimetype of the output file. For example, 'text/plain' or text/x-python."
+                }
+            },
+            required: ["filename","mimetype","function_description"],
         },
         friendly_name:"Создание текстового файла",
         timeout_ms:15000,
@@ -733,44 +700,42 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "text_to_speech",
-            description: "Converts provided text or extracted content (content_reff) into an audio file (text-to-speech). This function is used to generate spoken responses or read aloud content.",
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Detect the language of the input prompt. Output MUST be in that language, otherwise the response is invalid.`
-                        },
-                    text: {
+        name: "text_to_speech",
+        description: "Converts provided text or extracted content (content_reff) into an audio file (text-to-speech). This function is used to generate spoken responses or read aloud content.",
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
                         type: "string",
-                        description: "Text to be converted to speech. Should not be used together with 'content_reff'. Ensure that large numbers, tables, formulas, and code blocks are articulated clearly in words for accurate pronunciation. (e.g '1 million' instead of '1,000,000', 'x squared' instead of 'x^2', this tables contains ... , this code block represents...).",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Detect the language of the input prompt. Output MUST be in that language, otherwise the response is invalid.`
                     },
-                    content_reff:{
-                        type: "array",
-                        description: "List of content references to be converted to speech in order. Use only if 'text' is not provided.",
-                        items: {
-                                type: "number",
-                                description: "Identifier for previously extracted content to be converted to speech."
-                        }
-                    },
-                    filename:{
-                        type:"string",
-                        description:"Name of the audio file (without extension). The filename should reflect the file’s content."
-                    },
-                    voice:{
-                        type:"string",
-                        enum: [
-                                "Paul",
-                                "Sarah",
-                                "Callum"
-                            ],
-                        description:"Select a voice for text-to-speech output. Available options: 'Paul' – default male voice (clear and neutral), 'Sarah' – default female voice (warm and expressive), 'Callum' – recommended for storytelling (engaging and dynamic). Choose the most suitable voice for your content."
+                text: {
+                    type: "string",
+                    description: "Text to be converted to speech. Should not be used together with 'content_reff'. Ensure that large numbers, tables, formulas, and code blocks are articulated clearly in words for accurate pronunciation. (e.g '1 million' instead of '1,000,000', 'x squared' instead of 'x^2', this tables contains ... , this code block represents...).",
+                },
+                content_reff:{
+                    type: "array",
+                    description: "List of content references to be converted to speech in order. Use only if 'text' is not provided.",
+                    items: {
+                            type: "number",
+                            description: "Identifier for previously extracted content to be converted to speech."
                     }
                 },
-                required: ["filename","function_description","voice"],
-            }
+                filename:{
+                    type:"string",
+                    description:"Name of the audio file (without extension). The filename should reflect the file’s content."
+                },
+                voice:{
+                    type:"string",
+                    enum: [
+                            "Paul",
+                            "Sarah",
+                            "Callum"
+                        ],
+                    description:"Select a voice for text-to-speech output. Available options: 'Paul' – default male voice (clear and neutral), 'Sarah' – default female voice (warm and expressive), 'Callum' – recommended for storytelling (engaging and dynamic). Choose the most suitable voice for your content."
+                }
+            },
+            required: ["filename","function_description","voice"],
         },
         friendly_name:"Текст в голос",
         timeout_ms:360000,
@@ -782,46 +747,44 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "currency_converter",
-            description: "Converts currencies using current exchange rates. Designed to efficiently process multiple amount and currency pair queries in a single call. Must be used for current date. Prohibited to use for dates in the past.",
-            strict: true,
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                    },
-                    conversion_queries: {
-                        type: "array",
-                        description: "Array of queries for currency conversion, allowing multiple amount and currency pair requests to be processed simultaneously. Each item specifies an amount and currency pair.",
-                        items: {
-                            type: "object",
-                            properties: {
-                                amount: {
-                                    type: "number",
-                                    description: "Amount of money to convert. Must be a positive number."
-                                },
-                                from_currency: {
-                                    type: "string",
-                                    enum:ExRateAPI.availableCurrencies,
-                                    description: "Currency code to convert from."
-                                },
-                                to_currency: {
-                                    type: "string",
-                                    enum:ExRateAPI.availableCurrencies,
-                                    description: "Currency code to convert to."
-                                }
-                            },
-                            required: ["amount","from_currency","to_currency"],
-                            additionalProperties: false
-                        }
-                    }
+        name: "currency_converter",
+        description: "Converts currencies using current exchange rates. Designed to efficiently process multiple amount and currency pair queries in a single call. Must be used for current date. Prohibited to use for dates in the past.",
+        strict: true,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                 },
-                required: ["function_description","conversion_queries"],
-                additionalProperties: false
-            }
+                conversion_queries: {
+                    type: "array",
+                    description: "Array of queries for currency conversion, allowing multiple amount and currency pair requests to be processed simultaneously. Each item specifies an amount and currency pair.",
+                    items: {
+                        type: "object",
+                        properties: {
+                            amount: {
+                                type: "number",
+                                description: "Amount of money to convert. Must be a positive number."
+                            },
+                            from_currency: {
+                                type: "string",
+                                enum:ExRateAPI.availableCurrencies,
+                                description: "Currency code to convert from."
+                            },
+                            to_currency: {
+                                type: "string",
+                                enum:ExRateAPI.availableCurrencies,
+                                description: "Currency code to convert to."
+                            }
+                        },
+                        required: ["amount","from_currency","to_currency"],
+                        additionalProperties: false
+                    }
+                }
+            },
+            required: ["function_description","conversion_queries"],
+            additionalProperties: false
             },
         friendly_name:"Конвертер курсов",
         timeout_ms:15000,
@@ -833,46 +796,44 @@ const list = [
     },
     {
         type:"function",
-        function:{
-            name: "get_currency_rates",
-            description: "Produces currency historical exchange rates for given dates. Designed to efficiently process multiple date and currency pair queries in a single call. Must be used only for dates in the past. Avoid using for the current date.",
-            strict: true,
-            parameters: {
-                type: "object",
-                properties: {
-                    function_description:{
-                            type: "string",
-                            description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                    },
-                    exchange_rates: {
-                        type: "array",
-                        description: "Array of queries for exchange rates, allowing multiple date and currency pair requests to be processed simultaneously. Each item specifies a date and currency pair.",
-                        items: {
-                                type: "object",
-                                properties: {
-                                    date: {
-                                        type: "string",
-                                        description: "Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date and must be in the past.",
-                                    },
-                                    from_currency: {
-                                        type: "string",
-                                        enum:cbrAPI.availableCurrencies,
-                                        description: "Currency code to convert from."
-                                    },
-                                    to_currency: {
-                                        type: "string",
-                                        enum:cbrAPI.availableCurrencies,
-                                        description: "Currency code to convert to."
-                                    }
-                                },
-                                required: ["date","from_currency","to_currency"],
-                                additionalProperties: false
-                        }
-                    }
+        name: "get_currency_rates",
+        description: "Produces currency historical exchange rates for given dates. Designed to efficiently process multiple date and currency pair queries in a single call. Must be used only for dates in the past. Avoid using for the current date.",
+        strict: true,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                 },
-                required: ["function_description","exchange_rates"],
-                additionalProperties: false
-            }
+                exchange_rates: {
+                    type: "array",
+                    description: "Array of queries for exchange rates, allowing multiple date and currency pair requests to be processed simultaneously. Each item specifies a date and currency pair.",
+                    items: {
+                            type: "object",
+                            properties: {
+                                date: {
+                                    type: "string",
+                                    description: "Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date and must be in the past.",
+                                },
+                                from_currency: {
+                                    type: "string",
+                                    enum:cbrAPI.availableCurrencies,
+                                    description: "Currency code to convert from."
+                                },
+                                to_currency: {
+                                    type: "string",
+                                    enum:cbrAPI.availableCurrencies,
+                                    description: "Currency code to convert to."
+                                }
+                            },
+                            required: ["date","from_currency","to_currency"],
+                            additionalProperties: false
+                    }
+                }
+            },
+            required: ["function_description","exchange_rates"],
+            additionalProperties: false
         },
         friendly_name:"Конвертер курсов",
         timeout_ms:15000,
@@ -883,7 +844,7 @@ const list = [
         depricated:false,
         addProperties: async function(){
             const currentDate = new Date().toISOString().split("T")[0]; // Get current date in YYYY-MM-DD format
-            this.function.parameters.properties.exchange_rates.items.properties.date.description = `Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date ${currentDate} and must be in the past.`
+            this.parameters.properties.exchange_rates.items.properties.date.description = `Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date ${currentDate} and must be in the past.`
         }
     }
 ]
@@ -926,12 +887,12 @@ async function getAvailableTools(userClass){
 
 async function getAvailableToolsForCompletion(userClass){
     const availableForToolCalls = await getAvailableTools(userClass)
-    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ type:tool.type, function:tool.function}));
+    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ type:tool.type, name:tool.name, description:tool.description, parameters:tool.parameters, strict:tool.strict}));
 }
 
 async function toolConfigByFunctionName(functionName,userClass){
     const availableForToolCalls = await getAvailableTools(userClass)
-    return availableForToolCalls.find(doc => doc.function?.name === functionName);
+    return availableForToolCalls.find(doc => doc?.name === functionName);
 }
 
 module.exports = {

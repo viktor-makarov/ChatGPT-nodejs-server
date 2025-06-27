@@ -308,20 +308,21 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     if(prompt){
 
     const functionName = "imagine_midjourney"
-    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,userInstance)
     const functionArguments = {prompt}    
 
-    const toolCallExtended = {
+    const functionCallOptions = {
+      responseId:null,
+      status:"in_progress",
       tool_call_id:requestMsgInstance.msgId,
       tool_call_index:0,
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
-      tool_config
+      tool_config:await toolsCollection.toolConfigByFunctionName(functionName,userInstance)
     };
 
     const functionInstance = new FunctionCall({
-      functionCall:toolCallExtended,
+      functionCall:functionCallOptions,
       replyMsgInstance:replyMsgInstance,
       dialogueInstance:dialogueInstance,
       requestMsgInstance:requestMsgInstance,
@@ -503,7 +504,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
     const choosenVersionIndex = callback_data_input
     
-    const choosenContent = doc.content[choosenVersionIndex-1]
+    const choosenContent = doc.content[choosenVersionIndex-1].text
     const totalVersionsCount = doc.content.length;
     const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenVersionIndex,totalVersionsCount)
     const msgIdsForDbCompletion = sentResult.map(result => result.message_id)
@@ -638,22 +639,23 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const jsonDecoded = await otherFunctions.decodeJson(requestMsg.callback_data)
     
     const functionName = "custom_midjourney"
-    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance)
     const functionArguments = {
       buttonPushed : jsonDecoded
     }
     
-    const toolCallExtended = {
+    const functionCallOptions = {
+      responseId:null,
+      status:"in_progress",
       tool_call_id:requestMsg.refMsgId,
       tool_call_index:0,
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
-      tool_config
+      tool_config:await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance)
     };
 
     const functionInstance = new FunctionCall({
-      functionCall:toolCallExtended,
+      functionCall:functionCallOptions,
       replyMsgInstance:replyMsg,
       dialogueInstance:dialogue,
       requestMsgInstance:requestMsg,

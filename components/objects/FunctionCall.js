@@ -26,23 +26,55 @@ class FunctionCall{
     #functionConfig;
     #long_wait_notes;
     #timeoutId
+    #tool_call_id
     
 constructor(obj) {
     this.#functionCall = obj.functionCall;
     this.#functionName = this.#functionCall.function_name;
+    this.#tool_call_id = this.#functionCall.tool_call_id;
     this.#functionConfig = obj.functionCall?.tool_config;
     this.#replyMsg = obj.replyMsgInstance;
     this.#dialogue = obj.dialogueInstance;
     this.#requestMsg = obj.requestMsgInstance;
     this.#user = obj.dialogueInstance.userInstance;
-    this.#tokensLimitPerCall = obj.tokensLimitPerCall
     this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
-    
 };
 
 async removeFunctionFromQueue(){
     
     this.#functionConfig.queue_name && await mongo.removeFunctionFromQueue(this.#functionCall.tool_call_id)
+}
+
+get functionName(){
+    return this.#functionName;
+}
+
+get tool_call_id(){
+    return this.#tool_call_id;
+}
+
+set function_arguments(value){
+    this.#functionCall.function_arguments = value;
+}
+
+set tokensLimitPerCall(value){
+    this.#tokensLimitPerCall = value;
+}
+
+get status(){
+    return this.#functionCall?.status
+}
+
+get responseId(){
+    return this.#functionCall?.responseId
+}
+
+get tool_call_type(){
+    return this.#functionCall?.tool_call_type
+}
+
+get tool_config(){
+    return this.#functionCall?.tool_config
 }
 
 async addFunctionToQueue(statusMessageId){
@@ -107,21 +139,22 @@ async router(){
        let err;
     try{
 
+        
         this.validateFunctionCallObject(this.#functionCall)
         this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
-
         statusMessageId = await this.sendStatusMessage()
-
         await this.addFunctionToQueue(statusMessageId)
 
         this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId,this.#functionConfig.long_wait_notes)
        
-        functionOutcome = await this.functionHandler()
+        functionOutcome = await this.functionHandler();
+        functionOutcome.tool_call_id = this.#tool_call_id;
+        functionOutcome.function_name = this.#functionName
         
     } catch(error){
         //Here is the main error handler for functions.
         err = error
-        err.assistant_instructions = error.assistant_instructions || "Server internal error occured. YOu MUST try to find other ways to fulfill the user's task.";
+        err.assistant_instructions = error.assistant_instructions || "Server internal error occured. You MUST try to find other ways to fulfill the user's task.";
         err.user_instructions = error.user_instructions 
         err.place_in_code = error.place_in_code || "FunctionCall.router";
         err.sendToUser = false //Functions have their own pattern to communicate errors to the user
@@ -133,7 +166,6 @@ async router(){
                 }
             );
         
-
         const devPrompt = await this.functionErrorPrompt({
             tool_call_id: this.#functionCall.tool_call_id,
             functionName: this.#functionName,
@@ -142,8 +174,9 @@ async router(){
             assistant_instructions: err.assistant_instructions,
             user_instructions: err.user_instructions
         })
+
         await this.#dialogue.commitDevPromptToDialogue(devPrompt)
-        functionOutcome =  {success:0,error:err.message + (err.stack ? "\n" + err.stack : "")}
+        functionOutcome =  {success:0,error:err.message + (err.stack ? "\n" + err.stack : ""),tool_call_id:this.#tool_call_id,function_name:this.#functionName}
     } finally {
         this.clearLongWaitNotes()
         await this.removeFunctionFromQueue()
@@ -167,10 +200,10 @@ async functionErrorPrompt(errorObject){
     const {tool_call_id, functionName, errorMessage, errorStack, assistant_instructions,user_instructions} = errorObject;
 
     const availableFunctions = await toolsCollection.getAvailableToolsForCompletion(this.#dialogue.userInstance)
-    const otherAvailableFunctions = availableFunctions.map(func => func.function.name).filter(funcName => funcName !== functionName);
+    const otherAvailableFunctions = availableFunctions.map(func => func.name).filter(funcName => funcName !== functionName);
 
     let prompt = `
-    Tool call with ID ${tool_call_id} for function "${functionName}" resulted in an error:
+    Function call with ID ${tool_call_id} for function "${functionName}" resulted in an error:
     
     Error Message: ${errorMessage}
     Error Stack: ${errorStack}
@@ -214,6 +247,7 @@ async functionErrorPrompt(errorObject){
 async sendStatusMessage(){
 
     const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
+    console.log()
     const MsgText = `${functionDescription} ⏳`
     const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null,null,null)
     return result.message_id
@@ -265,7 +299,6 @@ async backExecutingStatusMessage(statusMessageId){
 
 async finalizeStatusMessage(functionResult,statusMessageId){
 
-
     const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
     const msgText = `${functionDescription} ${resultIcon}`
@@ -295,7 +328,7 @@ async finalizeStatusMessage(functionResult,statusMessageId){
 
 modifyStringify(key,value){
 
-    if (key === 'supportive_data') {
+    if (key === 'supportive_data' || key === 'tool_call_id' || key === 'function_name' ) {
         return undefined; // Exclude this key from the JSON stringification
     }
 return value
@@ -326,7 +359,7 @@ buildFunctionResultHtml(functionResult){
     
     const reply = `<pre><code class="json">${func.wireHtml(stringifiedFunctionResult)}</code></pre>`
 
-    const htmlToSend = `<b>name: ${this.#functionConfig?.function?.name}</b>\nid: ${this.#functionCall?.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult?.supportive_data?.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
+    const htmlToSend = `<b>name: ${functionResult.function_name}</b>\nid: ${functionResult.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult?.supportive_data?.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
 
     return htmlToSend
 }

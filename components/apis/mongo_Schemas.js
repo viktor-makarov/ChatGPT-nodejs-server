@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const modelSettings = require("../../config/telegramModelsSettings");
+const { duration } = require("moment-timezone");
 
 const ProfileSheema = new Schema(
   {
@@ -266,6 +267,7 @@ const ExchangeRates = new Schema(
 const TelegramDialogSheema = new Schema(
   {
     sourceid: { type: String, index: true },
+    respoonseId: { type: String, index: true },
     createdAtSourceTS: { type: Number, index: true },
     createdAtSourceDT_UTC: { type: Date },
     telegramMsgId:{type: Object},
@@ -276,8 +278,6 @@ const TelegramDialogSheema = new Schema(
     userFirstName: { type: String },
     userLastName: { type: String },
     model:{ type: String },
-    role: { type: String },
-    roleid: { type: Number },
     fileId: { type: Number },
     fileName:{ type: String },
     fileUrl:{ type: String },
@@ -287,18 +287,27 @@ const TelegramDialogSheema = new Schema(
     fileAIDescription: { type: String },
     fileSizeBytes: { type: String },
     fileDurationSeconds: { type: String },
+    function_name: { type: String },
+    function_arguments: { type: Object },
+    functionFriendlyName: { type: String },
+    duration: { type: Number},
+    success: { type: Boolean },
+    output_item_index: { type: Number},
     name: { type: String },
-    content: Schema.Types.Mixed,
-    content_latex_formula: Schema.Types.Mixed,
     tools: { type: Object },
     tool_choice: Schema.Types.Mixed,
     tool_calls:{ type: Object },
-    tool_reply:{ type: Object },
     completion_version:{ type: Number},
     completion_ended:{type: Boolean},
-    content_ending: { type: String },
-    finish_reason: { type: String },
     regime: { type: String },
+    fullContent: Schema.Types.Mixed,
+//for responce
+    tool_call_id: { type: String},
+    content: Schema.Types.Mixed,
+    role: { type: String },
+    status: { type: String },
+    type: { type: String },
+    responseId: { type: String},
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );
@@ -337,6 +346,19 @@ const FunctionQueueSheema = new Schema(
 FunctionQueueSheema.index({ name: -1 });
 FunctionQueueSheema.index({ function_id: -1 });
 
+
+const ResponseEventsSheema = new Schema(
+  {
+    datetimeUTC: {
+      type: Date,
+      default: Date.now,
+    },
+    eventType: { type: String, index: true },
+    event: { type: Object }
+  },
+  { collection: appsettings.mongodb_names.coll_response_events }
+);  
+
 module.exports = {
   ProfileSheema,
   LogsSheema,
@@ -355,5 +377,6 @@ module.exports = {
   CreditsUsageLogSheema,
   VoicesElevenLabsSheema,
   ModelsElevenLabsSheema,
-  ExchangeRates
+  ExchangeRates,
+  ResponseEventsSheema
 };

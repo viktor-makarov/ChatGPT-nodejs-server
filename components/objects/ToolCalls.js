@@ -111,7 +111,7 @@ async router(toolCalls = []){
         try{
             await this.#dialogue.metaSetAllFunctionsInProgressStatus(true)
             await Promise.all(toolCallsPromiseList)
-        } finally{
+        } finally {
             await this.#dialogue.metaSetAllFunctionsInProgressStatus(false)
         }
 

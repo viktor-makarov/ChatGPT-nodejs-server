@@ -240,7 +240,6 @@ async create_imagine(prompt, process_mode="relax", timeout = 180000) {
     const result = await axios(config);
 
     if (result.data.data.error.code > 0) {
-
         const error = new Error((result.data.data?.error?.message  + " " +  result.data.data?.error?.raw_message) || "Error occurred during image generation.");
         error.code = "MDJ_ERR";
         error.place_in_code = "PIAPI.create_imagine";

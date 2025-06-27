@@ -24,6 +24,39 @@ const elevenlabs_voices_collection = global.mongoConnection.model(global.appsett
 const elevenlabs_models_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_elevenlabs_models,scheemas.ModelsElevenLabsSheema);
 
 const exchange_rates_international_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_exchange_rates_international,scheemas.ExchangeRates);
+const response_events_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_response_events,scheemas.ResponseEventsSheema);
+
+
+async function getEventsList() {
+
+  try {
+    const result = await response_events_collection.distinct('eventType');
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
+
+async function saveNewEvent(event){
+  try {
+    const result = await response_events_collection.updateOne(
+      { eventType: event.type },
+      { $setOnInsert: { event: event } },
+      { upsert: true }
+    );
+    
+    // Return null if document already existed (no insertion happened)
+    if (result.upsertedCount === 0) {
+      return null;
+    }
+    
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      throw err;
+  }
+}
 
 async function getExchangeRateInternational(time_last_update_unix){
 
@@ -581,7 +614,7 @@ const updatePromptTokens = async (promptObject) => {
 };
 
 
-async function insertToolCallResult(obj){
+async function insertFunctionObject(obj){
   try {
     const newMessage = new dialog_collection(obj);
 
@@ -612,16 +645,17 @@ const upsertCompletionPromise = async (CompletionObject) => {
 
 async function  updateToolCallResult(result){
   try {
-    const  {tool_call_id, content, duration, success, fullContent,fullContentReff} = result
+    const  {content, status,duration, success, fullContent,sourceid} = result
 
     return await dialog_collection.updateOne(
-      { sourceid: tool_call_id },
+      { sourceid: sourceid },
       { 
         $set: {
-          "tool_reply.content": content,
-          "tool_reply.duration": duration,
-          "tool_reply.success": success,
-          "tool_reply.fullContent": fullContent
+          "content": content,
+          "duration": duration,
+          "success": success,
+          "status": status,
+          "fullContent": fullContent
         }
       }
     );
@@ -828,7 +862,7 @@ const getDialogueForCompletion = async (userid, regime) => {
     const result = await dialog_collection
       .find(
         filter,
-        { role: 1, content: 1, tool_calls: 1, tool_reply: 1,completion_version:1}
+        { role: 1, content: 1, status: 1, type: 1, function_name: 1, respoonseId: 1,tool_call_id:1,function_arguments:1}
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
@@ -1571,7 +1605,7 @@ module.exports = {
   updateInputMsgTokenUsage,
   updateCurrentRegimeSetting,
   updateCompletionInDb,
-  insertToolCallResult,
+  insertFunctionObject,
   addMsgIdToToolCall,
   insert_blank_profile,
   getUserProfileByToken,
@@ -1606,5 +1640,7 @@ module.exports = {
   insertCreditUsage,
   getExchangeRateInternational,
   saveExchangeRateInternational,
-  getDocByTgmRegenerateBtnFlag
+  getDocByTgmRegenerateBtnFlag,
+  saveNewEvent,
+  getEventsList
 };

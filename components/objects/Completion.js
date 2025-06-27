@@ -1,51 +1,55 @@
 const { StringDecoder } = require('string_decoder');
 const { Transform } = require('stream');
-const msqTemplates = require("../../config/telegramMsgTemplates");
 const otherFunctions = require("../common_functions.js");
 const mongo = require("../apis/mongo.js");
 const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../errorHandler.js");
 const openAIApi = require("../apis/openAI_API.js");
+const FunctionCall  = require("./FunctionCall.js");
+const toolsCollection = require("./toolsCollection.js");
 const { error } = require('console');
-const { language } = require('@elevenlabs/elevenlabs-js/api/resources/dubbing/resources/resource/index.js');
+
 
 class Completion extends Transform {
 
     #chunkBuffer;
-    #isProcessingChunk
+    #isProcessingChunk;
 
     #chunkStringBuffer;
-    #decoder
+    #decoder;
     #countChunks = 0;
 
-    #responseErrorRaw
+    #responseErrorRaw;
     #responseErrorMsg = "";
     #response_status;
     
     #responseHeaders;
     #user;
-
+    #functionCalls = {};
 
     #telegramMsgBtns = false;
     #telegramMsgRegenerateBtns = false;
     #telegramMsgReplyMarkup = null;
-    #telegramMsgIds = []
+    #telegramMsgIds = [];
 
+    #message_output_item_status;
+    #message_output_item_type
+
+    #output_items;
     #requestMsg;
     #replyMsg;
     #dialogue;
-
+    #responseId;
     #completionId;
     #completionCreatedTS;
     #completionCreatedDT_UTC;
     #completionRole;
     #completionContent;
-    #completionLatexFormulas;
-    #completionContentEnding
+
     #completionFinishReason;
     #completionSystem_fingerprint;
     #tokenUsage;
-    #completion_ended = false
+    #completion_ended = false;
     #completionPreviousVersionsDoc;
     #completionPreviousVersionsContent = [];
     #completionPreviousVersionsLatexFormulas = [];
@@ -57,12 +61,15 @@ class Completion extends Transform {
 
     #throttledDeliverResponseToTgm;
     #deliverResponseToTgm;
-    #toolCallsInstance
+    #toolCallsInstance;
     #tool_calls=[];
-    #text;
+    #text ="";
+    #message_sourceid;
 
     #actualModel;
-    
+    #tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100;
+    #overalTokenLimit;
+    #message_output_item_index
     
     constructor(obj) {
         super({ readableObjectMode: true });
@@ -77,42 +84,263 @@ class Completion extends Transform {
         this.#toolCallsInstance = this.#dialogue.toolCallsInstance;
 
         this.#replyMsg.on('msgDelivered',this.msgDeliveredHandler.bind(this))
-
-        this.#completionRole = "assistant";
-
-        this.#completionContent = "";
-        this.#completionContentEnding ="";
         this.#chunkStringBuffer ="";
-        
         this.#completionCreatedDT_UTC = new Date();
-
         this.#timeout = modelConfig[this.#user.currentModel]?.timeout_ms || 120000;
+        this.#overalTokenLimit = this.#user?.currentModel ? modelConfig[this.#user.currentModel]?.request_length_limit_in_tokens : null
       };
 
+
+      async registerNewEvent(event,evensOccured){
+
+        const {type} = event;
+        if(!evensOccured.includes(type)){
+          await mongo.saveNewEvent(event)
+          evensOccured.push(type);
+        }
+      }
+
+      async responseEventsHandler(responseStream){
+
+        let evensOccured = await mongo.getEventsList()
+
+        for await (const event of responseStream) {
+            const {sequence_number, response,output_index,item,content_index } = event;
+            const response_type = event.type;
+            await this.registerNewEvent(event,evensOccured)
+          //  console.log(sequence_number,response_type,output_index,content_index)
+
+            switch (response_type) {
+                case 'response.created':
+                    const {id,created_at} = response;
+
+                    this.clearLongWaitNotes()
+                    
+                    this.#responseId = id;
+                    this.#completionCreatedTS= created_at;
+                    this.#completionCreatedDT_UTC = new Date(created_at * 1000).toISOString();
+                    this.#output_items ={};
+                    break;
+
+                case 'response.output_item.added':
+                    const {status,role} = item;
+                    const item_type = item.type;
+                    this.#message_output_item_status = status;
+                    this.#output_items[output_index] = {type:item_type,status}
+                    switch (item_type) {
+                      case 'message':
+                        this.#message_sourceid = `${this.#responseId}_output_index_${output_index}`;
+                        this.#completionRole = role;
+                        this.#message_output_item_type = item_type;
+                        this.#message_output_item_status = status;
+                        this.#message_output_item_index = output_index;
+                        break;
+                      case 'function_call':
+                        await this.createFunctionCall(event)
+                        break;
+                    }
+                    break;
+
+                case 'response.output_text.delta':
+                    switch (this.#output_items[output_index].type) {
+                      case 'message':
+                        this.#text += event?.delta || "";
+                        this.#throttledDeliverResponseToTgm()
+                      break;
+                    }
+                    
+                    break;
+                case 'response.output_item.done':
+                    switch (this.#output_items[output_index].type) {
+                      case 'message':
+                        this.#completion_ended = true;
+                        this.#replyMsg.completion_ended = true;
+                        this.#message_output_item_status = item?.status;
+                        this.#completionContent = item?.content[output_index];
+                        await this.#dialogue.commitCompletionDialogue(this.currentCompletionObj)
+                        this.completedOutputItem(output_index)
+                      break;
+                      case 'function_call':
+                        this.triggerFunctionCall(event)
+                        .then(index=> this.completedOutputItem(index))
+                        .catch(index => this.failedOutputItem(index))
+                        break;
+                    }
+                    break;
+                case 'response.completed':
+                    await this.#dialogue.finalizeTokenUsage(this.currentCompletionObj,response.usage)
+                    break;
+
+                case 'response.incomplete':
+                    await this.#dialogue.finalizeTokenUsage(this.currentCompletionObj,response.usage)
+                    break;
+
+                case 'response.failed':
+                    const {error} = response;
+                    const {code,message} = error;
+                    const err = new Error(`${code}: ${message}`);
+                    err.code = "OAI_ERR99"
+                    err.user_message = message
+                    err.place_in_code = "responseEventsHandler.failed";
+                    throw err;
+            }
+        }
+      }
+
+      completedOutputItem(output_index){
+        this.#output_items[output_index].status = "completed";
+      }
+
+      failedOutputItem(output_index){
+        this.#output_items[output_index].status = "failed";
+      }
+
+      async createFunctionCall(event){
+
+        const {item,output_index} = event;
+        const {id,call_id,name,status} = item;
+        const item_type = item.type;
+
+        const options ={
+            functionCall:{
+              responseId:id,
+              status:status,
+              tool_call_id:call_id,
+              tool_call_index:output_index,
+              tool_call_type:item_type,
+              function_name:name,
+              tool_config:await toolsCollection.toolConfigByFunctionName(name,this.#user)
+           },
+            replyMsgInstance:this.#replyMsg,
+            dialogueInstance:this.#dialogue,
+            requestMsgInstance:this.#requestMsg
+        };
+        this.#functionCalls[output_index] = new FunctionCall(options)
+      }
+
+      async triggerFunctionCall(event){
+        const {output_index,item} = event;
+
+        try{
+        const {status,call_id,name} = item
+        const item_type = item.type;
+        this.#functionCalls[output_index].function_arguments = item?.arguments;
+        const tollCallIndexes = Object.keys(this.#functionCalls)
+
+        const currentTokenLimit = (this.#overalTokenLimit- await this.#dialogue.metaGetTotalTokens())*this.#tokenFetchLimitPcs;
+        const divisor = tollCallIndexes.length === 0 ? 1 : tollCallIndexes.length;
+        const tokensLimitPerCall = currentTokenLimit / divisor;
+
+        tollCallIndexes.forEach((index) => {
+          this.#functionCalls[index].tokensLimitPerCall = tokensLimitPerCall;
+        })
+
+        await this.#dialogue.commitFunctionCallToDialogue({
+          tool_call_id:call_id,
+          function_name:name,
+          tool_config:this.#functionCalls[output_index].tool_config,
+          output_item_index:output_index,
+          responseId:this.#responseId,
+          sourceid:`${this.#functionCalls[output_index].responseId}_output_index_${output_index}_function_call`,
+          function_arguments:item?.arguments,
+          status:status,
+          type:item_type
+        })
+
+        await this.#dialogue.preCommitFunctionReply({
+          tool_call_id:call_id,
+          function_name:name,
+          output_item_index:output_index,
+          tool_config:this.#functionCalls[output_index].tool_config,
+          sourceid:`${this.#functionCalls[output_index].responseId}_output_index_${output_index}_function_output`,
+          status:"in_progress",
+          type:"function_call_output"
+        })
+
+        const outcome = await this.#functionCalls[output_index].router();
+        const {supportive_data,success,tool_call_id,function_name} = outcome;
+       
+        const toolExecutionResult = {tool_call_id,success,function_name,
+          sourceid:`${this.#functionCalls[output_index].responseId}_output_index_${output_index}_function_output`,
+          duration: supportive_data?.duration || 0,
+          fullContent:supportive_data?.fullContent,
+          status:"completed",
+          content:JSON.stringify(outcome,this.modifyStringify,2)
+        }
+
+        const promiseInParallel = [
+          this.#dialogue.updateCommitToolReply(toolExecutionResult),
+          this.commitImage(supportive_data,function_name)
+        ]
+
+        await Promise.all(promiseInParallel)
+
+        } catch(err){
+          err.place_in_code = error.place_in_code || "triggerFunctionCall";
+          telegramErrorHandler.main(
+                          {
+                          replyMsgInstance:this.#replyMsg,
+                          error_object:err
+                          }
+                      );
+          throw err;
+        } finally {
+          return output_index
+        }
+        }
+
+        modifyStringify(key,value){
+
+            if (key === 'supportive_data' || key === 'tool_call_id' || key === 'function_name') {
+                return undefined; // Exclude this key from the JSON stringification
+            }
+        return value
+        }
+
+      async commitImage(supportive_data,function_name){
+
+            const mdj_public_url = supportive_data?.image_url;
+            const mdj_image_base64 = supportive_data?.base64;
+            const mdj_prompt = supportive_data?.midjourney_prompt;
+
+            if(function_name==="create_midjourney_image" && mdj_public_url){
+            const fileComment = {
+                midjourney_prompt:mdj_prompt,
+                public_url:mdj_public_url,
+                context:"Image has been generated by 'create_midjourney_image' function",
+            }
+            await this.#dialogue.commitImageToDialogue(mdj_public_url,mdj_image_base64,fileComment)
+          }
+        }
+
+      async waitForFinalization(){
+        while (Object.values(this.#output_items).some(item => item.status === "in_progress")){
+          await otherFunctions.delay(1000)
+        }
+      }
+      
       async router(){
 
         try{
           
           this.#completionPreviousVersionsDoc = await this.completionPreviousVersions();
-
           this.#updateCompletionVariables()
           
           await this.#replyMsg.sendTypingStatus()
           const statusMsg = await this.#replyMsg.sendStatusMsg()
           
           this.#long_wait_notes = this.triggerLongWaitNotes(statusMsg)
-
+          
           this.#deliverResponseToTgm = this.deliverResponseToTgmHandler(statusMsg.message_id,statusMsg.text.length);
           this.#throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#deliverResponseToTgm,appsettings.telegram_options.send_throttle_ms)
           
-          let oai_response;
+          let responseStream;
           try{
-            oai_response =  await openAIApi.chatCompletionStreamAxiosRequest(
-              this.#requestMsg,
-              this.#dialogue
-            );
+            responseStream = await openAIApi.responseStream(this.#dialogue)
+
           } catch(err){
 
+            this.clearLongWaitNotes()
             if(err.resetDialogue){
               const response = await this.#dialogue.resetDialogue()
               await this.#replyMsg.simpleMessageUpdate(response.text,{
@@ -124,23 +352,15 @@ class Completion extends Transform {
             } else {
               throw err
             }
-          } finally{
-              this.clearLongWaitNotes()
           }
 
-          this.#responseHeaders = oai_response.headers
-          oai_response.data.pipe(this)
-          await this.waitForTheStreamToFinish(oai_response.data)
+          await this.responseEventsHandler(responseStream);
+          await this.waitForFinalization()
 
-          this.checkIfCompletionIsEmpty()
-      
-          const completionObject = this.currentCompletionObj
-          await this.#dialogue.commitCompletionDialogue(completionObject)
-
-          await this.#dialogue.finalizeTokenUsage(completionObject,this.#tokenUsage)
-      
-          completionObject.tool_calls && this.#dialogue.emit('triggerToolCall', completionObject.tool_calls) 
-
+          if(Object.values(this.#output_items).some(item => item.type === "function_call")){
+            this.#dialogue.emit('callCompletion');
+          }
+          
         } catch(err){
 
           await this.#replyMsg.simpleMessageUpdate("Ой-ой! :-(",{
@@ -198,16 +418,7 @@ class Completion extends Transform {
           return 
         }
 
-        //Standartization of content and latex formulas
-        if(Array.isArray(lastCompletionDoc?.content)){
-          this.#completionPreviousVersionsContent = lastCompletionDoc.content;
-          this.#completionPreviousVersionsLatexFormulas = lastCompletionDoc?.content_latex_formula || [];
-
-        } else {
-          this.#completionPreviousVersionsContent = lastCompletionDoc.content ? [lastCompletionDoc.content] : [];
-          this.#completionPreviousVersionsLatexFormulas = lastCompletionDoc?.content_latex_formula ? [lastCompletionDoc?.content_latex_formula] : [];
-
-        }
+        this.#completionPreviousVersionsContent = lastCompletionDoc.content;
 
         this.#completionPreviousVersionsContentCount = this.#completionPreviousVersionsContent.length
         this.#completionPreviousVersionNumber = lastCompletionDoc.completion_version;
@@ -243,7 +454,7 @@ class Completion extends Transform {
         return timeouts
     };
 
-      clearLongWaitNotes() {
+    clearLongWaitNotes() {
         if (this.#long_wait_notes && this.#long_wait_notes.length > 0) {
             this.#long_wait_notes.forEach(timeout => clearTimeout(timeout));
             this.#long_wait_notes = [];
@@ -264,31 +475,17 @@ class Completion extends Transform {
       })
     }
 
-    set completionLatexFormulas(value){
-      this.#completionLatexFormulas = value;
-    }
-
-    get completionLatexFormulas(){
-      return this.#completionLatexFormulas
-    } 
-
     get timeout(){
       return this.#timeout  
     }
 
     get completionFieldsToUpdate(){
       
-      this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
-      this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
-      
       const result =  {
         telegramMsgId:this.#telegramMsgIds,
-     //   telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
         telegramMsgBtns:this.#telegramMsgBtns,
         telegramMsgRegenerateBtns:this.#telegramMsgRegenerateBtns,
-        telegramMsgReplyMarkup:this.#telegramMsgReplyMarkup,
-        content: this.#completionPreviousVersionsContent,
-        content_latex_formula:this.#completionPreviousVersionsLatexFormulas
+        telegramMsgReplyMarkup:this.#telegramMsgReplyMarkup
       }
       return result
     }
@@ -296,34 +493,29 @@ class Completion extends Transform {
     get currentCompletionObj(){
 
       this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
-      this.#completionPreviousVersionsLatexFormulas[this.#completionCurrentVersionNumber-1] = this.#completionLatexFormulas
 
       this.#completionId = this.#dialogue.regenerateCompletionFlag ?  this.#completionPreviousVersionsDoc?.sourceid : this.#completionId
       
       return {
             //Формируем сообщение completion
-            sourceid: this.#completionId,
+            sourceid: this.#message_sourceid,
+            responseId: this.#responseId,
             createdAtSourceTS: this.#completionCreatedTS,
             createdAtSourceDT_UTC: this.#completionCreatedDT_UTC,
-         //   telegramMsgId:this.#telegramMsgIds,
             telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
             telegramMsgBtns:this.#telegramMsgBtns,
             userid: this.#user.userid,
+            output_item_index: this.#message_output_item_index,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             model: this.#user.currentModel,
             role: this.#completionRole,
-            
-            roleid:2,
-            tool_calls:this.#tool_calls,
-            tool_choice:this.#dialogue.tool_choice,
             completion_version:this.#completionCurrentVersionNumber,
-            content: this.#completionPreviousVersionsContent,
-            content_latex_formula:this.#completionPreviousVersionsLatexFormulas,           
-            completion_ended: this.#completion_ended,
-            content_ending: this.#completionContentEnding,
             regime: this.#user.currentRegime,
-            finish_reason: this.#completionFinishReason,
+            status: this.#message_output_item_status,
+            type: this.#message_output_item_type,
+            completion_ended: this.#completion_ended,
+            content: this.#completionPreviousVersionsContent,     
           }
     }
 
@@ -344,18 +536,6 @@ class Completion extends Transform {
       }
       callback();
     };
-
-    checkIfCompletionIsEmpty(){
-
-      if (this.#completionContent === "" && this.#completionFinishReason != 'tool_calls') {
-        //Если не получили токенов от API
-        let err = new Error("Empty response from the service.");
-        err.code = "OAI_ERR2";
-        err.mongodblog = true;
-        err.user_message = msqTemplates.empty_completion;
-        throw err;
-      };
-    }
 
     async end(chunk, encoding, callback){
       
@@ -414,58 +594,7 @@ class Completion extends Transform {
       return jsonChunks
     }
 
-    async extractData(jsonChunks){
-   //   console.log(JSON.stringify(jsonChunks,null,4))
 
-      //console.log(jsonChunks[0].choices[0].delta.content)
-      for (const chunk of jsonChunks){
-        
-        this.#completionId = this.#completionId ?? chunk.id
-        
-        this.#completionCreatedTS = this.#completionCreatedTS ?? chunk.created
-        this.#completionSystem_fingerprint = this.#completionSystem_fingerprint ?? chunk.system_fingerprint
-        this.#actualModel = this.#actualModel ?? chunk.model
-        this.#tokenUsage = this.#tokenUsage ?? chunk.usage
-        const choices = chunk.choices
-        if (choices && choices.length >0){
-
-          for (const choice of choices){
-            this.#completionFinishReason = this.#completionFinishReason ?? choice?.finish_reason
-            this.completionStausUpdate()
-
-            const delta = choice?.delta
-
-            const content = (delta?.content ?? "");
-            this.#completionContent += content
-            this.#replyMsg.text = this.#completionContent;
-            this.#throttledDeliverResponseToTgm()
-
-            const tool_calls = delta?.tool_calls;
-            let tool_call = tool_calls ? tool_calls[0] : null;
-
-            if (tool_call) {
-              if(tool_call.id){ //id is present in the chunks. It means that new tool_call starts
-                if(tool_call?.function){ //ensure arguments field is present in the object
-                  if(!tool_call.function?.arguments){
-                    tool_call.function.arguments = ""
-                  }
-                } else {
-                  tool_call["function"] = {"arguments": ""}
-                }
-                this.#tool_calls.push(tool_call)
-              } else {
-                
-                this.#tool_calls.at(-1).type = this.#tool_calls.at(-1)?.type ?? tool_call.type
-                this.#tool_calls.at(-1).function = this.#tool_calls.at(-1)?.function ?? tool_call.function
-                this.#tool_calls.at(-1).function.name = this.#tool_calls.at(-1).function?.name ?? tool_call.function.name
-                this.#tool_calls.at(-1).function.arguments += tool_call.function.arguments
-              }
-            }
-          }
-        }
-      }
-
-    }
 
     completionStausUpdate(){
       if (this.#completionFinishReason == "length" || this.#completionFinishReason == "stop") {
@@ -496,7 +625,7 @@ class Completion extends Transform {
       return async () =>{
 
           try{
-            const text = this.#completionContent
+            const text = this.#text
 
             if (text === undefined ||text === "") {
               return {success:0,error:"Empty response from the service."};
@@ -520,7 +649,7 @@ class Completion extends Transform {
             if(completion_delivered){ //final run when all messages are sent
               this.#telegramMsgIds = Array.from(sentMsgIds)
               
-              await this.msgDeliveredUpdater({sourceid:this.#completionId})
+              await this.msgDeliveredUpdater({sourceid:this.#responseId})
               return {success:1,completion_delivered}
             }
 
@@ -706,8 +835,6 @@ class Completion extends Transform {
                if(result.success === 0 && result.wait_time_ms !=-1){
                 return result
                }
-
-
     }
 
     return {success:1}
@@ -735,21 +862,21 @@ class Completion extends Transform {
             callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
       };
 
-      const completionContent = await otherFunctions.encodeJson({text})
+      const callbackData = await otherFunctions.encodeJson({text})
       
       const redaloudButtons = {
         text: "🔊",
-        callback_data: JSON.stringify({e:"readaloud",d:completionContent}),
+        callback_data: JSON.stringify({e:"readaloud",d:callbackData}),
       };
 
       const PDFButtons = {
         text: "PDF",
-        callback_data: JSON.stringify({e:"respToPDF",d:completionContent}),
+        callback_data: JSON.stringify({e:"respToPDF",d:callbackData}),
       };
 
       const HTMLButtons = {
         text: "🌐",
-        callback_data: JSON.stringify({e:"respToHTML",d:completionContent}),
+        callback_data: JSON.stringify({e:"respToHTML",d:callbackData}),
       };
 
       if(this.#completionCurrentVersionNumber>1){
@@ -764,7 +891,7 @@ class Completion extends Transform {
 
       reply_markup.inline_keyboard.push(downRow)
 
-      return reply_markup
+      return reply_markup;
     }
 
 
