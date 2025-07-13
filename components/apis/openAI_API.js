@@ -40,6 +40,7 @@ if (modelCanUseTemperature) {
 }
 
 const available_tools =  await toolsCollection.getAvailableToolsForCompletion(userInstance)
+//console.log("available_tools",available_tools)
 const modelCanUseTools = modelConfig[model].canUseTool
 
 if(available_tools && available_tools.length>0 && modelCanUseTools){
@@ -59,7 +60,7 @@ try {
 return responseStream;
 }
 
-async function responseSync(model,instructions, input,temperature = 0) {
+async function responseSync(model,instructions, input,temperature = 0,tools = [],tool_choice = "auto") {
 
 const response = await openai.responses.create({
     model: model,
@@ -68,8 +69,9 @@ const response = await openai.responses.create({
     temperature: temperature,
     store:false,
     background: false,
+    tools: tools,
+    tool_choice: tool_choice
 });
-
 return response;
 }
 
@@ -250,7 +252,7 @@ async function chatCompletionStreamAxiosRequest(
     };
     
     const available_tools =  await toolsCollection.getAvailableToolsForCompletion(dialogueClass.userInstance)
-
+    
     const canUseTools = modelConfig[requestMsg.user.currentModel].canUseTool
     const canUseTemperature = modelConfig[requestMsg.user.currentModel].canUseTemperature
     

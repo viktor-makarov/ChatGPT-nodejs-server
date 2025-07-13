@@ -308,6 +308,8 @@ const TelegramDialogSheema = new Schema(
     status: { type: String },
     type: { type: String },
     responseId: { type: String},
+    includeInSearch:{type: Boolean},
+    tokens:{ type: Number}
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );

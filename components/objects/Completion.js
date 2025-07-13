@@ -26,16 +26,10 @@ class Completion extends Transform {
     #responseHeaders;
     #user;
     #functionCalls = {};
-
-    #telegramMsgBtns = false;
-    #telegramMsgRegenerateBtns = false;
-    #telegramMsgReplyMarkup = null;
-    #telegramMsgIds = [];
-
-    #message_output_item_status;
-    #message_output_item_type
-
+    #completionObjectDefault = {};
+    #telegramMsgIds;
     #output_items;
+    #message_items;
     #requestMsg;
     #replyMsg;
     #dialogue;
@@ -45,31 +39,21 @@ class Completion extends Transform {
     #completionCreatedDT_UTC;
     #completionRole;
     #completionContent;
+    #toolCallsInstance;
 
     #completionFinishReason;
-    #completionSystem_fingerprint;
-    #tokenUsage;
-    #completion_ended = false;
     #completionPreviousVersionsDoc;
     #completionPreviousVersionsContent = [];
-    #completionPreviousVersionsLatexFormulas = [];
     #completionPreviousVersionsContentCount;
     #completionPreviousVersionNumber;
     #completionCurrentVersionNumber = 1;
     #long_wait_notes;
     #timeout;
 
-    #throttledDeliverResponseToTgm;
-    #deliverResponseToTgm;
-    #toolCallsInstance;
     #tool_calls=[];
-    #text ="";
-    #message_sourceid;
-
-    #actualModel;
+    #hostedToolCall 
     #tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100;
     #overalTokenLimit;
-    #message_output_item_index
     
     constructor(obj) {
         super({ readableObjectMode: true });
@@ -83,11 +67,18 @@ class Completion extends Transform {
         this.#dialogue = obj.dialogueClass;
         this.#toolCallsInstance = this.#dialogue.toolCallsInstance;
 
-        this.#replyMsg.on('msgDelivered',this.msgDeliveredHandler.bind(this))
         this.#chunkStringBuffer ="";
         this.#completionCreatedDT_UTC = new Date();
         this.#timeout = modelConfig[this.#user.currentModel]?.timeout_ms || 120000;
         this.#overalTokenLimit = this.#user?.currentModel ? modelConfig[this.#user.currentModel]?.request_length_limit_in_tokens : null
+        this.#completionObjectDefault = {
+          userid: this.#user.userid,
+          userFirstName: this.#user.user_first_name,
+          userLastName: this.#user.user_last_name,
+          model: this.#user.currentModel,
+          regime: this.#user.currentRegime,
+          includeInSearch: true
+        }
       };
 
 
@@ -100,7 +91,7 @@ class Completion extends Transform {
         }
       }
 
-      async responseEventsHandler(responseStream){
+      async responseEventsHandler(responseStream,statusMsg){
 
         let evensOccured = await mongo.getEventsList()
 
@@ -108,7 +99,7 @@ class Completion extends Transform {
             const {sequence_number, response,output_index,item,content_index } = event;
             const response_type = event.type;
             await this.registerNewEvent(event,evensOccured)
-          //  console.log(sequence_number,response_type,output_index,content_index)
+            console.log(sequence_number,new Date(),response_type,output_index,content_index)
 
             switch (response_type) {
                 case 'response.created':
@@ -120,44 +111,72 @@ class Completion extends Transform {
                     this.#completionCreatedTS= created_at;
                     this.#completionCreatedDT_UTC = new Date(created_at * 1000).toISOString();
                     this.#output_items ={};
+                    this.#message_items = {};
                     break;
 
                 case 'response.output_item.added':
                     const {status,role} = item;
                     const item_type = item.type;
-                    this.#message_output_item_status = status;
                     this.#output_items[output_index] = {type:item_type,status}
+                    
+                    if(!statusMsg){
+                      statusMsg = await this.#replyMsg.sendStatusMsg()
+                    }
+                    this.#telegramMsgIds = [statusMsg.message_id];
+
                     switch (item_type) {
                       case 'message':
-                        this.#message_sourceid = `${this.#responseId}_output_index_${output_index}`;
-                        this.#completionRole = role;
-                        this.#message_output_item_type = item_type;
-                        this.#message_output_item_status = status;
-                        this.#message_output_item_index = output_index;
+                        this.#message_items[output_index] =  this.#completionObjectDefault
+                        this.#message_items[output_index].sourceid = `${this.#responseId}_output_index_${output_index}`;
+                        this.#message_items[output_index].responseId = this.#responseId;
+                        this.#message_items[output_index].output_item_index = output_index;
+                        this.#message_items[output_index].createdAtSourceTS = this.#completionCreatedTS;
+                        this.#message_items[output_index].createdAtSourceDT_UTC = this.#completionCreatedDT_UTC;
+                        this.#message_items[output_index].type = item_type;
+                        this.#message_items[output_index].status = status;
+                        this.#message_items[output_index].role = role;
+                        this.#message_items[output_index].completion_ended = false;
+                        this.#message_items[output_index].text = "";
+                        this.#message_items[output_index].deliverResponseToTgm = this.deliverResponseToTgmHandler(statusMsg.message_id,statusMsg.text.length,output_index);
+                        this.#message_items[output_index].completion_version = this.#completionCurrentVersionNumber;
+                        statusMsg =null;
+                        this.#message_items[output_index].throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#message_items[output_index].deliverResponseToTgm,appsettings.telegram_options.send_throttle_ms)        
                         break;
                       case 'function_call':
-                        await this.createFunctionCall(event)
+                        await this.createFunctionCall(event,statusMsg)
+                        statusMsg =null;
+                        break;
+                      case 'web_search_call':
+                        this.#hostedToolCall = this.initHostedToolCall(event,statusMsg)
+                        statusMsg =null;
+                        this.#hostedToolCall.initialCommitToTGM() //intentionally async
                         break;
                     }
                     break;
-
                 case 'response.output_text.delta':
                     switch (this.#output_items[output_index].type) {
                       case 'message':
-                        this.#text += event?.delta || "";
-                        this.#throttledDeliverResponseToTgm()
+                        this.#message_items[output_index].text += event?.delta || "";
+                        this.#message_items[output_index].throttledDeliverResponseToTgm()
                       break;
                     }
-                    
+                    break;
+                case 'response.output_text.done':
+                    switch (this.#output_items[output_index].type) {
+                      case 'message':
+                        this.#message_items[output_index].text = event?.text || "";
+                        this.#message_items[output_index].completion_ended = true;
+                        this.#message_items[output_index].throttledDeliverResponseToTgm()
+                      break;
+                    };
                     break;
                 case 'response.output_item.done':
                     switch (this.#output_items[output_index].type) {
                       case 'message':
-                        this.#completion_ended = true;
-                        this.#replyMsg.completion_ended = true;
-                        this.#message_output_item_status = item?.status;
-                        this.#completionContent = item?.content[output_index];
-                        await this.#dialogue.commitCompletionDialogue(this.currentCompletionObj)
+                        this.#message_items[output_index].status = item?.status;
+                        this.#message_items[output_index].content = [item?.content[0]];
+                        const completionObj = this.#message_items[output_index];
+                        await this.#dialogue.commitCompletionDialogue(completionObj)
                         this.completedOutputItem(output_index)
                       break;
                       case 'function_call':
@@ -165,14 +184,36 @@ class Completion extends Transform {
                         .then(index=> this.completedOutputItem(index))
                         .catch(index => this.failedOutputItem(index))
                         break;
+                      case 'web_search_call':
+                        this.#hostedToolCall.finalCommitToTGM(event)
+                        this.completedOutputItem(output_index)
+                        break;
                     }
                     break;
+
+                case "response.image_generation_call.completed":
+                    console.log(event)
+                break;
+
+                case "response.image_generation_call.generating":
+                    console.log(event)
+                break;
+
+                case "response.image_generation_call.in_progress":
+                    console.log(event)
+                break;
+
+                case "response.image_generation_call.partial_image":
+                    console.log(event)
+                break;
+
                 case 'response.completed':
-                    await this.#dialogue.finalizeTokenUsage(this.currentCompletionObj,response.usage)
+                    await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,response.usage)
+                   // console.log(JSON.stringify(event,null,2))
                     break;
 
                 case 'response.incomplete':
-                    await this.#dialogue.finalizeTokenUsage(this.currentCompletionObj,response.usage)
+                    await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,response.usage)
                     break;
 
                 case 'response.failed':
@@ -187,6 +228,97 @@ class Completion extends Transform {
         }
       }
 
+      initHostedToolCall(initialEvent,statusMsg){
+
+        const statusMsgId = statusMsg?.message_id
+        const {output_index,item} = initialEvent; 
+        const {type,action} = item;
+        let functionDescription;
+        let actionType = item?.action?.type
+        switch (type) {
+          case "web_search_call":
+            switch (actionType){
+              case "search":
+                functionDescription = "Поиск в интернете";
+              break;
+              case "open_page":
+                functionDescription = "Просмотр страницы";
+              break;
+              case "find_in_page":
+                functionDescription = "Поиск по странице";
+              break;
+              default:
+                 functionDescription = "Неизвестная функция";
+              break;
+            }
+          break;
+          default:
+            functionDescription = "Неизвестная функция";
+            break;
+        }
+
+        return {
+          "initialCommitToTGM":async () => {
+
+            let toolType;
+            switch (type) {
+              case "web_search_call":
+                toolType = "web_search_preview";
+            };
+            const MsgText = `⏳ <b>${functionDescription}</b> `
+            await this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            })
+
+          },
+          "finalCommitToTGM": async (completedEvent) => {
+
+            const {item,output_index} = completedEvent;
+            const {action,type} = item;
+            let details = "";
+            switch (actionType){
+              case "search":
+                details = action.query;
+              break;
+              case "open_page":
+                details = action.url;
+              break;
+              case "find_in_page":
+                details = `${action.pattern} -> ${action.url}`;
+              break;
+            }
+
+            const msgText = `✅ <b>${functionDescription}</b>: ${details}`
+
+            await this.#replyMsg.simpleMessageUpdate(msgText,{
+                chat_id:this.#replyMsg.chatId,
+                message_id:statusMsgId,
+                reply_markup:null,
+                parse_mode: "html"
+            })
+          }
+        }
+      }
+
+      buildHostedToolCompletionHtml(event){
+        const {item,output_index} = event;
+        const {action,type,id} = item;
+        let argsText = JSON.stringify(action,this.modifyStringify,2)
+        argsText = otherFunctions.unWireText(argsText)
+        const request = `<pre>${otherFunctions.wireHtml(argsText)}</pre>`
+
+        const htmlToSend = `<b>type: ${type}</b>\nid: ${id}\noutput_index: ${output_index}\n\n<b>request:</b>\n${request}`
+
+        return htmlToSend
+      }
+
+      setStatusMsgAsUsed(statusMsg){
+        statusMsg = null;
+      }
+
       completedOutputItem(output_index){
         this.#output_items[output_index].status = "completed";
       }
@@ -195,7 +327,7 @@ class Completion extends Transform {
         this.#output_items[output_index].status = "failed";
       }
 
-      async createFunctionCall(event){
+      async createFunctionCall(event,statusMsg){
 
         const {item,output_index} = event;
         const {id,call_id,name,status} = item;
@@ -213,7 +345,8 @@ class Completion extends Transform {
            },
             replyMsgInstance:this.#replyMsg,
             dialogueInstance:this.#dialogue,
-            requestMsgInstance:this.#requestMsg
+            requestMsgInstance:this.#requestMsg,
+              statusMsg:statusMsg
         };
         this.#functionCalls[output_index] = new FunctionCall(options)
       }
@@ -225,6 +358,7 @@ class Completion extends Transform {
         const {status,call_id,name} = item
         const item_type = item.type;
         this.#functionCalls[output_index].function_arguments = item?.arguments;
+        console.log("item?.arguments",item?.arguments)
         const tollCallIndexes = Object.keys(this.#functionCalls)
 
         const currentTokenLimit = (this.#overalTokenLimit- await this.#dialogue.metaGetTotalTokens())*this.#tokenFetchLimitPcs;
@@ -331,9 +465,7 @@ class Completion extends Transform {
           
           this.#long_wait_notes = this.triggerLongWaitNotes(statusMsg)
           
-          this.#deliverResponseToTgm = this.deliverResponseToTgmHandler(statusMsg.message_id,statusMsg.text.length);
-          this.#throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#deliverResponseToTgm,appsettings.telegram_options.send_throttle_ms)
-          
+
           let responseStream;
           try{
             responseStream = await openAIApi.responseStream(this.#dialogue)
@@ -354,7 +486,7 @@ class Completion extends Transform {
             }
           }
 
-          await this.responseEventsHandler(responseStream);
+          await this.responseEventsHandler(responseStream,statusMsg);
           await this.waitForFinalization()
 
           if(Object.values(this.#output_items).some(item => item.type === "function_call")){
@@ -400,7 +532,6 @@ class Completion extends Transform {
 
         if(!this.#dialogue.regenerateCompletionFlag){
           this.#completionPreviousVersionsContent = [];
-          this.#completionPreviousVersionsLatexFormulas = []
           this.#completionPreviousVersionsContentCount = undefined;
           this.#completionPreviousVersionNumber = undefined;
           this.#completionCurrentVersionNumber = 1
@@ -411,7 +542,6 @@ class Completion extends Transform {
 
         if(!lastCompletionDoc){
           this.#completionPreviousVersionsContent = [];
-          this.#completionPreviousVersionsLatexFormulas = []
           this.#completionPreviousVersionsContentCount = undefined;
           this.#completionPreviousVersionNumber = undefined;
           this.#completionCurrentVersionNumber = 1
@@ -461,62 +591,20 @@ class Completion extends Transform {
         }
     }
 
-    async msgDeliveredHandler(data){
+    async msgDeliveredUpdater(completionObject){
       await mongo.updateCompletionInDb({
-        filter: {telegramMsgId:data.message_id},       
-        updateBody:this.completionFieldsToUpdate
-      })
-    }
-
-    async msgDeliveredUpdater(data){
-      await mongo.updateCompletionInDb({
-        filter: {sourceid:data.sourceid},       
-        updateBody:this.completionFieldsToUpdate
+        filter: {sourceid:completionObject.sourceid},       
+        updateBody:{
+          telegramMsgIds: completionObject.telegramMsgIds,
+          telegramMsgBtns: completionObject.telegramMsgBtns,
+          telegramMsgRegenerateBtns: completionObject.telegramMsgRegenerateBtns,
+          telegramMsgReplyMarkup: completionObject.telegramMsgReplyMarkup,
+        }
       })
     }
 
     get timeout(){
       return this.#timeout  
-    }
-
-    get completionFieldsToUpdate(){
-      
-      const result =  {
-        telegramMsgId:this.#telegramMsgIds,
-        telegramMsgBtns:this.#telegramMsgBtns,
-        telegramMsgRegenerateBtns:this.#telegramMsgRegenerateBtns,
-        telegramMsgReplyMarkup:this.#telegramMsgReplyMarkup
-      }
-      return result
-    }
-    
-    get currentCompletionObj(){
-
-      this.#completionPreviousVersionsContent[this.#completionCurrentVersionNumber-1] = this.#completionContent
-
-      this.#completionId = this.#dialogue.regenerateCompletionFlag ?  this.#completionPreviousVersionsDoc?.sourceid : this.#completionId
-      
-      return {
-            //Формируем сообщение completion
-            sourceid: this.#message_sourceid,
-            responseId: this.#responseId,
-            createdAtSourceTS: this.#completionCreatedTS,
-            createdAtSourceDT_UTC: this.#completionCreatedDT_UTC,
-            telegramMsgId:this.#replyMsg.msgIdsForDbCompletion,
-            telegramMsgBtns:this.#telegramMsgBtns,
-            userid: this.#user.userid,
-            output_item_index: this.#message_output_item_index,
-            userFirstName: this.#user.user_first_name,
-            userLastName: this.#user.user_last_name,
-            model: this.#user.currentModel,
-            role: this.#completionRole,
-            completion_version:this.#completionCurrentVersionNumber,
-            regime: this.#user.currentRegime,
-            status: this.#message_output_item_status,
-            type: this.#message_output_item_type,
-            completion_ended: this.#completion_ended,
-            content: this.#completionPreviousVersionsContent,     
-          }
     }
 
     get completionCurrentVersionNumber(){
@@ -594,16 +682,6 @@ class Completion extends Transform {
       return jsonChunks
     }
 
-
-
-    completionStausUpdate(){
-      if (this.#completionFinishReason == "length" || this.#completionFinishReason == "stop") {
-        
-        this.#completion_ended = true;
-        this.#replyMsg.completion_ended = true;
-      }
-    }
-
     async updateStatusMsg(user_message,message_id,chat_id){
       await this.#replyMsg.simpleMessageUpdate(
         user_message,
@@ -612,70 +690,65 @@ class Completion extends Transform {
           message_id: message_id,
         }
       );
-  
     };
 
-    deliverResponseToTgmHandler(initialMsgId,initialMsgCharCount = 0){
+    deliverResponseToTgmHandler(initialMsgId,initialMsgCharCount = 0,output_index){
           const sentMsgIds = new Set([initialMsgId])
           let sentMsgsCharCount = [initialMsgCharCount];
+          let replyMarkUpCount = [null];
           const additionalMsgOptions = {disable_web_page_preview: true};
           let completion_delivered = false;
-          let completion_ended_occured_count = 0
+          const completionObject = this.#message_items[output_index];
            
       return async () =>{
 
           try{
-            const text = this.#text
+            const text = completionObject.text || ""
+            const completion_ended = completionObject.completion_ended || false;
 
-            if (text === undefined ||text === "") {
+            if (text === "") {
               return {success:0,error:"Empty response from the service."};
             };
 
-            if (completion_ended_occured_count > 3) {
-              return {success:0,error:"completion_ended_occured_count exceeded the limit."};
+            if(completion_delivered){
+              return {success:0,error:"Completion already delivered."};
             }
 
-            //Here we need to detect and extract tables.
-
             const splitIndexBorders = this.splitTextBoarders(text,appsettings.telegram_options.big_outgoing_message_threshold);
-            const textChunks = this.splitTextChunksBy(text,splitIndexBorders,this.#completion_ended);
+            const textChunks = this.splitTextChunksBy(text,splitIndexBorders,completion_ended);
             const repairedText = this.repairBrokenMakrdowns(textChunks);
             const htmls = this.convertMarkdownToLimitedHtml(repairedText,this.#user.language_code);
 
-            const sentMsgsCharCountTotal = sentMsgsCharCount.reduce((acc, val) => acc + val, 0);
-            const messagesCharCountTotal = htmls.reduce((acc, val) => acc + val.length, 0);
-            completion_delivered = sentMsgsCharCount.length === htmls.length && sentMsgsCharCountTotal === messagesCharCountTotal
-
-            if(completion_delivered){ //final run when all messages are sent
-              this.#telegramMsgIds = Array.from(sentMsgIds)
-              
-              await this.msgDeliveredUpdater({sourceid:this.#responseId})
-              return {success:1,completion_delivered}
-            }
-
-            const messages = await this.createTGMMessagesFrom(htmls,this.#completion_ended,additionalMsgOptions,text)
+            const messages = await this.createTGMMessagesFrom(htmls,completion_ended,additionalMsgOptions,text,completionObject)
             await this.deleteOldMessages(sentMsgIds,messages);
 
-            const updateResult = await this.updateMessages(sentMsgIds, messages, sentMsgsCharCount);
+            const updateResult = await this.updateMessages(sentMsgIds, messages, sentMsgsCharCount,replyMarkUpCount);
 
             if(updateResult.success === 0 && updateResult.wait_time_ms!=-1){
                 const waitResult =await this.#replyMsg.sendTelegramWaitMsg(updateResult.wait_time_ms/1000)
                 sentMsgIds.add(waitResult.message_id)
+                sentMsgsCharCount.push(waitResult.text.length)
+                replyMarkUpCount.push(null)
                 
                 await otherFunctions.delay(updateResult.wait_time_ms)
-                const result = await this.#deliverResponseToTgm() //deliver the response after delay
+                const result = await completionObject.deliverResponseToTgm() //deliver the response after delay
                 return result
             }
-            await this.sendMessages(messages,sentMsgIds,sentMsgsCharCount)
+            await this.sendMessages(messages,sentMsgIds,sentMsgsCharCount,replyMarkUpCount)
             
-           
-           let nested_result; 
-            if(this.#completion_ended){
-              completion_ended_occured_count ++
-              nested_result = await this.#deliverResponseToTgm()
+            if(completion_ended){
+              console.log("completion ended section used")
+              completion_delivered = true;
+              completionObject.telegramMsgIds = Array.from(sentMsgIds)
+              await this.msgDeliveredUpdater(completionObject)
+              return {success:1,completion_delivered}
             }
-           
-           return nested_result ?? {success:1,completion_delivered}
+
+            if(!completion_delivered && completionObject.completion_ended){
+              const result = await completionObject.deliverResponseToTgm()
+              return result
+            }
+           return {success:1,completion_delivered}
           
           } catch(err){
             telegramErrorHandler.main(
@@ -771,7 +844,6 @@ class Completion extends Transform {
           repairedText.push(prefix + chunk + brokenTags?.close)
           prefix = brokenTags?.open ?? ""; //it will be used for text in the next chunk
         }
-
         return repairedText;
     }
 
@@ -783,19 +855,17 @@ class Completion extends Transform {
     })
   }
 
-    async createTGMMessagesFrom(htmls,completionEnded,additionalMsgOptions,text){
-      
+    async createTGMMessagesFrom(htmls,completionEnded,additionalMsgOptions,text,completionObject){
       const messages =[];
       let index = 0;
-    
+      
       for (const html of htmls) {
-
             const isLastChunk = index === htmls.length - 1 && completionEnded;
             const reply_markup = isLastChunk ? await this.craftReplyMarkup(text) : null;
             if(reply_markup){
-              this.#telegramMsgBtns = true;
-              this.#telegramMsgRegenerateBtns = true
-              this.#telegramMsgReplyMarkup = reply_markup;
+              completionObject.telegramMsgBtns = true;
+              completionObject.telegramMsgRegenerateBtns = true
+              completionObject.telegramMsgReplyMarkup = reply_markup;
             }
             messages.push([html,reply_markup,"HTML",additionalMsgOptions]);
         index ++
@@ -804,20 +874,21 @@ class Completion extends Transform {
     }
 
     async deleteOldMessages(sentMsgIds,messages){
-
       const msgsToDelete = Array.from(sentMsgIds).filter((msg, index) => index > messages.length-1);
-
       for (const message_id of msgsToDelete) {
              await this.#replyMsg.deleteMsgByID(message_id)
              sentMsgIds.delete(message_id)
       }
     }
 
-    async updateMessages(sentMsgIds, messages, sentMsgsCharCount){
-
+    async updateMessages(sentMsgIds, messages, sentMsgsCharCount,replyMarkUpCount){
     const msgsToUpdate =[];
     messages.forEach((msg,index) => {
-      if(sentMsgsCharCount.length > index && msg[0].length != sentMsgsCharCount[index]){
+      if(sentMsgsCharCount.length > index 
+        && 
+        (msg[0].length != sentMsgsCharCount[index]  || (msg[1] !== replyMarkUpCount[index]))
+        
+      ){
         msgsToUpdate.push([...msg,Array.from(sentMsgIds)[index],index])
       }
     })
@@ -831,6 +902,7 @@ class Completion extends Transform {
                })
 
                sentMsgsCharCount[original_index] = html.length;
+               replyMarkUpCount[original_index] = reply_markup;
 
                if(result.success === 0 && result.wait_time_ms !=-1){
                 return result
@@ -840,14 +912,14 @@ class Completion extends Transform {
     return {success:1}
     }
 
-    async sendMessages(messages,sentMsgIds,sentMsgsCharCount){
+    async sendMessages(messages,sentMsgIds,sentMsgsCharCount,replyMarkUpCount){
 
         const msgsToSend = messages.filter((msg, index) => index > sentMsgsCharCount.length - 1);
-
         for (const [html,reply_markup,parse_mode,add_options] of msgsToSend) {
             const result = await this.#replyMsg.sendMessageWithErrorHandling(html || "_",reply_markup,parse_mode,add_options)
             sentMsgIds.add(result.message_id)
             sentMsgsCharCount.push(html.length);
+            replyMarkUpCount.push(reply_markup);
             }
     }
 

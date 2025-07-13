@@ -20,10 +20,9 @@ class ReplyMsg extends EventEmitter {
 
 #chatId;
 #lastMsgSentId
-#msgIdsForDbCompletion =[];
+
 #sendAttempts=0;
 
-#completion_ended = false;
 #completionRegenerateButtons;
 
 
@@ -65,9 +64,6 @@ wireStingForMarkdown(inputString){
   return inputString;
 }
 
-set completion_ended(value){
-    this.#completion_ended =  value
-}
 
 get user(){
   return this.#user;
@@ -80,15 +76,9 @@ get chatId(){
     return this.#chatId;
 }
 
-get msgIdsForDbCompletion(){
 
-  return this.#msgIdsForDbCompletion
-}
 
-set msgIdsForDbCompletion(value){
-  this.#msgIdsForDbCompletion = value   
 
-}
 
 get lastMsgSentId(){
     return this.#lastMsgSentId;
@@ -131,7 +121,6 @@ async getUrlByTgmFileId(fileId){
 
 async sendStatusMsg(){
    const result = await this.sendToNewMessage("...")
-   this.#msgIdsForDbCompletion.push(result.message_id)
    return result
 }
 

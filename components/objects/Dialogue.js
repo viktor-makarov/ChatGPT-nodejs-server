@@ -82,7 +82,33 @@ class Dialogue extends EventEmitter {
         const dialogueFromDB = await mongo.getDialogueForCompletion(this.#user.userid,this.#user.currentRegime) || []
         return dialogueFromDB.map(doc =>{
 
-            const {role,content,status,type,function_name,respoonseId,tool_call_id,function_arguments} = doc;
+            const {role,content,status,type,function_name,tool_call_id,function_arguments} = doc;
+
+            if(type === "message"){
+                return {role,status,type,content};
+            } else if(type === "function_call_output"){
+                return {type,
+                    call_id: tool_call_id,
+                    output: content
+                }
+            } else if (type === "function_call"){
+                return {type,
+                    call_id: tool_call_id,
+                    name:function_name,
+                    arguments:function_arguments
+                }
+            } else {
+                return null
+            }
+         }).filter(doc => doc !== null);
+    }
+
+    async getDialogueForSearch(function_call_id){
+        
+        const dialogueFromDB = await mongo.getDialogueForSearch(this.#user.userid,this.#user.currentRegime,function_call_id) || []
+        return dialogueFromDB.map(doc =>{
+
+            const {role,content,status,type,function_name,tool_call_id,function_arguments} = doc;
 
             if(type === "message"){
                 return {role,status,type,content};
@@ -195,8 +221,6 @@ class Dialogue extends EventEmitter {
             
             }
         };
-
-        
     }
     
     async resetDialogue(){
@@ -328,28 +352,65 @@ class Dialogue extends EventEmitter {
 
         const currentRole = "user"
 
-        const datetimeStr = new Date().toISOString();
-
         let promptObj = {
             sourceid: requestInstance.msgId,
             createdAtSourceTS: requestInstance.msgTS,
             createdAtSourceDT_UTC: new Date(requestInstance.msgTS * 1000),
-            telegramMsgId: requestInstance.msgIdsForDbCompletion,
+            telegramMsgId: requestInstance.msgIdsFromRequest,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
             role: currentRole,
-            content: [{type:"input_text",text:text + `\n\n${datetimeStr} (UTC)`}],
+            content: [{type:"input_text",text:text}],
             status:"completed",
-            type:"message"
+            type:"message",
+            includeInSearch:true
           }
                 
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
+
+        this.addTokensUsage(promptObj.sourceid,JSON.stringify(promptObj.content),this.#user.currentModel) //must be async
             
         console.log("USER PROMPT")
     };
 
+    async addTokensUsage(sourceid,text,model){
+        const numberOfTokens = await otherFunctions.countTokensLambda(text,model);
+        await mongo.addTokensUsage(sourceid,numberOfTokens)
+    }
+
+    async commitDateTimeSystemPromptToDialogue(regime){
+
+        const sourceid = `date_time_dev_prompt_${regime}`
+        const datetime = new Date();
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        const text = `Current date and time is: ${datetime.toISOString()} (UTC). Use it when applicable`
+
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: regime,
+            role: "developer",
+            content: [{
+                text:text,
+                type:"input_text"
+            }],
+            status:"completed",
+            type:"message",
+            includeInSearch: true
+          }
+        
+        await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.content),this.#user.currentModel)
+        
+        console.log("DATE TIME PROMPT COMMITED")
+    }
 
     async commitInitialSystemPromptToDialogue(regime){
 
@@ -378,14 +439,17 @@ class Dialogue extends EventEmitter {
             regime: regime,
             role: "developer",
             content: [{
-                text:promptText + `\n\n${datetime.toISOString()} (UTC)`,
+                text:promptText,
                 type:"input_text"
             }],
             status:"completed",
-            type:"message"
+            type:"message",
+            includeInSearch: false
           }
         
         await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.content),this.#user.currentModel)
         
         console.log("INITIAL DEVELOPER PROMPT COMMITED")
     }
@@ -406,14 +470,17 @@ class Dialogue extends EventEmitter {
             regime: this.#user.currentRegime,
             role: "developer",
             content: [{
-                text:text + `\n\n${datetime.toISOString()} (UTC)`,
+                text:text,
                 type:"input_text"
             }],
             status:"completed",
-            type:"message"
+            type:"message",
+            includeInSearch: false
           }
 
         const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.content),this.#user.currentModel)
         
         console.log("DEVELOPER MESSAGE")
     };
@@ -494,7 +561,7 @@ class Dialogue extends EventEmitter {
             fileCaption:this.#requestMsg.fileCaption,
             fileExtention:this.#requestMsg.fileExtention,
             fileMimeType:this.#requestMsg.fileMimeType,
-            telegramMsgId: this.#requestMsg.msgIdsForDbCompletion,
+            telegramMsgId: this.#requestMsg.msgIdsFromRequest,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
@@ -502,11 +569,14 @@ class Dialogue extends EventEmitter {
             role: "user",
             content: content,
             status:"completed",
-            type:"message"
+            type:"message",
+            includeInSearch:true
           }
 
 
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
+
+        this.addTokensUsage(promptObj.sourceid,JSON.stringify(text_content),this.#user.currentModel)
 
         console.log("USER IMAGE")
     }
@@ -543,10 +613,13 @@ class Dialogue extends EventEmitter {
             role: 'user',
             content: [{type:"input_text",text:devPrompt}],
             status:"completed",
-            type:"message"
+            type:"message",
+            includeInSearch:true
           }      
           
         await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
+
+        this.addTokensUsage(fileSystemObj.sourceid,JSON.stringify(fileSystemObj.content),this.#user.currentModel)
 
         console.log("FILE UPLOAD added to dialogue")    
         return fileSystemObj
@@ -573,9 +646,17 @@ class Dialogue extends EventEmitter {
             functionFriendlyName:functionCall.tool_config.friendly_name,
             createdAtSourceDT_UTC: new Date(),
             createdAtSourceTS:Math.ceil(Number(new Date())/1000),
+            includeInSearch: true
         };
 
         await mongo.insertFunctionObject(functionObject)
+
+        this.addTokensUsage(functionObject.sourceid,JSON.stringify({
+            type:functionObject.type,
+            call_id:functionObject.tool_call_id,
+            name:functionObject.function_name,
+            arguments:functionObject.function_arguments
+        }),this.#user.currentModel)
 
         console.log("FUNCTION CALL COMMITED")
 
@@ -603,6 +684,7 @@ class Dialogue extends EventEmitter {
             functionFriendlyName:functionReply.tool_config.friendly_name,
             createdAtSourceDT_UTC: new Date(),
             createdAtSourceTS:Math.ceil(Number(new Date())/1000),
+            includeInSearch: true
         };
 
         await mongo.insertFunctionObject(functionObject)
@@ -613,18 +695,22 @@ class Dialogue extends EventEmitter {
     async updateCommitToolReply(result){
 
        await mongo.updateToolCallResult(result)
+       
+       this.addTokensUsage(result.sourceid,JSON.stringify(result.content),this.#user.currentModel)
 
        console.log("TOOL REPLY UPDATED")
     }
 
-
     async commitCompletionDialogue(completionObject){
         await mongo.upsertCompletionPromise(completionObject);
+
+        this.addTokensUsage(completionObject.sourceid,JSON.stringify(completionObject.content),this.#user.currentModel)
+
         console.log("COMPLETION MESSAGE COMMIT")
         return completionObject.output_item_index
     }
 
-    async finalizeTokenUsage(completionObject,tokenUsage){
+    async finalizeTokenUsage(model,tokenUsage){
 
         if(tokenUsage){
             
@@ -634,7 +720,7 @@ class Dialogue extends EventEmitter {
               userInstance:this.#user,
               prompt_tokens:tokenUsage.input_tokens,
               completion_tokens:tokenUsage.output_tokens,
-              model:completionObject.model
+              model:model
               })
 
             mongo.insertCreditUsage({
@@ -655,16 +741,6 @@ class Dialogue extends EventEmitter {
         }
         }
 
-    async deleteTGMProgressMsg(progressMsgId){
-
-        await this.#replyMsg.deleteMsgByID(progressMsgId)
-
-        this.#replyMsg.msgIdsForDbCompletion = [];
-        await mongo.updateCompletionInDb({
-          filter: {telegramMsgId:progressMsgId},       
-          updateBody:this.completionFieldsToUpdate
-        })
-    }
 };
 
 module.exports = Dialogue;

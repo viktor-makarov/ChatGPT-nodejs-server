@@ -1,5 +1,4 @@
 const UrlResource = require("./UrlResource.js");
-const MdjApi = require("../apis/midjourney_API.js");
 const mongo = require("../apis/mongo.js");
 const func = require("../common_functions.js");
 const telegramErrorHandler = require("../errorHandler.js");
@@ -9,6 +8,8 @@ const PIAPI = require("../apis/piapi.js");
 const ExRateAPI = require("../apis/exchangerate_API.js");
 const elevenLabsApi = require("../apis/elevenlabs_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
+const openAIApi = require("../apis/openAI_API.js");
+const devPrompts = require("../../config/developerPrompts.js");
 
 class FunctionCall{
     #replyMsg;
@@ -27,6 +28,8 @@ class FunctionCall{
     #long_wait_notes;
     #timeoutId
     #tool_call_id
+    #statusMsg
+    #statusMsgId
     
 constructor(obj) {
     this.#functionCall = obj.functionCall;
@@ -38,6 +41,8 @@ constructor(obj) {
     this.#requestMsg = obj.requestMsgInstance;
     this.#user = obj.dialogueInstance.userInstance;
     this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
+    this.#statusMsg = obj?.statusMsg;
+    this.#statusMsgId = this.#statusMsg.message_id;
 };
 
 async removeFunctionFromQueue(){
@@ -142,10 +147,10 @@ async router(){
         
         this.validateFunctionCallObject(this.#functionCall)
         this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
-        statusMessageId = await this.sendStatusMessage()
-        await this.addFunctionToQueue(statusMessageId)
+        await this.preCommitStatusMessage(this.#statusMsgId)
+        await this.addFunctionToQueue(this.#statusMsgId)
 
-        this.#long_wait_notes = this.triggerLongWaitNotes(statusMessageId,this.#functionConfig.long_wait_notes)
+        this.#long_wait_notes = this.triggerLongWaitNotes(this.#statusMsgId,this.#functionConfig.long_wait_notes)
        
         functionOutcome = await this.functionHandler();
         functionOutcome.tool_call_id = this.#tool_call_id;
@@ -181,7 +186,7 @@ async router(){
         this.clearLongWaitNotes()
         await this.removeFunctionFromQueue()
         await this.handleFailedFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
-        statusMessageId && await this.finalizeStatusMessage(functionOutcome,statusMessageId)
+        this.#statusMsgId && await this.finalizeStatusMessage(functionOutcome,this.#statusMsgId)
         
         mongo.insertFunctionUsagePromise({ //intentionally async
             userInstance:this.#user,
@@ -244,13 +249,16 @@ async functionErrorPrompt(errorObject){
 
 }
 
-async sendStatusMessage(){
+async preCommitStatusMessage(msgId){
 
     const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
-    console.log()
-    const MsgText = `${functionDescription} ⏳`
-    const result = await this.#replyMsg.simpleSendNewMessage(MsgText,null,null,null)
-    return result.message_id
+    const MsgText = `⏳ ${functionDescription}`
+
+    await this.#replyMsg.simpleMessageUpdate(MsgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:msgId,
+        reply_markup:null
+    })
 }
 
 triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
@@ -289,7 +297,7 @@ async inQueueStatusMessage(statusMessageId){
 }
 
 async backExecutingStatusMessage(statusMessageId){
-    const msgText = `${this.#functionConfig.friendly_name} ⏳`
+    const msgText = `⏳ ${this.#functionConfig.friendly_name}`
 
     const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
@@ -301,7 +309,7 @@ async finalizeStatusMessage(functionResult,statusMessageId){
 
     const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
-    const msgText = `${functionDescription} ${resultIcon}`
+    const msgText = `${resultIcon} ${functionDescription}`
 
     const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
 
@@ -334,28 +342,17 @@ modifyStringify(key,value){
 return value
 }
 
-unWireText(text =''){
 
-const newText = text.replace(/\\r\\n/g, '\n')
-.replace(/\\n/g, '\n')
-.replace(/\\t/g, '\t')
-.replace(/\\'/g, "'")
-.replace(/\\"/g, '"')
-.replace(/\\\\/g, '\\')
-.replace(/\\\//g, '/')
-
- return newText
-}
 
 
 buildFunctionResultHtml(functionResult){
 
     let argsText = JSON.stringify(this.#argumentsJson,this.modifyStringify,2)
-    argsText = this.unWireText(argsText)
+    argsText = func.unWireText(argsText)
     const request = `<pre>${func.wireHtml(argsText)}</pre>`
 
     let stringifiedFunctionResult = JSON.stringify(functionResult,this.modifyStringify,2)
-    stringifiedFunctionResult = this.unWireText(stringifiedFunctionResult)
+    stringifiedFunctionResult = func.unWireText(stringifiedFunctionResult)
     
     const reply = `<pre><code class="json">${func.wireHtml(stringifiedFunctionResult)}</code></pre>`
 
@@ -388,10 +385,10 @@ async selectAndExecuteFunction() {
         "text_to_speech": () => this.textToSpeech(),
         "currency_converter": () => this.currencyConverter(),
         "get_currency_rates": () => this.getCurrencyRates(),
+        "web_search": () => this.webSearch()
     };
     
     const targetFunction = functionMap[this.#functionName];
-    
     if (!targetFunction) {
         let err = new Error(`Function ${this.#functionName} does not exist`);
         err.assistant_instructions = "Provide a valid function request.";
@@ -471,13 +468,12 @@ validateFunctionCallObject(callObject){
 }
 
 async get_current_datetime(){
-    
     return {success:1,result: new Date().toString()}
 }
 
 async get_user_guide(){
-        const formatedHtml = func.getManualHTML(the.#user.language)
-        return {success:1,resource_url:url,text:formatedHtml}
+        const formatedHtml = func.getManualHTML(this.#user.language)
+        return {success:1,text:formatedHtml}
 }
     
 async get_data_from_mongoDB_by_pipepine(table_name){
@@ -571,6 +567,125 @@ async get_data_from_mongoDB_by_pipepine(table_name){
 
         }
 
+        async webSearch(){
+
+          this.validateRequiredFieldsFor_webSearch()
+
+          const {query_in_english,additional_query} = this.#argumentsJson
+
+          const urlCitationsList = [];
+          const textList = [];
+
+          const {search_calls,text_list,url_citations_list} = await this.openAISearch()
+
+          if(search_calls.length === 0){
+            return  {success:0,error: "web_search_call was not used",instructions:"You must repeat web_search function call"}
+          } else {
+            mongo.insertCreditUsage({
+                        userInstance: this.#user,
+                        creditType: "web_search",
+                        creditSubType: "web_search",
+                        usage:1,
+                        details: {place_in_code:"webSearch"}
+                      })
+          }
+
+          urlCitationsList.push(...url_citations_list);
+          textList.push(...text_list);
+
+          return  {success:1, result: {text:textList,url_citations:urlCitationsList,search_calls:search_calls}, instructions:devPrompts.search_results_format()}
+        }
+
+        async openAISearch(){
+
+          const search_model = appsettings?.functions_options?.search_model
+          const function_call_id = this.#functionCall?.tool_call_id 
+          const temperature = 0;
+          const instructions = "MUST use web_search_call for this query.";
+          
+          const inputForSearch = await this.inputForSearch(function_call_id)
+          const tools = [
+            {
+                type: "web_search_preview",
+                user_location: {
+                    type: "approximate",
+                    city: "Moscow",
+                    country: "RU",
+                    region: null,
+                    timezone: null
+                }
+            }
+          ]
+          const tool_choice = "required"
+
+          const response = await openAIApi.responseSync(search_model,instructions,inputForSearch,temperature,tools,tool_choice)
+          const {output} = response;
+
+          const search_calls = output.filter(tool => tool.type === "web_search_call").map(tool => {
+            return {
+            status: tool.status,
+            action_type: tool.action.type,
+            query: JSON.parse('"'+tool.action.query+'"')
+          }})
+
+            const url_citations_list = [];
+            const text_list = [];
+
+            output.filter(tool => tool.type === "message").forEach(tool => {
+
+            const {content} = tool;
+
+            if(!content || !Array.isArray(content) || content.length === 0){
+                return;
+            }
+
+            const {annotations,text} = content[0];
+            text_list.push(text || "");
+
+            annotations.forEach(annotation => {
+
+            const url = new URL(annotation.url)
+            url.searchParams.delete('utm_source')
+            const cleanUrl = url.toString()
+            const urlResource = {
+                title: annotation.title,
+                url: cleanUrl
+            }
+
+            if (!url_citations_list.some(existing => existing.url === urlResource.url)) {
+                url_citations_list.push(urlResource);
+            }
+
+          })
+            });
+
+          return {search_calls,text_list,url_citations_list}
+        }
+
+        async inputForSearch(function_call_id){
+
+           const search_model_max_input_tokens = appsettings?.functions_options?.search_model_max_input_tokens || 120000
+           const inputForSearch = await this.#dialogue.getDialogueForSearch(function_call_id)
+           
+            const filteredInput = [];
+            let totalTokens = 0;
+
+            // Start from the end of the array (latest documents)
+            for (let i = inputForSearch.length - 1; i >= 0; i--) {
+                const document = inputForSearch[i];
+                const documentTokens = document.tokens || 0;
+                
+                // Check if adding this document would exceed the limit
+                if (totalTokens + documentTokens <= search_model_max_input_tokens) {
+                    filteredInput.unshift(document); // Add to beginning to maintain order
+                    totalTokens += documentTokens;
+                } else {
+                    break; // Stop adding documents
+                }
+            }
+            
+            return filteredInput;
+        }
 
         async getCurrencyRates(){
 
@@ -668,6 +783,20 @@ const {conversion_queries} = this.#argumentsJson
     }
 }
 
+
+validateRequiredFieldsFor_webSearch(){
+
+    const {query_in_english} = this.#argumentsJson
+
+    let error = new Error();
+    error.assistant_instructions = "Fix the error and retry the function."
+
+    if(!query_in_english || query_in_english === ""){
+            error.message = `'query' parameter is missing. Provide the value for the argument.`
+            throw error
+    }
+
+}
 
 validateRequiredFieldsFor_getCurrencyRates(){
 

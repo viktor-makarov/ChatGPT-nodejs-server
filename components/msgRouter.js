@@ -92,7 +92,8 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
           {chat_id:replyMsgInstance.chatId,
             message_id:waitMsgResult.message_id
           }),
-        dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
+        dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance),
+        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
       ]
       await Promise.all(parallelTasks)
 
@@ -113,7 +114,11 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     await dialogueInstance.commitFileToDialogue(url)
     // await dialogueInstance.sendSuccessFileMsg(devPrompt)
     if(fileCaption){
-      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+      const parallel = [
+       dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
+       dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+      ]
+      await Promise.all(parallel)
     }
 
     console.log("fileCaption",fileCaption)
@@ -140,7 +145,11 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     const devPrompt = await dialogueInstance.commitFileToDialogue(url)
     // await dialogueInstance.sendSuccessFileMsg(devPrompt)
     if(fileCaption){
-      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+      const parallel = [
+        dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
+        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+      ]
+      await Promise.all(parallel)
     }
     
 
@@ -197,20 +206,33 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
 
   switch(requestMsgInstance.user.currentRegime) {
     case "chat":
-      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+      const parallel_chat = [
+        dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance),
+        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+      ]
+      await Promise.all(parallel_chat)
       dialogueInstance.emit('callCompletion')
       
     break;
     case "translator":
         await resetNonDialogueHandler(requestMsgInstance)
-        await dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+        const parallel_translator = [
+        dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime),
+        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+        ]
+        await Promise.all(parallel_translator)
         await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+        
       dialogueInstance.emit('callCompletion')
 
     break;
     case "texteditor":
         await resetNonDialogueHandler(requestMsgInstance)
-        await dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+        const parallel_texteditor = [
+          dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime),
+          dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+        ]
+        await Promise.all(parallel_texteditor)
         await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
         dialogueInstance.emit('callCompletion')
 
@@ -303,6 +325,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   } else if(cmpName==="imagine"){
 
+
+    const statusMsg = await replyMsgInstance.sendStatusMsg()
     const prompt = getPromptFromMsg(requestMsgInstance)
 
     if(prompt){
@@ -326,7 +350,8 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       replyMsgInstance:replyMsgInstance,
       dialogueInstance:dialogueInstance,
       requestMsgInstance:requestMsgInstance,
-      tokensLimitPerCall:0
+      tokensLimitPerCall:0,
+      statusMsg:statusMsg
     });
 
     const outcome = await functionInstance.router();
@@ -507,12 +532,12 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const choosenContent = doc.content[choosenVersionIndex-1].text
     const totalVersionsCount = doc.content.length;
     const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenVersionIndex,totalVersionsCount)
-    const msgIdsForDbCompletion = sentResult.map(result => result.message_id)
+    const msgIds = sentResult.map(result => result.message_id)
     
     await mongo.updateCompletionInDb({
       filter: {telegramMsgId:{"$in":doc.telegramMsgId}},
       updateBody:{
-        telegramMsgId:msgIdsForDbCompletion,
+        telegramMsgId:msgIds,
         completion_version:choosenVersionIndex
       }
     })
@@ -636,6 +661,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if(callback_event === "mdjbtn"){
 
+    const statusMsg = await replyMsg.sendStatusMsg()
+
     const jsonDecoded = await otherFunctions.decodeJson(requestMsg.callback_data)
     
     const functionName = "custom_midjourney"
@@ -651,7 +678,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
-      tool_config:await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance)
+      tool_config:await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance),
+      statusMsg:statusMsg
     };
 
     const functionInstance = new FunctionCall({
@@ -659,7 +687,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       replyMsgInstance:replyMsg,
       dialogueInstance:dialogue,
       requestMsgInstance:requestMsg,
-      tokensLimitPerCall:0
+      tokensLimitPerCall:0,
+      statusMsg:statusMsg
     });
 
     const outcome = await functionInstance.router();

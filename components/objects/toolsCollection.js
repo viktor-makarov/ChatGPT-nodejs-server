@@ -5,6 +5,38 @@ const ExRateAPI = require("../apis/exchangerate_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
 
 const list = [
+     {
+        type:"function",
+        name: "web_search",
+        description: "Strictly executes a real-time web search, returning only the most relevant, accurate, and recent information on the specified topic.",
+        strict: true,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                },
+                query_in_english: {
+                    type: "string",
+                    description: "Web search query. Must be issued in English only. If the user's request is in another language, always translate it into English before performing any web search.",
+                },
+                additional_query: {
+                    type: ["string","null"],
+                    description: "Web search query in the user’s original language. Use ONLY if the original language differs from English; otherwise, set this field to null."},
+                },
+            required: ["function_description","query_in_english","additional_query"],
+            additionalProperties: false
+        },
+        friendly_name:"Поиск в интернете",
+        timeout_ms:15000,
+        try_limit:3,
+        availableInRegimes: ["chat"],
+        availableForGroups: ["admin","basic"],
+        availableForToolCalls: true,
+        depricated:false,
+        category:"custom"
+    },
     {
         type:"function",
         name: "get_chatbot_errors",
@@ -35,7 +67,8 @@ const list = [
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.description = `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one error.`
             this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
-        }
+        },
+        category:"custom"
     },
     {
         type:"function",
@@ -67,7 +100,8 @@ const list = [
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.description = `Prodides this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
             this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
-        }
+        },
+        category:"custom"
     },
     {
         type:"function",
@@ -99,12 +133,14 @@ const list = [
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.description = `Provides chatbot users' query statistics. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one query of a user.`
             this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' query statistics from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
-        }
+        },
+        category:"custom"
     },
     {
         type:"function",
         name: "get_knowledge_base_item",
         description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+        strict: true,
         parameters: {
             type: "object",
             properties: {
@@ -117,7 +153,8 @@ const list = [
                     description: `id of a knowledge base item`
                 },
             },
-            required: ["id","function_description"]
+            required: ["id","function_description"],
+            additionalProperties: false
         },
         friendly_name: "Запрос в базу знаний",
         timeout_ms:30000,
@@ -132,13 +169,14 @@ const list = [
         addProperties: async function(){
            
             const kngBaseItems = await mongo.getKwgItemsForUser(this.userid)
-            this.description = `Use this function when you need to get instructions to better perform on user's tasks on the following topics:\n ${JSON.stringify(kngBaseItems,null,4)}`
-        }
+            this.description = `Provides info from internal knowlege base. About:\n ${JSON.stringify(kngBaseItems,null,4)}`
+        },
+        category:"custom"
         },
         {
             type:"function",
             name: "get_user_guide",
-            description: `Use this function when you are asked about functionality of the R2D2 bot.`,
+            description: `Returns information about this bot functionality. Use ONLY if user requests information about BOT FUNCTIONS, interface, commands, or asks what the bot can do. DO NOT use for general questions, external tasks, search/lookup/facts, or questions about third-party products!`,
             parameters: {
                 type: "object",
                 properties: {
@@ -155,7 +193,8 @@ const list = [
             availableInRegimes: ["chat"],
             availableForGroups: ["admin"],
             availableForToolCalls: true,
-            depricated:false
+            depricated:false,
+            category:"custom"
         },
         {
             type:"function",
@@ -187,7 +226,8 @@ const list = [
             availableInRegimes: ["chat"],
             availableForGroups: ["admin","basic"],
             availableForToolCalls: true,
-            depricated:false
+            depricated:false,
+            category:"custom"
         },
         {
             type:"function",
@@ -219,7 +259,8 @@ const list = [
             availableInRegimes: ["chat"],
             availableForGroups: ["admin","basic"],
             availableForToolCalls: true,
-            depricated:false
+            depricated:false,
+            category:"custom"
         },
         {
             type:"function",
@@ -272,7 +313,8 @@ const list = [
             availableForGroups: ["admin","basic"],
             availableForToolCalls: true,
             depricated:false,
-            queue_name:"midjourney"
+            queue_name:"midjourney",
+            category:"custom"
 
         },
         {
@@ -306,7 +348,8 @@ const list = [
             availableForGroups: ["admin","basic"],
             availableForToolCalls: false,
             depricated:false,
-            queue_name:"midjourney"
+            queue_name:"midjourney",
+            category:"custom"
             
         },
         {
@@ -356,7 +399,8 @@ const list = [
             availableForGroups: ["admin","basic"],
             availableForToolCalls: false,
             depricated:false,
-            queue_name:"midjourney"
+            queue_name:"midjourney",
+            category:"custom"
         },
         {
             type:"function",
@@ -387,7 +431,8 @@ const list = [
             availableInRegimes: ["chat"],
             availableForGroups: ["admin","basic"],
             availableForToolCalls: true,
-            depricated:false
+            depricated:false,
+            category:"custom"
     },
     {
         type:"function",
@@ -413,7 +458,8 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:false 
+        depricated:false,
+        category:"custom"
     },
     {
         type:"function",
@@ -439,7 +485,8 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:true
+        depricated:true,
+        category:"custom"
     },
     {
         type:"function",
@@ -487,7 +534,8 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:false
+        depricated:false,
+        category:"custom"
     },
     {
         type:"function",
@@ -654,7 +702,8 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:false
+        depricated:false,
+        category:"custom"
     },
     {
         type:"function",
@@ -696,7 +745,8 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:false
+        depricated:false,
+        category:"custom"
     },
     {
         type:"function",
@@ -743,7 +793,8 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:false
+        depricated:false,
+        category:"custom"
     },
     {
         type:"function",
@@ -792,7 +843,8 @@ const list = [
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
-        depricated:false
+        depricated:false,
+        category:"custom"
     },
     {
         type:"function",
@@ -845,7 +897,8 @@ const list = [
         addProperties: async function(){
             const currentDate = new Date().toISOString().split("T")[0]; // Get current date in YYYY-MM-DD format
             this.parameters.properties.exchange_rates.items.properties.date.description = `Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date ${currentDate} and must be in the past.`
-        }
+        },
+        category:"custom"
     }
 ]
 
@@ -887,12 +940,12 @@ async function getAvailableTools(userClass){
 
 async function getAvailableToolsForCompletion(userClass){
     const availableForToolCalls = await getAvailableTools(userClass)
-    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ type:tool.type, name:tool.name, description:tool.description, parameters:tool.parameters, strict:tool.strict}));
+    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ type:tool.type, name:tool.name, description:tool.description, parameters:tool.parameters, strict:tool.strict, user_location:tool.user_location}));
 }
 
 async function toolConfigByFunctionName(functionName,userClass){
     const availableForToolCalls = await getAvailableTools(userClass)
-    return availableForToolCalls.find(doc => doc?.name === functionName);
+    return availableForToolCalls.find(doc => doc?.name === functionName && doc?.category === "custom");
 }
 
 module.exports = {

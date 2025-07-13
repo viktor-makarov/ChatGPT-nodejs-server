@@ -911,8 +911,6 @@ async function countTokensLambda(text,model){
 
   const endTime = performance.now();
   const executionTime = endTime - start;
-  console.log(`countTokensLambda execution time: ${executionTime.toFixed(2)} ms`);
-
 
   if(resultJSON.body.warning){
     console.log("countTokensLambda warning:",resultJSON.body.warning)
@@ -2216,6 +2214,19 @@ function extractFileNameFromURL(fileLink){
   return parts[parts.length-1]
 }
 
+function unWireText(text =''){
+
+const newText = text.replace(/\\r\\n/g, '\n')
+.replace(/\\n/g, '\n')
+.replace(/\\t/g, '\t')
+.replace(/\\'/g, "'")
+.replace(/\\"/g, '"')
+.replace(/\\\\/g, '\\')
+.replace(/\\\//g, '/')
+
+ return newText
+}
+
 
 module.exports = {
   formatObjectToText,
@@ -2284,5 +2295,6 @@ module.exports = {
   extentionNormaliser,
   audioReadableStream,
   voiceToTextConstraintsCheck,
-  getManualHTML
+  getManualHTML,
+  unWireText
 };

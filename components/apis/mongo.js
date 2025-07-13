@@ -509,6 +509,23 @@ async function updateCompletionInDb(obj){
   }
 };
 
+async function addTokensUsage(sourceid,numberOfTokens){
+
+  try {
+    const filter = { sourceid: sourceid }
+    const updateBody = {tokens:numberOfTokens}
+
+    return await dialog_collection.findOneAndUpdate(
+      filter,
+      updateBody
+    );
+
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+}
+
 
 async function updateManyEntriesInDbById(obj){
   try {
@@ -863,6 +880,25 @@ const getDialogueForCompletion = async (userid, regime) => {
       .find(
         filter,
         { role: 1, content: 1, status: 1, type: 1, function_name: 1, respoonseId: 1,tool_call_id:1,function_arguments:1}
+      )
+      .lean()
+   //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
+      .exec();
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
+};
+
+const getDialogueForSearch = async (userid, regime,function_call_id) => {
+
+  try {
+    const filter = { userid: userid, regime: regime, includeInSearch: true, tool_call_id: { $ne: function_call_id } };
+    const result = await dialog_collection
+      .find(
+        filter,
+        { role: 1, content: 1, status: 1, type: 1, function_name: 1, respoonseId: 1,tool_call_id:1,function_arguments:1,tokens:1}
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
@@ -1642,5 +1678,7 @@ module.exports = {
   saveExchangeRateInternational,
   getDocByTgmRegenerateBtnFlag,
   saveNewEvent,
-  getEventsList
+  getEventsList,
+  getDialogueForSearch,
+  addTokensUsage
 };

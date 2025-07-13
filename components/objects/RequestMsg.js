@@ -43,7 +43,7 @@ class RequestMsg{
 #fileSize;
 #fileLink;
 
-#msgIdsForDbCompletion =[];
+#msgIdsFromRequest =[];
 
 constructor(obj) {
    // console.log(obj.requestMsg)
@@ -83,7 +83,7 @@ constructor(obj) {
         this.#chatId = obj.requestMsg.chat.id
         this.#fromId = obj.requestMsg.from.id
         this.#msgId = obj.requestMsg.message_id
-        this.#msgIdsForDbCompletion.push(obj.requestMsg.message_id)
+        this.#msgIdsFromRequest.push(obj.requestMsg.message_id)
         this.#msgTS = obj.requestMsg.date
 
         if(obj.requestMsg.text){
@@ -419,8 +419,8 @@ get duration_seconds(){
    return this.#duration_seconds
 }
 
-get msgIdsForDbCompletion() {
-    return this.#msgIdsForDbCompletion
+get msgIdsFromRequest() {
+    return this.#msgIdsFromRequest
 }
 
 get msg(){
