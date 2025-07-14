@@ -375,7 +375,6 @@ async selectAndExecuteFunction() {
         "create_excel_file": () => this.createExcelFile(),
         "create_text_file": () => this.createTextFile(),
         "get_chatbot_errors": () => this.get_data_from_mongoDB_by_pipepine("errors_log"),
-        "get_current_datetime": () => this.get_current_datetime(),
         "get_functions_usage": () => this.get_data_from_mongoDB_by_pipepine("functions_log"),
         "get_knowledge_base_item": () => this.get_knowledge_base_item(),
         "get_user_guide": () => this.get_user_guide(),
@@ -465,10 +464,6 @@ validateFunctionCallObject(callObject){
         err.assistant_instructions = "Fix the function and retry. But undertake no more than three attempts to recall the function."
         throw err;
     }
-}
-
-async get_current_datetime(){
-    return {success:1,result: new Date().toString()}
 }
 
 async get_user_guide(){

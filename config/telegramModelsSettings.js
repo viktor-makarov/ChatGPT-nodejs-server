@@ -18,17 +18,8 @@ module.exports = {
                     "gpt-4.1":{
                         "name":"GPT-4.1",
                     },
-                    "gpt-4.1-mini":{
-                        "name":"GPT-4.1 mini",
-                    },
                     "o1":{
                         "name":"O1",
-                    },
-                    "gpt-4o-search-preview":{
-                            "name":"GPT Search",
-                    },
-                    "gpt-4o-mini-search-preview":{
-                            "name":"GPT Search Mini",
                     },
                     "o3-mini":{
                         "name":"O3 Мини",

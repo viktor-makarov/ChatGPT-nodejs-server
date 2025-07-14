@@ -35,6 +35,22 @@ const tableWrapperExtension = {
   }
 };
 
+const technicalIdentifierExtension = {
+        type: 'lang',
+        regex: /```[\s\S]*?```|`[^`]*`|\b([a-zA-Z0-9]+_[a-zA-Z0-9_]+)\b/g,
+        replace: function(match, identifier) {
+          // If the match starts with ` or ```, it's a code block/inline code - return unchanged
+          if (match.startsWith('`')) {
+            return match;
+          }
+          // If we captured the identifier group, it means we're outside code blocks
+          if (identifier) {
+            return `<code>${identifier}</code>`;
+          }
+          // Fallback - return unchanged
+          return match;
+        }
+      };
 
  const converter = new showdown.Converter({
     extensions: [
@@ -43,6 +59,7 @@ const tableWrapperExtension = {
         pre: true,    
         auto_detection: true // Whether to use hljs' auto language detection, default is true
         }),
+        technicalIdentifierExtension,
         tableWrapperExtension
     ]
 });
@@ -1811,6 +1828,7 @@ function secureLatexBlocks(markdownText) {
 
       let convertedText = markdownText;
 
+
        convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (match, content) => {
             const encoded = Buffer.from(content.trim()).toString('base64');
             return 'LATEXBLOCKPLACEHOLDER' + encoded + 'PLACEHOLDER\n';
@@ -1857,6 +1875,8 @@ async function validateMermaidDiagram(diagram) {
 function restoredPlaceholders(html){
 
     let restored = html;
+
+
 
     restored = restored.replace(/LATEXBLOCKPLACEHOLDER([A-Za-z0-9+/=]+)PLACEHOLDER/g, (match, content) => {
             const decoded = Buffer.from(content, 'base64').toString();

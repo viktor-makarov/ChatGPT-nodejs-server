@@ -29,7 +29,13 @@ const list = [
             additionalProperties: false
         },
         friendly_name:"Поиск в интернете",
-        timeout_ms:15000,
+        timeout_ms:18000,
+        long_wait_notes: [
+            {time_ms:30000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
+            {time_ms:60000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
+            {time_ms:90000,comment:"Совсем никуда не годится!😤 Но надо дать еще шанс!"},
+            {time_ms:120000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
+        ],
         try_limit:3,
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
@@ -66,7 +72,7 @@ const list = [
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.description = `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one error.`
-            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
+            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about errors from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried.`
         },
         category:"custom"
     },
@@ -99,7 +105,7 @@ const list = [
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.description = `Prodides this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
-            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
+            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' usage of functions from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried.`
         },
         category:"custom"
     },
@@ -132,7 +138,7 @@ const list = [
             const mongooseVersion = mongo.mongooseVersion()
             const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
             this.description = `Provides chatbot users' query statistics. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one query of a user.`
-            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' query statistics from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried. You can use get_current_datetime function to get current date and time if needs be.`
+            this.parameters.properties.aggregate_pipeline.description = `Mongodb aggregate pipeline extracting info about users' query statistics from a mongodb collection.\n The collection has the following schema: ${scheemaDescription}. The aggregate_pipeline must query for grouped information. Plain list of documetns never should be queried.`
         },
         category:"custom"
     },

@@ -188,7 +188,7 @@ class Dialogue extends EventEmitter {
         }
 
         const documentsWithRegenerateBtns = await mongo.getDocByTgmRegenerateBtnFlag(this.#user.userid,this.#user.currentRegime)
-
+        
 
         if(documentsWithRegenerateBtns.length === 0){
             return
@@ -196,10 +196,9 @@ class Dialogue extends EventEmitter {
 
         for (const doc of documentsWithRegenerateBtns){
 
-
             const {sourceid,telegramMsgReplyMarkup,telegramMsgId} = doc;
             if (telegramMsgId && Array.isArray(telegramMsgId) && telegramMsgId.length > 0) {
-
+                
                 let newInlineKeyboard = [];
                 telegramMsgReplyMarkup.inline_keyboard.forEach(row => {
                     const newRow = row.filter(button => button.text !== "🔄");

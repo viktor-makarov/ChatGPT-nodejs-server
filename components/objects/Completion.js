@@ -595,7 +595,7 @@ class Completion extends Transform {
       await mongo.updateCompletionInDb({
         filter: {sourceid:completionObject.sourceid},       
         updateBody:{
-          telegramMsgIds: completionObject.telegramMsgIds,
+          telegramMsgId: completionObject.telegramMsgIds,
           telegramMsgBtns: completionObject.telegramMsgBtns,
           telegramMsgRegenerateBtns: completionObject.telegramMsgRegenerateBtns,
           telegramMsgReplyMarkup: completionObject.telegramMsgReplyMarkup,
