@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const modelSettings = require("../../config/telegramModelsSettings");
-const { duration } = require("moment-timezone");
 
 const ProfileSheema = new Schema(
   {
@@ -309,6 +308,8 @@ const TelegramDialogSheema = new Schema(
     type: { type: String },
     responseId: { type: String},
     includeInSearch:{type: Boolean},
+    image_size_bites: { type: Number},
+    image_input: { type: Boolean},
     tokens:{ type: Number}
   },
   { collection: appsettings.mongodb_names.tokens_log }
@@ -321,12 +322,13 @@ TelegramDialogSheema.index({ sourceid: -1});
 TelegramDialogSheema.index({ regime: -1 });
 TelegramDialogSheema.index({ userid: -1 });
 
-
 const DialogMetaSheema = new Schema(
   {
-
     userid: { type: Number, index: true },
     total_tokens: { type: Number},
+    image_input_bites: { type: Number},
+    image_input_count: { type: Number},
+    image_input_limit_exceeded: { type: Boolean},
     function_calls: {type: Object},
   },
   { collection: appsettings.mongodb_names.col_dialogue_meta }

@@ -152,7 +152,7 @@ async function createDialogueMeta(object){
 
 async function deleteDialogueMeta(userid){
   try {
-    return await dialog_meta_collection.deleteOne({ userid: userid });
+    return await dialog_meta_collection.deleteMany({ userid: userid });
   } catch (err) {
     err.code = "MONGO_ERR";
     throw err;
@@ -872,14 +872,14 @@ async function getLastCompletion(userid, regime) {
 }
 
 
-const getDialogueForCompletion = async (userid, regime) => {
+const getDialogueFromDB = async (userid, regime) => {
 
   try {
     const filter = { userid: userid, regime: regime };
     const result = await dialog_collection
       .find(
         filter,
-        { role: 1, content: 1, status: 1, type: 1, function_name: 1, respoonseId: 1,tool_call_id:1,function_arguments:1}
+        { role: 1, content: 1, status: 1, type: 1, function_name: 1, respoonseId: 1,tool_call_id:1,function_arguments:1,tokens:1,image_size_bites:1,image_input:1,includeInSearch:1}
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
@@ -891,24 +891,6 @@ const getDialogueForCompletion = async (userid, regime) => {
   }
 };
 
-const getDialogueForSearch = async (userid, regime,function_call_id) => {
-
-  try {
-    const filter = { userid: userid, regime: regime, includeInSearch: true, tool_call_id: { $ne: function_call_id } };
-    const result = await dialog_collection
-      .find(
-        filter,
-        { role: 1, content: 1, status: 1, type: 1, function_name: 1, respoonseId: 1,tool_call_id:1,function_arguments:1,tokens:1}
-      )
-      .lean()
-   //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
-      .exec();
-    return result;
-  } catch (err) {
-    err.code = "MONGO_ERR";
-    throw err;
-  }
-};
 
 async function update_models_listPromise(model_list) {
   if (model_list.length === 0) {
@@ -1662,7 +1644,7 @@ module.exports = {
   replaceProfileValues,
   resetAllInProgressDialogueMeta,
   updateToolCallResult,
-  getDialogueForCompletion,
+  getDialogueFromDB,
   getDocByTgmBtnsFlag,
   getLastCompletion,
   getFunctionQueueByName,
@@ -1679,6 +1661,5 @@ module.exports = {
   getDocByTgmRegenerateBtnFlag,
   saveNewEvent,
   getEventsList,
-  getDialogueForSearch,
   addTokensUsage
 };

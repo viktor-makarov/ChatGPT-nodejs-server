@@ -288,8 +288,6 @@ async getChat(){
 async getChatMember(){
     return await this.#botInstance.getChatMember(this.#chatId,this.#user.userid)
 }
-  
-
 
 async getFileLinkFromTgm(){
     

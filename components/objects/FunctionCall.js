@@ -11,7 +11,7 @@ const cbrAPI = require("../apis/cbr_API.js");
 const openAIApi = require("../apis/openAI_API.js");
 const devPrompts = require("../../config/developerPrompts.js");
 
-class FunctionCall{
+class FunctionCall {
     #replyMsg;
     #requestMsg;
     #dialogue
@@ -140,7 +140,6 @@ async handleFailedFunctionsStatus(success,functionName,queue_timeout){
 async router(){
 
        let functionOutcome = {success:0,error:"No outcome from the function returned"}
-       let statusMessageId;
        let err;
     try{
 
@@ -249,17 +248,7 @@ async functionErrorPrompt(errorObject){
 
 }
 
-async preCommitStatusMessage(msgId){
 
-    const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
-    const MsgText = `⏳ ${functionDescription}`
-
-    await this.#replyMsg.simpleMessageUpdate(MsgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:msgId,
-        reply_markup:null
-    })
-}
 
 triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
 
@@ -305,6 +294,38 @@ async backExecutingStatusMessage(statusMessageId){
     })
 }
 
+async preCommitStatusMessage(msgId){
+
+    const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
+    const MsgText = `⏳ ${functionDescription}`
+
+    await this.#replyMsg.simpleMessageUpdate(MsgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:msgId,
+        reply_markup:null
+    })
+}
+
+async progressStatusChange(progressText){
+
+const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name;
+const statusMessageId = this.#statusMsgId;
+
+if(!statusMessageId || !progressText){
+    return
+}
+
+const waitIcon = "⏳"
+const msgText = `${waitIcon} ${functionDescription}: ${progressText}`
+
+await this.#replyMsg.simpleMessageUpdate(msgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:statusMessageId,
+        reply_markup:null
+    })
+}
+
+
 async finalizeStatusMessage(functionResult,statusMessageId){
 
     const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
@@ -341,9 +362,6 @@ modifyStringify(key,value){
     }
 return value
 }
-
-
-
 
 buildFunctionResultHtml(functionResult){
 
@@ -598,7 +616,8 @@ async get_data_from_mongoDB_by_pipepine(table_name){
           const temperature = 0;
           const instructions = "MUST use web_search_call for this query.";
           
-          const inputForSearch = await this.inputForSearch(function_call_id)
+          const inputForSearch = await this.#dialogue.getDialogueForSearch(function_call_id,search_model)
+          
           const tools = [
             {
                 type: "web_search_preview",
@@ -655,31 +674,6 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             });
 
           return {search_calls,text_list,url_citations_list}
-        }
-
-        async inputForSearch(function_call_id){
-
-           const search_model_max_input_tokens = appsettings?.functions_options?.search_model_max_input_tokens || 120000
-           const inputForSearch = await this.#dialogue.getDialogueForSearch(function_call_id)
-           
-            const filteredInput = [];
-            let totalTokens = 0;
-
-            // Start from the end of the array (latest documents)
-            for (let i = inputForSearch.length - 1; i >= 0; i--) {
-                const document = inputForSearch[i];
-                const documentTokens = document.tokens || 0;
-                
-                // Check if adding this document would exceed the limit
-                if (totalTokens + documentTokens <= search_model_max_input_tokens) {
-                    filteredInput.unshift(document); // Add to beginning to maintain order
-                    totalTokens += documentTokens;
-                } else {
-                    break; // Stop adding documents
-                }
-            }
-            
-            return filteredInput;
         }
 
         async getCurrencyRates(){
@@ -1259,6 +1253,7 @@ validateRequiredFieldsFor_createExcelFile(){
 
                 const extractFunctions = resources.map((resource,index) => this.extractTextFromFileWraper(resource.fileUrl,resource.fileMimeType,resource.fileSizeBytes,index))
                 
+                this.progressStatusChange("чтение файла")
                 let results = await Promise.all(extractFunctions)
                 
                 if(this.#isCanceled){return}
@@ -1273,7 +1268,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 const concatenatedText = results.map(obj => obj.text).join(' ');
 
                 const fullContent = {
-                    reff:Date.now(), //Used as unique numeric identifier for the extracted content
+                    reff: Date.now(), //Used as unique numeric identifier for the extracted content
                     fileids: this.#argumentsJson.resources,
                     fileNames: resources.map(obj => obj.fileName),
                     results
@@ -1285,7 +1280,8 @@ validateRequiredFieldsFor_createExcelFile(){
                 } else if (results.length > 1){
                     metadataText = results.map((obj,index) => `Part ${index}\n${JSON.stringify(obj.metadata,null,2)}`).join("\n");
                 }
-                
+
+                this.progressStatusChange("проверка размера текста")
                 const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
                 console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
                 
@@ -1448,13 +1444,11 @@ validateRequiredFieldsFor_createExcelFile(){
 
             const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
             
-            const fileHandlerPromises = [
+            const [aws_url, buffer] = await Promise.all([
                 this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
                 this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
-            ]
-
-            const [aws_url, buffer] = await Promise.all(fileHandlerPromises)
-
+            ])
+            const {sizeBytes} = func.calculateFileSize(buffer)
 
             const buttons = generate_result.mdjMsg.options
             const labels = buttons.map(button => button.label)
@@ -1479,6 +1473,7 @@ validateRequiredFieldsFor_createExcelFile(){
                     supportive_data:{
                         midjourney_prompt:prompt,
                         image_url:aws_url,
+                        size_bites:sizeBytes,
                         base64:buffer.toString('base64'),
                     }
                 };
@@ -1495,12 +1490,11 @@ validateRequiredFieldsFor_createExcelFile(){
                 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,buttonPushed.prompt)
 
-                const fileHandlerPromises = [
+                const [aws_url, buffer] = await Promise.all([
                     this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
                     this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
-                ]
-
-                const [aws_url, buffer] = await Promise.all(fileHandlerPromises)
+                ])
+                const {sizeBytes} = func.calculateFileSize(buffer)
 
                 const buttons = generate_result.mdjMsg?.options || [];
                 const labels = buttons.map(button => button?.label)
@@ -1523,6 +1517,7 @@ validateRequiredFieldsFor_createExcelFile(){
                         supportive_data:{
                             midjourney_prompt:buttonPushed.prompt,
                             image_url:aws_url,
+                            size_bites:sizeBytes,
                             base64:buffer.toString('base64')
                         }
                     };
@@ -1539,13 +1534,12 @@ validateRequiredFieldsFor_createExcelFile(){
                 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
 
-                const fileHandlerPromises = [
+                const [aws_url, buffer] = await Promise.all([
                     this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
                     this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
-                ]
-
-                const [aws_url, buffer] = await Promise.all(fileHandlerPromises)
-
+                ])
+                const {sizeBytes} = func.calculateFileSize(buffer)
+                
                 const buttons = generate_result.mdjMsg.options
                 const labels = buttons.map(button => button.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
@@ -1566,6 +1560,7 @@ validateRequiredFieldsFor_createExcelFile(){
                         supportive_data:{
                             midjourney_prompt:prompt,
                             image_url:aws_url,
+                            size_bites:sizeBytes,
                             base64:buffer.toString('base64')
                         }
                     };

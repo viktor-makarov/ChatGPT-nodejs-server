@@ -87,17 +87,16 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       }
 
       replyMsgInstance.text = transcript;
-      const parallelTasks = [
+      await Promise.all([
         replyMsgInstance.simpleMessageUpdate(transcript,
           {chat_id:replyMsgInstance.chatId,
             message_id:waitMsgResult.message_id
           }),
         dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance),
         dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-      ]
-      await Promise.all(parallelTasks)
+      ])
 
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
 
   } else if(requestMsgInstance.fileType === "voice" || requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note" || requestMsgInstance.fileType === "video"){
     
@@ -114,19 +113,18 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     await dialogueInstance.commitFileToDialogue(url)
     // await dialogueInstance.sendSuccessFileMsg(devPrompt)
     if(fileCaption){
-      const parallel = [
+      await Promise.all([
        dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-      ]
-      await Promise.all(parallel)
+      ])
     }
 
     console.log("fileCaption",fileCaption)
 
     if(fileCaption){
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
     } else if (current_regime === "translator" || current_regime === "texteditor"){
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
     }
 
   } else if(requestMsgInstance.fileType === "document"){
@@ -145,28 +143,25 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     const devPrompt = await dialogueInstance.commitFileToDialogue(url)
     // await dialogueInstance.sendSuccessFileMsg(devPrompt)
     if(fileCaption){
-      const parallel = [
+      await Promise.all([
         dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
         dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-      ]
-      await Promise.all(parallel)
+      ])
     }
     
 
     if(fileCaption){
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
     } else if (current_regime === "translator" || current_regime === "texteditor"){
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
     }
     
   } else if(requestMsgInstance.fileType === "image"){
 
-    const fileHandlersPromises = [
+    const [s3UploadResult,downloadBufferResult] = await Promise.all([
       uploadFileToS3Handler(requestMsgInstance),
       downloadFileBufferFromTgm(requestMsgInstance)
-    ]
-
-    const [s3UploadResult,downloadBufferResult] = await Promise.all(fileHandlersPromises)
+    ])
     
     const isAllowedFileType = requestMsgInstance.isAllowedFileType()
 
@@ -178,8 +173,10 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     }
 
       const url = s3UploadResult.Location
+      const {sizeBytes} = otherFunctions.calculateFileSize(downloadBufferResult.buffer)
+
       const base64 = downloadBufferResult.buffer.toString('base64')
-        
+      
       const fileComment = {
         fileid:requestMsgInstance.msgId,
         context:"User has sent the image to the bot.",
@@ -188,13 +185,13 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       if(fileCaption){
         fileComment.user_prompt = fileCaption
       }
-      await dialogueInstance.commitImageToDialogue(url,base64,fileComment)
+      await dialogueInstance.commitImageToDialogue(url,base64,fileComment,sizeBytes)
   
 
     if(fileCaption){
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
     } else if (current_regime === "translator" || current_regime === "texteditor"){
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
     }
   }
 
@@ -206,35 +203,32 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
 
   switch(requestMsgInstance.user.currentRegime) {
     case "chat":
-      const parallel_chat = [
+      await Promise.all([
         dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance),
         dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-      ]
-      await Promise.all(parallel_chat)
-      dialogueInstance.emit('callCompletion')
+      ])
+      dialogueInstance.triggerCallCompletion()
       
     break;
     case "translator":
         await resetNonDialogueHandler(requestMsgInstance)
-        const parallel_translator = [
+        await Promise.all([
         dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime),
         dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-        ]
-        await Promise.all(parallel_translator)
+        ])
         await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
         
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
 
     break;
     case "texteditor":
         await resetNonDialogueHandler(requestMsgInstance)
-        const parallel_texteditor = [
+        await Promise.all([
           dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime),
           dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-        ]
-        await Promise.all(parallel_texteditor)
+        ])
         await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-        dialogueInstance.emit('callCompletion')
+        dialogueInstance.triggerCallCompletion()
 
     break;
     }
@@ -365,11 +359,11 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       context:otherFunctions.getLocalizedPhrase("imagine",userInstance.language_code,placeholders)
     }
     
-    await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,outcome.supportive_data?.base64,fileComment)
+    await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,outcome.supportive_data?.base64,fileComment,outcome.supportive_data?.size_bites)
     
   
   } else {
-      dialogueInstance.emit('callCompletion');
+      dialogueInstance.triggerCallCompletion();
     }
     
     } else {
@@ -521,7 +515,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     
     dialogue.regenerateCompletionFlag = true
 
-    dialogue.emit('callCompletion')
+    dialogue.triggerCallCompletion()
   } else if (callback_event === "choose_ver"){
 
     const doc = await dialogue.getLastCompletionDoc()
@@ -704,10 +698,10 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
     
-    await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,outcome.supportive_data?.base64,fileComment)
+    await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,outcome.supportive_data?.base64,fileComment,outcome.supportive_data?.size_bites)
     
     } else {
-      dialogue.emit('callCompletion');
+      dialogue.triggerCallCompletion();
     }
     
   } else {

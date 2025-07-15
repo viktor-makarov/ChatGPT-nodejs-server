@@ -2,6 +2,9 @@ module.exports = {
 "gpt-4o":{
     "name":"GPT-4 Омни",
     "request_length_limit_in_tokens": 128000,
+    "search_length_limit_in_tokens":100_000,
+    "image_input_limit_bites": 52_428_800,
+    "image_input_limit_count": 500,
     "canUseTool":true,
     "canUseTemperature":true,
     "timeout_ms":120000,
@@ -15,7 +18,10 @@ module.exports = {
 },
 "gpt-4.1":{
     "name":"GPT-4.1",
-    "request_length_limit_in_tokens": 1047576,
+    "request_length_limit_in_tokens": 1_047_576,
+    "search_length_limit_in_tokens":100_000,
+    "image_input_limit_bites": 52_428_800,
+    "image_input_limit_count": 0,
     "canUseTool":true,
     "canUseTemperature":true,
     "long_wait_notes": [
@@ -28,7 +34,10 @@ module.exports = {
 },
 "o1":{
     "name":"O1",
-    "request_length_limit_in_tokens": 200000,
+    "request_length_limit_in_tokens": 200_000,
+    "search_length_limit_in_tokens":100_000,
+    "image_input_limit_bites": 52_428_800,
+    "image_input_limit_count": 500,
     "canUseTool":true,
     "canUseTemperature":true,
     "long_wait_notes": [
@@ -40,7 +49,10 @@ module.exports = {
 },
 "o3-mini":{
     "name":"O3 Мини",
-    "request_length_limit_in_tokens": 200000,
+    "request_length_limit_in_tokens": 200_000,
+    "search_length_limit_in_tokens":100_000,
+    "image_input_limit_bites": 52_428_800,
+    "image_input_limit_count": 500,
     "canUseTool":true,
     "canUseTemperature":true,
     "long_wait_notes": [

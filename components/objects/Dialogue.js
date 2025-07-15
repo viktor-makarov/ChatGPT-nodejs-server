@@ -1,13 +1,12 @@
 const mongo = require("../apis/mongo.js");
-const EventEmitter = require('events');
 const otherFunctions = require("../common_functions.js");
 const awsApi = require("../apis/AWS_API.js")
 const msqTemplates = require("../../config/telegramMsgTemplates");
-const ToolCalls  = require("./ToolCalls.js");
 const Completion = require("./Completion.js");
 const devPrompts = require("../../config/developerPrompts.js");
+const modelConfig = require("../../config/modelConfig.js");
 
-class Dialogue extends EventEmitter {
+class Dialogue {
 
     //instances
     #user;
@@ -15,11 +14,13 @@ class Dialogue extends EventEmitter {
     #replyMsg;
     #requestMsg;
     #completionInstance;
-    #toolCallsInstance;
     #metaObject
     #defaultMetaObject = {
         userid:this.#userid,
         total_tokens:0,
+        image_input_bites:0,
+        image_input_count:0,
+        image_input_limit_exceeded:false,
         function_calls:{
             inProgress:false,
             failedRuns:{},
@@ -31,20 +32,11 @@ class Dialogue extends EventEmitter {
     #regenerateCompletionFlag;
 
     constructor(obj) {
-        super();
         this.#user = obj.userInstance;
         this.#userid = this.#user.userid;
         this.#replyMsg = obj.replyMsgInstance;
         this.#requestMsg = obj.requestMsgInstance;
         
-        this.#toolCallsInstance = new ToolCalls({
-            replyMsgInstance:this.#replyMsg,
-            userInstance:this.#user,
-            requestMsgInstance:this.#requestMsg,
-            dialogueInstance:this
-          })
-
-        this.on('callCompletion', () => this.triggerCallCompletion())
       };
 
 
@@ -77,11 +69,33 @@ class Dialogue extends EventEmitter {
         return lastCompletionDoc
     };
 
-    async getDialogueForRequest(){
-        
-        const dialogueFromDB = await mongo.getDialogueForCompletion(this.#user.userid,this.#user.currentRegime) || []
-        return dialogueFromDB.map(doc =>{
+    async getDialogueForRequest(model){
 
+        const image_size_limit = modelConfig[model]?.image_input_limit_bites ?? 1024 * 1024
+        const image_count_limit = modelConfig[model]?.image_input_limit_count ?? 5
+        
+        const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid,this.#user.currentRegime) || []
+        const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFromDB,image_size_limit,image_count_limit)
+        return this.mapValuesToDialogue(dialogueFilteredByImageLimit);
+    }
+
+    async getDialogueForSearch(function_call_id,model){
+        
+        const search_model_max_input_tokens = modelConfig[model]?.search_length_limit_in_tokens || 100_000
+        const image_size_limit = modelConfig[model]?.image_input_limit_bites ?? 1024 * 1024
+        const image_count_limit = modelConfig[model]?.image_input_limit_count ?? 5
+
+        const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid,this.#user.currentRegime) || []
+        const dialogueFiltereByFunctionCall = dialogueFromDB.filter(doc => !doc.tool_call_id || doc.tool_call_id !== function_call_id)
+        const dialogueFiltereBySearchFlag = dialogueFiltereByFunctionCall.filter(doc => doc.includeInSearch)
+        const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFiltereBySearchFlag,image_size_limit,image_count_limit)
+        const dialogueFilteredByTokenLimit = this.tokenFilterForSearch(dialogueFilteredByImageLimit,search_model_max_input_tokens)
+        return this.mapValuesToDialogue(dialogueFilteredByTokenLimit);
+    }
+
+    mapValuesToDialogue(dialogue){
+
+        return dialogue.map(doc => {
             const {role,content,status,type,function_name,tool_call_id,function_arguments} = doc;
 
             if(type === "message"){
@@ -100,37 +114,58 @@ class Dialogue extends EventEmitter {
             } else {
                 return null
             }
-         }).filter(doc => doc !== null);
+        }).filter(doc => doc !== null);
     }
 
-    async getDialogueForSearch(function_call_id){
-        
-        const dialogueFromDB = await mongo.getDialogueForSearch(this.#user.userid,this.#user.currentRegime,function_call_id) || []
-        return dialogueFromDB.map(doc =>{
 
-            const {role,content,status,type,function_name,tool_call_id,function_arguments} = doc;
+    imageInputFilter(dialogue,image_size_limit,image_count_limit){
 
-            if(type === "message"){
-                return {role,status,type,content};
-            } else if(type === "function_call_output"){
-                return {type,
-                    call_id: tool_call_id,
-                    output: content
-                }
-            } else if (type === "function_call"){
-                return {type,
-                    call_id: tool_call_id,
-                    name:function_name,
-                    arguments:function_arguments
+        const filteredDialogue = [];
+        let imageSize = 0;
+        let imageCount = 0;
+        let image_input_limit_exceeded = false;
+
+        for (let i = dialogue.length - 1; i >= 0; i--) {
+
+            const document = dialogue[i];
+            const {image_size_bites,image_input} = document;
+            if(image_input){
+                if (!image_input_limit_exceeded) {
+                    if(imageCount + 1  > image_count_limit || imageSize + image_size_bites > image_size_limit){
+                        image_input_limit_exceeded = true
+                        continue; // Skip if image input exceeds limit
+                    } else {
+                        filteredDialogue.unshift(document);
+                        imageCount += 1;
+                        imageSize += image_size_bites || 0;
+                    }
                 }
             } else {
-                return null
+                filteredDialogue.unshift(document);
             }
-         }).filter(doc => doc !== null);
+        }
+
+        return filteredDialogue
     }
 
-    get toolCallsInstance(){
-        return this.#toolCallsInstance
+    tokenFilterForSearch(dialogue,token_limit){
+
+        const filteredInput = [];
+        let totalTokens = 0;
+
+        for (let i = dialogue.length - 1; i >= 0; i--) {
+                const document = dialogue[i];
+                const documentTokens = document.tokens || 0;
+                
+                // Check if adding this document would exceed the limit
+                if (totalTokens + documentTokens <= token_limit) {
+                    filteredInput.unshift(document); // Add to beginning to maintain order
+                    totalTokens += documentTokens;
+                } else {
+                    break; // Stop adding documents
+                }
+            }
+        return filteredInput
     }
 
     get completionInstance(){
@@ -198,7 +233,7 @@ class Dialogue extends EventEmitter {
 
             const {sourceid,telegramMsgReplyMarkup,telegramMsgId} = doc;
             if (telegramMsgId && Array.isArray(telegramMsgId) && telegramMsgId.length > 0) {
-                
+
                 let newInlineKeyboard = [];
                 telegramMsgReplyMarkup.inline_keyboard.forEach(row => {
                     const newRow = row.filter(button => button.text !== "🔄");
@@ -206,14 +241,13 @@ class Dialogue extends EventEmitter {
                 })
                 telegramMsgReplyMarkup.inline_keyboard = newInlineKeyboard;
 
-                const parallelCommands = [
+                try{
+                    await Promise.all([
                 this.#replyMsg.updateMessageReplyMarkup(telegramMsgId.at(-1),telegramMsgReplyMarkup),
                 mongo.updateCompletionInDb({
                     filter: {sourceid:sourceid},
                     updateBody:{telegramMsgRegenerateBtns:false,telegramMsgReplyMarkup:telegramMsgReplyMarkup}
-                })]
-                try{
-                    await Promise.all(parallelCommands)
+                })])
                 } catch(err){
                     console.log("Error in deleteAllInlineButtons",err.message)
                 }
@@ -229,9 +263,10 @@ class Dialogue extends EventEmitter {
         await awsApi.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
         const deleteS3Results = await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)),this.#user.currentRegime)
         const deletedFiles = deleteS3Results.Deleted
-        await this.deleteMeta()
+        await this.deleteMeta()     
         await this.commitInitialSystemPromptToDialogue("chat")
         await this.createMeta()
+
 
         const buttons = {
             reply_markup: {
@@ -258,7 +293,7 @@ class Dialogue extends EventEmitter {
     }
 
     async deleteMeta(){
-        await mongo.deleteDialogueMeta(this.#userid)
+        const result = await mongo.deleteDialogueMeta(this.#userid)
         this.#metaObject =  this.#defaultMetaObject
     }
 
@@ -266,6 +301,28 @@ class Dialogue extends EventEmitter {
         this.#metaObject =  this.#defaultMetaObject
         this.#metaObject.userid = this.#userid
         await mongo.createDialogueMeta(this.#metaObject)
+    }
+
+    async metaIncrementImageInput(size_bites=0){
+
+        this.#metaObject.image_input_bites += size_bites;
+        this.#metaObject.image_input_count += 1;
+
+        await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+        return {
+            image_input_bites: this.#metaObject.image_input_bites, 
+            image_input_count: this.#metaObject.image_input_count
+        }
+    }
+
+    async metaImageInputLimitExceeded(){
+        this.#metaObject.image_input_limit_exceeded = true;
+        await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+        return this.#metaObject.image_input_limit_exceeded
+    }
+
+    get image_input_limit_exceeded(){
+        return this.#metaObject.image_input_limit_exceeded
     }
 
     async metaIncrementFailedFunctionRuns(functionName){
@@ -528,18 +585,44 @@ class Dialogue extends EventEmitter {
 
     };
 
-    async commitImageToDialogue(url,base64,descriptionJson){
+    async checkImageLimitAndNotify(image_size_bites,image_count){
+
+        const currentImageSize = this.#metaObject.image_input_bites + image_size_bites;
+        const currentImageCount = this.#metaObject.image_input_count + image_count;
+
+        const image_size_limit = modelConfig[this.#user.currentModel]?.image_input_limit_bites ?? 1024 * 1024
+        const image_count_limit = modelConfig[this.#user.currentModel]?.image_input_limit_count ?? 5
         
+        if(currentImageSize > image_size_limit || currentImageCount > image_count_limit){
+            
+            if(!this.#metaObject.image_input_limit_exceeded){
+                await this.metaImageInputLimitExceeded()
+                const msgText = otherFunctions.getLocalizedPhrase(`too_many_messages`,this.#user.language)
+                this.#replyMsg.simpleSendNewMessage(msgText,null,"html",null)
+            }
+        }
+    }
+
+    async commitImageToDialogue(url,base64,descriptionJson,sizeBites){
+
+        await this.checkImageLimitAndNotify(sizeBites,1)
+
         const datetime = new Date();
         const sourceid = otherFunctions.valueToMD5(datetime.toISOString())+"_"+"image_url"
         const unixTimestamp = Math.floor(datetime.getTime() / 1000)
         let content = [];
         let text_content ={};
+        let image_size_bites = null;
+        let image_input = null;
 
         if(base64){
             content.push({type:"input_image",image_url: `data:image/jpeg;base64,${base64}`,detail:"auto"})
+            image_size_bites = sizeBites
+            image_input = true;
         } else if (url){
             content.push({type:"input_image",image_url: url,detail:"auto"})
+            image_size_bites = sizeBites
+            image_input = true
         } else {
             text_content.error = "Здесь должно было быть изображение, но с ним какие-то проблемы"
         };
@@ -569,11 +652,13 @@ class Dialogue extends EventEmitter {
             content: content,
             status:"completed",
             type:"message",
-            includeInSearch:true
+            includeInSearch:true,
+            image_size_bites: image_size_bites,
+            image_input: image_input
           }
 
-
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
+        image_input && await this.metaIncrementImageInput(image_size_bites)
 
         this.addTokensUsage(promptObj.sourceid,JSON.stringify(text_content),this.#user.currentModel)
 

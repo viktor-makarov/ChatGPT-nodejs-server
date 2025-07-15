@@ -17,9 +17,8 @@ const openai = new OpenAI({
 async function responseStream(dialogueClass,instructions = null) {
 
 const userInstance = dialogueClass.userInstance
-const toolCallsInstance = dialogueClass.toolCallsInstance
 const model = userInstance.currentModel
-const input = await dialogueClass.getDialogueForRequest()
+const input = await dialogueClass.getDialogueForRequest(model)
 
 const options = {
     model: model,
@@ -45,7 +44,7 @@ const modelCanUseTools = modelConfig[model].canUseTool
 
 if(available_tools && available_tools.length>0 && modelCanUseTools){
       options.tools = available_tools;
-      options.tool_choice = toolCallsInstance.tool_choice
+      options.tool_choice = "auto"
   }
 
 let responseStream;
@@ -225,7 +224,6 @@ async function chatCompletionStreamAxiosRequest(
   dialogueClass
 ) {
 
-    const toolCallsInstance = dialogueClass.toolCallsInstance
     const completionInstance = dialogueClass.completionInstance
 
     const options = {
@@ -263,7 +261,7 @@ async function chatCompletionStreamAxiosRequest(
     if(available_tools && available_tools.length>0 && canUseTools){
       //Add functions, if they exist
       options.data.tools = available_tools;
-      options.data.tool_choice = toolCallsInstance.tool_choice
+      options.data.tool_choice = "auto"
     }
    // console.log("4","before axios",new Date())
     

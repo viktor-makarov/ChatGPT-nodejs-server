@@ -182,4 +182,8 @@ module.exports = {
         "en": "Processing file...",
         "ru": "Готовлю файл..."
     },
+    "too_many_messages":{
+        "en": "⚠️ You have added more images than the limit allows. You can still upload new images, but the earliest ones will be ignored to make room for new ones. To reset the image limit and start fresh, please restart the conversation.",
+        "ru": "⚠️ Вы добавили больше изображений, чем позволяет лимит. Новые изображения можно загружать, но при этом самые ранние будут игнорироваться в пользу новых. Чтобы сбросить лимит и добавить новые изображения с нуля, перезапустите диалог."
+    }
 };
