@@ -46,6 +46,7 @@ class Dialogue {
 
     async triggerCallCompletion(){
 
+        console.time("triggerCallCompletion before router");
         await this.getMetaFromDB()
 
         if(this.anyFunctionInProgress){
@@ -63,7 +64,7 @@ class Dialogue {
         })
 
         this.deleteRegenerateButton() //made async on purpose
-
+        console.timeEnd("triggerCallCompletion before router");
         await this.#completionInstance.router()
     }
 
