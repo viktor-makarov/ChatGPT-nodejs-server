@@ -1680,7 +1680,7 @@ validateRequiredFieldsFor_createExcelFile(){
             results
         }
 
-        const  numberOfTokens = func.countTokensTiktokenJS(concatenatedText,this.#user.currentModel)
+        const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
         //console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
 
         if(numberOfTokens > this.#tokensLimitPerCall){
@@ -1750,7 +1750,7 @@ validateRequiredFieldsFor_createExcelFile(){
                     metadataText = results.map((obj,index) => `Part ${index}\n${JSON.stringify(obj.metadata,null,2)}`).join("\n");
                 }
 
-                const  numberOfTokens = func.countTokensTiktokenJS(concatenatedText,this.#user.currentModel)
+                const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
                 //console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
                 if(numberOfTokens > this.#tokensLimitPerCall){
                     return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, 
@@ -1807,7 +1807,7 @@ validateRequiredFieldsFor_createExcelFile(){
     try{
         const {html,screenshot} = await func.getPageHtml(url,{delay_ms:5000,timeout_ms:this.#timeout_ms});
         const textReply = func.convertHtmlToText(html);
-        const numberOfTokens = func.countTokensTiktokenJS(textReply,this.#user.currentModel);
+        const numberOfTokens = await func.countTokensLambda(textReply,this.#user.currentModel);
        
         const result = {
             text:textReply,

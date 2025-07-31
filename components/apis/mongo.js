@@ -679,6 +679,7 @@ async function upsertPrompt(promptObj){
     err.place_in_code = "upsertPrompt";
     throw err;
   }
+
 };
 
 async function updateInputMsgTokenUsage(documentId,tokens){

@@ -28,6 +28,7 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
+    "includeUsage":["code_interpreter_call.outputs"],
     "long_wait_notes": [
         {time_ms:20000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:30000,comment:"Этот запрос не так прост, как казалось! Придется еще немного подождать!"},
@@ -63,6 +64,7 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
+    "includeUsage":["code_interpreter_call.outputs"],
     "long_wait_notes": [
         {time_ms:15000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:30000,comment:"Этот запрос не так прост, как казалось! Придется еще немного подождать!"},

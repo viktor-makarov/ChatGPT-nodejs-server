@@ -27,6 +27,10 @@ const options = {
     store:false,
     background: false,
 }
+const includeUsage = modelConfig[model].includeUsage
+if (includeUsage) {
+    options.include = includeUsage
+}
 
 if (instructions){
     options.instructions = instructions;
@@ -39,7 +43,7 @@ if (modelCanUseTemperature) {
 }
 
 const available_tools =  await toolsCollection.getAvailableToolsForCompletion(userInstance)
-//console.log("available_tools",available_tools)
+
 const modelCanUseTools = modelConfig[model].canUseTool
 
 if(available_tools && available_tools.length>0 && modelCanUseTools){

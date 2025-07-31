@@ -215,12 +215,12 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
 
   switch(requestMsgInstance.user.currentRegime) {
     case "chat":
-      console.time("msgRouter.textMsgRouter.chat before completion trigger")
+
       await Promise.all([
         dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance),
         dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
       ])
-      console.timeEnd("msgRouter.textMsgRouter.chat before completion trigger")
+
       dialogueInstance.triggerCallCompletion()
       
     break;
@@ -251,7 +251,7 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
 }
 
 async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgInstance){
- console.time("textCommandRouter")
+
   const cmpName = requestMsgInstance.commandName
   const userInstance = requestMsgInstance.user;
   const isRegistered = userInstance.isRegistered
@@ -265,7 +265,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     regime: userInstance.currentRegime,
     featureType: "command"
   })
-  console.timeEnd("textCommandRouter")
+
   if(cmpName==="start"){
 
     if(isRegistered){
@@ -296,11 +296,11 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     }
 
   }  else if(cmpName==="resetchat" || cmpName==="Перезапустить диалог"){
-    console.time("textCommandRouter to reset")
+
     const response = await dialogueInstance.resetDialogue()
 
     responses.push(response)
-    console.timeEnd("textCommandRouter to reset")
+
 
   } else if(cmpName==="unregister"){
     const response = await unregisterHandler(requestMsgInstance);
@@ -471,7 +471,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
     const content = await otherFunctions.decodeJson(callback_data_input)
     const date = new Date()
-    const filename = (content?.folded_text || "file") + "_" + date.toISOString() + ".pdf"
+    const filename = (otherFunctions.convertHtmlToText(content?.folded_text) || "file") + "_" + date.toISOString() + ".pdf"
     const formatedHtml =  otherFunctions.formatHtml(content.unfolded_text,filename)
     const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
     

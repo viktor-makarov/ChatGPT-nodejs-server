@@ -20,8 +20,8 @@ const pako = require('pako');
 const devPrompts = require("../config/developerPrompts.js");
 const { convert } = require('html-to-text');
 
-const { Tiktoken } = require("js-tiktoken/lite");
-const o200k_base = require("js-tiktoken/ranks/o200k_base");
+//const { Tiktoken } = require("js-tiktoken/lite");
+//const o200k_base = require("js-tiktoken/ranks/o200k_base");
 
 const showdown  = require('showdown'), showdownHighlight = require("showdown-highlight");
 
@@ -1032,7 +1032,7 @@ function wireHtml(text){
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-function countTokensTiktokenJS(text,model){
+/*function countTokensTiktokenJS(text,model){
 
   text = sanitizeText(text);
 
@@ -1045,7 +1045,7 @@ function countTokensTiktokenJS(text,model){
 
     const tokens = enc.encode(text);
     return tokens.length;
-  }
+  }*/
 
 async function countTokensLambda(text,model){
 
@@ -2631,7 +2631,7 @@ module.exports = {
   diagramHTML,
   htmlRendered,
   logToTempFile,
-  countTokensTiktokenJS,
+  //countTokensTiktokenJS,
   getPageHtml,
   getMimeTypeFromUrl
 };

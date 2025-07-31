@@ -46,7 +46,7 @@ class Dialogue {
 
     async triggerCallCompletion(){
 
-        console.time("triggerCallCompletion before router");
+
         await this.getMetaFromDB()
 
         if(this.anyFunctionInProgress){
@@ -64,7 +64,7 @@ class Dialogue {
         })
 
         this.deleteRegenerateButton() //made async on purpose
-        console.timeEnd("triggerCallCompletion before router");
+
         await this.#completionInstance.router()
     }
 
@@ -263,6 +263,7 @@ class Dialogue {
     
     async resetDialogue(){
 
+
         await this.deleteAllInlineButtons()
         await mongo.deleteDialogByUserPromise([this.#userid], "chat");
         await awsApi.deleteS3FilesByPefix(this.#userid,this.#user.currentRegime) //to delete later
@@ -271,7 +272,6 @@ class Dialogue {
         await this.deleteMeta()     
         await this.commitInitialSystemPromptToDialogue("chat")
         await this.createMeta()
-
 
         const buttons = {
             reply_markup: {
@@ -454,7 +454,7 @@ class Dialogue {
     };
 
     async addTokensUsage(sourceid,text,model){
-        const numberOfTokens = otherFunctions.countTokensTiktokenJS(text,model);
+        const numberOfTokens = await otherFunctions.countTokensLambda(text,model);
         await mongo.addTokensUsage(sourceid,numberOfTokens)
     }
 
@@ -524,11 +524,12 @@ class Dialogue {
             type:"message",
             includeInSearch: false
           }
-        
+
         await mongo.upsertPrompt(systemObj); //записываем prompt в базу
 
-        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.content),this.#user.currentModel)
-        
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.content),this.#user.currentModel);
+
+
         console.log("INITIAL DEVELOPER PROMPT COMMITED")
     }
 
@@ -561,6 +562,37 @@ class Dialogue {
         this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.content),this.#user.currentModel)
         
         console.log("DEVELOPER MESSAGE")
+    };
+
+    async commitCodeInterpreterOutputToDialogue(id,text){
+
+        const datetime = new Date();
+        const sourceid = id;
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        text = `code_interpreter_call returned the following output: ${text}`
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "developer",
+            content: [{
+                text:text,
+                type:"input_text"
+            }],
+            status:"completed",
+            type:"message",
+            includeInSearch: false
+          }
+
+        await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.content),this.#user.currentModel)
+
+        console.log("CODE INTERPRETER DEVELOPER MESSAGE")
     };
 
     async  sendUnsuccessFileMsg(fileSystemObj){

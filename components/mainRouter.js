@@ -97,7 +97,7 @@ await botInstance.answerInlineQuery(id, results);
 }
 
 async function eventRouter(event,botInstance){
-  console.time("mainRouter.eventRouter before switch");
+
 
   let user,requestMsg,replyMsg;
   
@@ -141,7 +141,7 @@ async function eventRouter(event,botInstance){
     }
    
     let responses = [];
-      console.timeEnd("mainRouter.eventRouter before switch");
+
       switch(requestMsg.inputType) {
         case "text_command":
           responses = await telegramCmdHandler.textCommandRouter(requestMsg,dialogue,replyMsg)
@@ -163,7 +163,7 @@ async function eventRouter(event,botInstance){
     };
 
 
-    console.time("mainRouter.eventRouter after switch");
+
   for (const response of responses){
 
     if(response.operation === "updatePinnedMsg" ){
@@ -182,7 +182,7 @@ async function eventRouter(event,botInstance){
       await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options)
     }
     }
-    console.timeEnd("mainRouter.eventRouter after switch");
+
   } catch (err) {
     err.place_in_code = err.place_in_code || "routerTelegram.eventRouter";
 

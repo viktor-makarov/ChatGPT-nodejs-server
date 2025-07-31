@@ -23,7 +23,7 @@ class Completion extends EventEmitter {
     #responseErrorRaw;
     #responseErrorMsg = "";
     #response_status;
-    
+    #code_interpreter_items;
     #responseHeaders;
     #user;
     #functionCalls = {};
@@ -52,7 +52,8 @@ class Completion extends EventEmitter {
     #timeout;
 
     #tool_calls=[];
-    #hostedToolCall 
+    #hostedSearchWebToolCall;
+    #hostedCodeInterpreterCall;
     #tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100;
     #overalTokenLimit;
     
@@ -113,13 +114,13 @@ class Completion extends EventEmitter {
                     this.#completionCreatedDT_UTC = new Date(created_at * 1000).toISOString();
                     this.#output_items ={};
                     this.#message_items = {};
+                    
                     break;
 
                 case 'response.output_item.added':
                     const {status,role} = item;
                     const item_type = item.type;
                     this.#output_items[output_index] = {type:item_type,status}
-                    
                     if(!statusMsg){
                       statusMsg = await this.#replyMsg.sendStatusMsg()
                     }
@@ -142,15 +143,33 @@ class Completion extends EventEmitter {
                         this.#message_items[output_index].completion_version = this.#completionCurrentVersionNumber;
                         statusMsg =null;
                         this.#message_items[output_index].throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#message_items[output_index].deliverResponseToTgm,appsettings.telegram_options.send_throttle_ms)        
+                        
+                        if(this.#hostedCodeInterpreterCall){
+                          this.#hostedCodeInterpreterCall.finalyze()
+                        }
                         break;
                       case 'function_call':
                         await this.createFunctionCall(event,statusMsg)
                         statusMsg =null;
                         break;
                       case 'web_search_call':
-                        this.#hostedToolCall = this.initHostedToolCall(event,statusMsg)
+                        this.#hostedSearchWebToolCall = this.searchWebToolCall(event,statusMsg)
                         statusMsg =null;
-                        this.#hostedToolCall.initialCommitToTGM() //intentionally async
+                        this.#hostedSearchWebToolCall.initialCommitToTGM() //intentionally async
+                        break;
+
+                      case 'code_interpreter_call':
+                        if(!this.#hostedCodeInterpreterCall){
+                          this.#hostedCodeInterpreterCall = this.codeInterpreterCall(event,statusMsg)
+                          statusMsg = null;
+                          this.#hostedCodeInterpreterCall.initialCommit() //intentionally async
+                        } else {
+                          this.#hostedCodeInterpreterCall.resumeCommit() //intentionally async
+                        }
+                        console.log("Code interpreter call started")
+                        break;
+                      case 'reasoning':
+                        console.log("Reasoning started")
                         break;
                     }
                     break;
@@ -186,22 +205,22 @@ class Completion extends EventEmitter {
                         .catch(index => this.failedOutputItem(index))
                         break;
                       case 'web_search_call':
-                        this.#hostedToolCall.finalCommitToTGM(event)
+                        this.#hostedSearchWebToolCall.finalCommitToTGM(event)
                         this.completedOutputItem(output_index)
                         break;
+                      case 'code_interpreter_call':
+                        this.#hostedCodeInterpreterCall.endCommit(event)
+                        this.completedOutputItem(output_index)
+                        console.log("Code interpreter call completed")
+                        break;
+                      case 'reasoning':
+                        console.log("Reasoning call completed")
+                         break;
                     }
                     break;
 
-                case "response.image_generation_call.completed":
-                    console.log(event)
-                break;
-
-                case "response.image_generation_call.generating":
-                    console.log(event)
-                break;
-
                 case "response.image_generation_call.in_progress":
-                    console.log(event)
+                   // console.log(event)
                 break;
 
                 case "response.image_generation_call.partial_image":
@@ -210,7 +229,7 @@ class Completion extends EventEmitter {
 
                 case 'response.completed':
                     await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,response.usage)
-                   // console.log(JSON.stringify(event,null,2))
+                    console.log(JSON.stringify(event.output,null,2))
                     break;
 
                 case 'response.incomplete':
@@ -229,7 +248,102 @@ class Completion extends EventEmitter {
         }
       }
 
-      initHostedToolCall(initialEvent,statusMsg){
+      codeInterpreterCall(initialEvent,statusMsg){
+
+        const statusMsgId = statusMsg?.message_id
+        const {output_index,item} = initialEvent;
+        const {type,code,status,container_id,id} = item;
+        let functionDescription = "Код на Python";
+        
+        let codeInterpreterOutputText = "";
+        let reply_markup = null;
+
+        return {
+          "initialCommit":async () => {
+            let details = "в работе ...";
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+            console.log("initialCommit")
+            await this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            }).catch(result => {})
+          },
+          "resumeCommit": async () => {
+
+            let details = "снова в работе ...";
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+            console.log("resumeCommit")
+            await this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            }).catch(result => {})
+          },
+          "endCommit": async (completedEvent) => {
+            const {item,output_index} = completedEvent;
+            
+            const {action,type,code,outputs} = item;
+            if(code){
+              codeInterpreterOutputText += `\n${code}`;
+            }
+            if(outputs[0]){
+              const {type,logs} = outputs[0];
+              if(type === "logs" && logs && logs.length > 0){
+                codeInterpreterOutputText += `\n--------------\nOutput: ${logs}\n--------------`;
+              } else {
+                console.log("Unknown output format from 'code interpreter'", outputs[0]);
+              }
+            }
+
+            const msgText = `✅ <b>${functionDescription}</b>`
+            console.log("finalCommit")
+            await this.#replyMsg.simpleMessageUpdate(msgText,{
+                chat_id:this.#replyMsg.chatId,
+                message_id:statusMsgId,
+                reply_markup:null,
+                parse_mode: "html"
+            }).catch(result => {})
+
+            reply_markup = await this.craftReplyMarkupForDetails(item,codeInterpreterOutputText,msgText)
+          },
+          "finalyze": async () => {
+            await Promise.all([
+             this.#replyMsg.updateMessageReplyMarkup(statusMsgId,reply_markup),
+             this.#dialogue.commitCodeInterpreterOutputToDialogue(id,codeInterpreterOutputText)
+           ])
+        }
+      }
+    }
+
+      async craftReplyMarkupForDetails(item,output_text,msgText){
+
+        const {id,type,} = item;
+
+        const result = {
+          code_and_results: "\n" + output_text
+        };
+
+        const stringifiedResult = otherFunctions.unWireText(JSON.stringify(result, null, 2));
+
+        const unfoldedTextHtml = `<b>function:</b> ${type}\n<b>id:</b> ${id}\n<pre><code class="json">${otherFunctions.wireHtml(stringifiedResult)}</code></pre>`
+        const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msgText})
+        const callback_data = {e:"un_f_up",d:infoForUserEncoded}
+
+        const fold_button = {
+        text: "Показать подробности",
+        callback_data: JSON.stringify(callback_data),
+      };
+
+      return {
+        one_time_keyboard: true,
+        inline_keyboard: [[fold_button],],
+      };
+      }
+
+      searchWebToolCall(initialEvent,statusMsg){
 
         const statusMsgId = statusMsg?.message_id
         const {output_index,item} = initialEvent; 
@@ -478,7 +592,7 @@ class Completion extends EventEmitter {
       }
       
       async router(){
-        console.time('Completion router status message sent');
+
         try{
           
           this.#completionPreviousVersionsDoc = await this.completionPreviousVersions();
@@ -486,7 +600,7 @@ class Completion extends EventEmitter {
           
           await this.#replyMsg.sendTypingStatus()
           const statusMsg = await this.#replyMsg.sendStatusMsg()
-          console.timeEnd('Completion router status message sent');
+
           this.#long_wait_notes = this.triggerLongWaitNotes(statusMsg)
           
 
@@ -512,7 +626,9 @@ class Completion extends EventEmitter {
           await this.responseEventsHandler(responseStream,statusMsg);
           await this.waitForFinalization()
 
-          if(Object.values(this.#output_items).some(item => item.type === "function_call")){
+          const functionCallsWereMade = Object.values(this.#output_items).some(item => item.type === "function_call");
+          console.log("functionCallsWereMade",functionCallsWereMade)
+          if(functionCallsWereMade){
             this.#dialogue.triggerCallCompletion();
           }
           

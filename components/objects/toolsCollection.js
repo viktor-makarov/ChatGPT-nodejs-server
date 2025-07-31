@@ -5,10 +5,21 @@ const ExRateAPI = require("../apis/exchangerate_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
 
 const list = [
-     {
-        type:"function",
-        name: "web_search",
-        description: "Strictly executes a real-time web search, returning only the most relevant, accurate, and recent information on the specified topic.",
+        {
+            type: "code_interpreter",
+            container: {
+                type: "auto"
+            },
+            availableInRegimes: ["chat"],
+            availableForGroups: ["admin","basic"],
+            availableForToolCalls: true,
+            category:"hosted",
+            depricated:false,
+        },
+        {
+            type: "function",
+            name: "web_search",
+            description: "Strictly executes a real-time web search, returning only the most relevant, accurate, and recent information on the specified topic.",
         strict: true,
         parameters: {
             type: "object",
@@ -539,8 +550,8 @@ const list = [
         try_limit:3,
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
-        availableForToolCalls: true,
-        depricated:false,
+        availableForToolCalls: false,
+        depricated:true,
         category:"custom"
     },
     {
@@ -1022,7 +1033,7 @@ async function getAvailableTools(userClass){
 
 async function getAvailableToolsForCompletion(userClass){
     const availableForToolCalls = await getAvailableTools(userClass)
-    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ type:tool.type, name:tool.name, description:tool.description, parameters:tool.parameters, strict:tool.strict, user_location:tool.user_location}));
+    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ type:tool.type, name:tool.name, description:tool.description, parameters:tool.parameters, strict:tool.strict, user_location:tool.user_location, container:tool.container}));
 }
 
 async function toolConfigByFunctionName(functionName,userClass){
