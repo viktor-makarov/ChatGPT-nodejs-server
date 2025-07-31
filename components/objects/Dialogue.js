@@ -5,6 +5,7 @@ const msqTemplates = require("../../config/telegramMsgTemplates");
 const Completion = require("./Completion.js");
 const devPrompts = require("../../config/developerPrompts.js");
 const modelConfig = require("../../config/modelConfig.js");
+const { error } = require("pdf-lib");
 
 class Dialogue {
 
@@ -21,6 +22,9 @@ class Dialogue {
         image_input_bites:0,
         image_input_count:0,
         image_input_limit_exceeded:false,
+        pdf_input_bites:0,
+        pdf_input_pages:0,
+        pdf_input_limit_exceeded:false,
         function_calls:{
             inProgress:false,
             failedRuns:{},
@@ -303,10 +307,10 @@ class Dialogue {
         await mongo.createDialogueMeta(this.#metaObject)
     }
 
-    async metaIncrementImageInput(size_bites=0){
+    async metaIncrementImageInput(size_bites=0, image_count=0){
 
         this.#metaObject.image_input_bites += size_bites;
-        this.#metaObject.image_input_count += 1;
+        this.#metaObject.image_input_count += image_count;
 
         await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
         return {
@@ -315,10 +319,28 @@ class Dialogue {
         }
     }
 
-    async metaImageInputLimitExceeded(){
+    async metaIncrementPdfInput(size_bites=0, size_pages=0){
+
+        this.#metaObject.pdf_input_bites += size_bites;
+        this.#metaObject.pdf_input_pages += size_pages;
+
+        await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+        return {
+            pdf_input_bites: this.#metaObject.pdf_input_bites, 
+            pdf_input_pages: this.#metaObject.pdf_input_pages
+        }
+        }
+
+        async metaImageInputLimitExceeded(){
         this.#metaObject.image_input_limit_exceeded = true;
         await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
         return this.#metaObject.image_input_limit_exceeded
+    }
+
+    async metaPdfInputLimitExceeded(){
+        this.#metaObject.pdf_input_limit_exceeded = true;
+        await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
+        return this.#metaObject.pdf_input_limit_exceeded
     }
 
     get image_input_limit_exceeded(){
@@ -338,7 +360,6 @@ class Dialogue {
             }
             this.#metaObject.function_calls.failedRuns[functionName] = 1;
         }
-
         await mongo.updateDialogueMeta(this.#userid,this.#metaObject)
         return this.#metaObject.function_calls.failedRuns[functionName]
     }
@@ -432,7 +453,7 @@ class Dialogue {
     };
 
     async addTokensUsage(sourceid,text,model){
-        const numberOfTokens = await otherFunctions.countTokensLambda(text,model);
+        const numberOfTokens = otherFunctions.countTokensTiktokenJS(text,model);
         await mongo.addTokensUsage(sourceid,numberOfTokens)
     }
 
@@ -548,42 +569,26 @@ class Dialogue {
         const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,null,"html",null)
     }
 
-    async  sendSuccessFileMsg(fileSystemObj){
+  
+    async checkPDFLimit(pdf_size_bites,pdf_pages){
 
-        const MsgText = `✅ Файл <code>${fileSystemObj.fileName}</code> добавлен в наш диалог.`
-        
-        let infoForUser = {
-            fileId:fileSystemObj.fileId,
-            fileName:`<code>${fileSystemObj.fileName}</code>`,
-            fileUrl:`<code>${fileSystemObj.fileUrl}</code>`,
-            fileExtention: fileSystemObj.fileExtention,
-            fileMimeType:fileSystemObj.fileMimeType
-           }
-          
-        const placeholders = [{key:"[fileInfo]",filler:JSON.stringify(infoForUser,null,4)}]
-        const unfoldedTextHtml = otherFunctions.getLocalizedPhrase("file_upload_success_html",this.#user.language_code,placeholders)
-        
-        const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:MsgText})
-        
-        const callback_data = {e:"un_f_up",d:infoForUserEncoded}
+        if(this.#metaObject.pdf_input_limit_exceeded){
+            return false
+        }
 
-        const fold_button = {
-        text: "Показать подробности",
-        callback_data: JSON.stringify(callback_data),
-        };
+        const currentPdfSize = this.#metaObject.pdf_input_bites + pdf_size_bites;
+        const currentPdfCount = this.#metaObject.pdf_input_pages + pdf_pages;
 
-        const reply_markup = {
-            one_time_keyboard: true,
-            inline_keyboard: [[fold_button],],
-          };
-          
-        const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,reply_markup,"html",null)
-        await mongo.updateManyEntriesInDbById({
-        filter: {"sourceid": fileSystemObj.sourceid},       
-        updateBody:{ "telegramMsgId": resultTGM.message_id }
-        })
+        const pdf_size_limit = modelConfig[this.#user.currentModel]?.pdf_input_limit_bites ?? 1024 * 1024
+        const pdf_count_limit = modelConfig[this.#user.currentModel]?.pdf_input_limit_pages ?? 5
 
-    };
+        if(currentPdfSize > pdf_size_limit || currentPdfCount > pdf_count_limit){
+            await this.metaPdfInputLimitExceeded()
+            return false
+        } else {
+            return true
+        }
+    }
 
     async checkImageLimitAndNotify(image_size_bites,image_count){
 
@@ -603,36 +608,36 @@ class Dialogue {
         }
     }
 
-    async commitImageToDialogue(url,base64,descriptionJson,sizeBites){
-
-        await this.checkImageLimitAndNotify(sizeBites,1)
-
-        const datetime = new Date();
-        const sourceid = otherFunctions.valueToMD5(datetime.toISOString())+"_"+"image_url"
-        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
-        let content = [];
-        let text_content ={};
-        let image_size_bites = null;
+    async commitImageToDialogue(descriptionJson, image, index=1){
+             
+        const content = [];
         let image_input = null;
+        let total_byte_size = 0;
+        if(descriptionJson){
+            content.push({type:"input_text",text:JSON.stringify(descriptionJson)});
+        }
 
+        const {url,base64,sizeBytes,mimetype,error} = image;
+        
         if(base64){
-            content.push({type:"input_image",image_url: `data:image/jpeg;base64,${base64}`,detail:"auto"})
-            image_size_bites = sizeBites
+            content.push({type:"input_image",image_url: `data:${mimetype};base64,${base64}`,detail:"auto"})
             image_input = true;
+            total_byte_size += sizeBytes;
         } else if (url){
             content.push({type:"input_image",image_url: url,detail:"auto"})
-            image_size_bites = sizeBites
-            image_input = true
+            image_input = true;
+            total_byte_size += sizeBytes;
         } else {
-            text_content.error = "Здесь должно было быть изображение, но с ним какие-то проблемы"
-        };
-
-        if(descriptionJson && typeof descriptionJson === 'object' && descriptionJson !== null){
-            text_content = {...text_content,...descriptionJson}
+            content.push({type:"input_text",text: error || "Image data should be here, but it was not received."});
+            image_input = false;
         }
-        
-        content.push({type:"input_text",text:JSON.stringify(text_content)})
 
+        await this.checkImageLimitAndNotify(total_byte_size,1)
+
+        const datetime = new Date();
+        const sourceid = otherFunctions.valueToMD5(datetime.toISOString())+"_"+index+"_"+"image_url"
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+      
         let promptObj = {
             sourceid: sourceid,
             createdAtSourceTS: unixTimestamp,
@@ -653,19 +658,19 @@ class Dialogue {
             status:"completed",
             type:"message",
             includeInSearch:true,
-            image_size_bites: image_size_bites,
+            image_size_bites: total_byte_size,
             image_input: image_input
           }
-
+ 
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
-        image_input && await this.metaIncrementImageInput(image_size_bites)
 
+        image_input && await this.metaIncrementImageInput(total_byte_size,1)
+        const text_content = content.filter(item => item.type === "input_text");
         this.addTokensUsage(promptObj.sourceid,JSON.stringify(text_content),this.#user.currentModel)
-
         console.log("USER IMAGE")
     }
 
-    async commitFileToDialogue(url){
+    async commitFileToDialogue(url,base64,sizePages){
 
         const fileid = this.#requestMsg.msgId
         const sourceid = String(this.#requestMsg.msgId)+"_"+"file_uploaded"
@@ -676,8 +681,17 @@ class Dialogue {
         }
 
         const placeholders = [{key:"[fileInfo]",filler:JSON.stringify(obj, null, 4)}]
-        const devPrompt = otherFunctions.getLocalizedPhrase("file_upload_success",this.#requestMsg.user.language_code,placeholders)
+        const text = otherFunctions.getLocalizedPhrase("file_upload_success",this.#requestMsg.user.language_code,placeholders)
 
+        const content = [{type:"input_text",text:text}]
+
+        let pdf_input = false;
+        if(base64 && await this.checkPDFLimit(this.#requestMsg.fileSize,sizePages)){
+
+            content.push({type:"input_file",filename:this.#requestMsg.fileName,file_data: `data:application/pdf;base64,${base64}`})
+            pdf_input = true;
+        }
+        
         let fileSystemObj = {
             sourceid: sourceid,
             createdAtSourceTS: this.#requestMsg.msgTS,
@@ -689,19 +703,22 @@ class Dialogue {
             fileExtention:this.#requestMsg.fileExtention,
             fileMimeType:this.#requestMsg.fileMimeType,
             fileSizeBytes: this.#requestMsg.fileSize,
+            pdfSizePages: sizePages,
+            pdf_input: pdf_input,
             fileDurationSeconds: this.#requestMsg.duration_seconds,
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
             role: 'user',
-            content: [{type:"input_text",text:devPrompt}],
+            content: content,
             status:"completed",
             type:"message",
             includeInSearch:true
           }      
           
         await mongo.upsertPrompt(fileSystemObj); //записываем prompt в базу
+        pdf_input && await this.metaIncrementPdfInput(this.#requestMsg.fileSize,sizePages)
 
         this.addTokensUsage(fileSystemObj.sourceid,JSON.stringify(fileSystemObj.content),this.#user.currentModel)
 
@@ -709,6 +726,7 @@ class Dialogue {
         return fileSystemObj
 
     };
+
 
     async commitFunctionCallToDialogue(functionCall){
 
@@ -778,10 +796,11 @@ class Dialogue {
 
     async updateCommitToolReply(result){
 
+  
        await mongo.updateToolCallResult(result)
-       
+   
        this.addTokensUsage(result.sourceid,JSON.stringify(result.content),this.#user.currentModel)
-
+      
        console.log("TOOL REPLY UPDATED")
     }
 

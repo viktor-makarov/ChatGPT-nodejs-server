@@ -17,6 +17,22 @@ const list = [
                         type: "string",
                         description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                 },
+                user_location: {
+                    type: ["object", "null"],
+                    description: "User's location where the search should be localized.",
+                    properties: {
+                        country: {
+                            type: "string",
+                            description: "Country code in ISO 3166-1 alpha-2 format (e.g., 'US', 'RU')."
+                        },
+                        city: {
+                            type: "string",
+                            description: "City name for more localized search results. MUST be in English."
+                        }
+                    },
+                    required: ["country","city"],
+                    additionalProperties: false
+                },
                 query_in_english: {
                     type: "string",
                     description: "Web search query. Must be issued in English only. If the user's request is in another language, always translate it into English before performing any web search.",
@@ -25,10 +41,10 @@ const list = [
                     type: ["string","null"],
                     description: "Web search query in the user’s original language. Use ONLY if the original language differs from English; otherwise, set this field to null."},
                 },
-            required: ["function_description","query_in_english","additional_query"],
+            required: ["function_description","user_location","query_in_english","additional_query"],
             additionalProperties: false
         },
-        friendly_name:"Поиск в интернете",
+        friendly_name:"В интернете",
         timeout_ms:180000,
         long_wait_notes: [
             {time_ms:30000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
@@ -37,6 +53,62 @@ const list = [
             {time_ms:120000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
         ],
         try_limit:3,
+        availableInRegimes: ["chat"],
+        availableForGroups: ["admin","basic"],
+        model:"gpt-4.1",
+        availableForToolCalls: true,
+        depricated:false,
+        category:"custom"
+    },
+    {
+        type:"function",
+        name: "create_mermaid_diagram",
+        description: "Creates mermaid diagram based on provided description and details.",
+        strict: true,
+        parameters: {
+            type: "object",
+            properties: {
+                function_description:{
+                        type: "string",
+                        description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                },
+                type: {
+                    type: "string",
+                    enum: ["flowchart","sequenceDiagram","classDiagram","stateDiagram-v2","erDiagram","gantt","journey","pie","mindmap","quadrantChart","xychart-beta"],
+                    description: "Specifies the required Mermaid diagram type."
+                },
+                title:{
+                    type: "string",
+                    description: "Diagram name."
+                },
+                data: {
+                    type: "string",
+                    description: "Provide a comprehensive, clear data and all required text description for generating the specified diagram type. Must include description of what the diagram should show as a PARAGRAPH OF TEXT. The description must be sufficient to fully build the diagram without requiring further clarification."
+                },
+                styles: {
+                    type: "string",
+                    description: "Provide description of styles for the diagram as a PARAGRAPH OF TEXT."
+                },
+                orientation: {
+                    type: "string",
+                    enum: ["top-down","left-to-right"],
+                    description: "choose the orientation of the diagram."
+                        }
+            },
+            required: ["function_description","type","data","title","styles","orientation"],
+            additionalProperties: false
+            },
+        friendly_name:"Диаграмма",
+        timeout_ms:180000,
+        long_wait_notes: [
+            {time_ms:60000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
+            {time_ms:1200000,comment:"На этот раз долго ... Однако, пока нет причин для беспокойства! 👌"},
+            {time_ms:150000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..."}
+        ],
+        try_limit:3,
+        model:"gpt-4o-mini",
+        parallel_runs:4,
+        attempts_limit: 4,
         availableInRegimes: ["chat"],
         availableForGroups: ["admin","basic"],
         availableForToolCalls: true,
@@ -61,7 +133,7 @@ const list = [
             },
             required: ["aggregate_pipeline","function_description"]
         },
-        friendly_name: "Cистемные ошибки R2D2",
+        friendly_name: "R2D2 ошибки",
         timeout_ms:30000,
         try_limit: 3,
         availableInRegimes: ["chat"],
@@ -94,7 +166,7 @@ const list = [
                 },
                 required: ["aggregate_pipeline","function_description"]
             },
-        friendly_name: "Статистика вызова функций R2D2",
+        friendly_name: "R2D2 функции",
         timeout_ms:30000,
         try_limit: 3,
         availableInRegimes: ["chat"],
@@ -127,7 +199,7 @@ const list = [
             },
             required: ["aggregate_pipeline","function_description"]
         },
-        friendly_name: "Статистика использования R2D2",
+        friendly_name: "R2D2 использование",
         timeout_ms:30000,
         try_limit: 3,
         availableInRegimes: ["chat"],
@@ -162,7 +234,7 @@ const list = [
             required: ["id","function_description"],
             additionalProperties: false
         },
-        friendly_name: "Запрос в базу знаний",
+        friendly_name: "База знаний",
         timeout_ms:30000,
         try_limit: 3,
         availableInRegimes: ["chat"],
@@ -205,7 +277,7 @@ const list = [
         {
             type:"function",
             name: "extract_text_from_file",
-            description: `Extracts text from documents or images provided by user.`,
+            description: `Extracts text from documents or images provided by user. Designed to efficiently process multiple resources (files) in a single call.`,
             strict: true,
             parameters: {
                 type: "object",
@@ -226,7 +298,7 @@ const list = [
                 required: ["resources","function_description"],
                 additionalProperties: false
             },
-            friendly_name: "Чтение документа",
+            friendly_name: "Документ",
             timeout_ms:180000,
             try_limit: 3,
             availableInRegimes: ["chat"],
@@ -341,7 +413,7 @@ const list = [
                 },
                 required: ["prompt","function_description"]
             },
-            friendly_name: "Генерация изображения",
+            friendly_name: "Изображение Midjourney",
             timeout_ms:360000,
             long_wait_notes: [
                 {time_ms:60000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
@@ -411,7 +483,7 @@ const list = [
         {
             type:"function",
             name: "fetch_url_content",
-            description: "Use this function to fetch content from a url. Returns html.",
+            description: "Fetches content from a url both in text (with urls) and screenshots.",
             parameters: {
                 type: "object",
                 properties: {
@@ -419,19 +491,23 @@ const list = [
                         type: "string",
                         description:  `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                     },
-                    url: {
-                    type: "string",
-                        description: `A single url as a string to fetch content from.`
+                    urls: {
+                        type: "array",
+                        description: `List of urls as an array to fetch content from.`,
+                        items: {
+                            type: "string",
+                            description: "URL to fetch content from"
+                        }
                     }
                 },
-            required: ["url","function_description"],
+            required: ["urls","function_description"],
             },
-            friendly_name: "Чтение гиперссылки",
-            timeout_ms:45000,
+            friendly_name: "Ссылка",
+            timeout_ms:100000,
             long_wait_notes: [
-                {time_ms:10000,comment:"Иногда нужно больше времени. Подождем ... ☕️"},
-                {time_ms:20000,comment:"Хм ... 🤔 А вот это уже звоночек ... "},
-                {time_ms:30000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ..."}
+                {time_ms:20000,comment:"Иногда нужно больше времени. Подождем ... ☕️"},
+                {time_ms:45000,comment:"Хм ... 🤔 А вот это уже звоночек ... "},
+                {time_ms:90000,comment:"Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ..."}
             ],
             try_limit: 3,
             availableInRegimes: ["chat"],
@@ -458,7 +534,7 @@ const list = [
             },
             required: ["python_code","function_description"]
         },
-        friendly_name:"Вычисления Python",
+        friendly_name:"Python",
         timeout_ms:30000,
         try_limit:3,
         availableInRegimes: ["chat"],
@@ -485,7 +561,7 @@ const list = [
             },
             required: ["javascript_code","function_description"]
         },
-        friendly_name:"Вычисления JavaScript",
+        friendly_name:"JavaScript",
         timeout_ms:30000,
         try_limit:3,
         availableInRegimes: ["chat"],
@@ -530,7 +606,7 @@ const list = [
             },
             required: ["filename","function_description"]
         },
-        friendly_name:"Создание PDF",
+        friendly_name:"Документ",
         timeout_ms:90000,
         try_limit:3,
         long_wait_notes: [
@@ -702,7 +778,7 @@ const list = [
             required: ["filename","data","function_description"],
             additionalProperties: false
         },
-        friendly_name:"Создание Excel",
+        friendly_name:"Excel",
         timeout_ms:60000,
         try_limit:3,
         availableInRegimes: ["chat"],
@@ -745,7 +821,7 @@ const list = [
             },
             required: ["filename","mimetype","function_description"],
         },
-        friendly_name:"Создание текстового файла",
+        friendly_name:"Документ",
         timeout_ms:15000,
         try_limit:3,
         availableInRegimes: ["chat"],
@@ -793,7 +869,7 @@ const list = [
             },
             required: ["filename","function_description","voice"],
         },
-        friendly_name:"Текст в голос",
+        friendly_name:"Генерация речи",
         timeout_ms:360000,
         try_limit:3,
         availableInRegimes: ["chat"],
@@ -843,7 +919,7 @@ const list = [
             required: ["function_description","conversion_queries"],
             additionalProperties: false
             },
-        friendly_name:"Конвертер курсов",
+        friendly_name:"Конвертертация",
         timeout_ms:15000,
         try_limit:3,
         availableInRegimes: ["chat"],
@@ -893,7 +969,7 @@ const list = [
             required: ["function_description","exchange_rates"],
             additionalProperties: false
         },
-        friendly_name:"Конвертер курсов",
+        friendly_name:"Курсы валют",
         timeout_ms:15000,
         try_limit:30,
         availableInRegimes: ["chat"],

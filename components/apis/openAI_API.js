@@ -11,7 +11,8 @@ const otherFunctions = require("../common_functions.js");
 const axios = require("axios");
 const OpenAI = require("openai");
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: 180000
 });
 
 async function responseStream(dialogueClass,instructions = null) {
@@ -19,7 +20,6 @@ async function responseStream(dialogueClass,instructions = null) {
 const userInstance = dialogueClass.userInstance
 const model = userInstance.currentModel
 const input = await dialogueClass.getDialogueForRequest(model)
-
 const options = {
     model: model,
     input: input,
@@ -59,9 +59,9 @@ try {
 return responseStream;
 }
 
-async function responseSync(model,instructions, input,temperature = 0,tools = [],tool_choice = "auto") {
+async function responseSync(model,instructions, input,temperature = 0,tools = [],tool_choice = "auto",output_format = { "type": "text" }) {
 
-const response = await openai.responses.create({
+const options = {
     model: model,
     instructions: instructions,
     input: input,
@@ -69,8 +69,11 @@ const response = await openai.responses.create({
     store:false,
     background: false,
     tools: tools,
-    tool_choice: tool_choice
-});
+    tool_choice: tool_choice,
+    text:{format:output_format}
+};
+
+const response = await openai.responses.create(options);
 return response;
 }
 

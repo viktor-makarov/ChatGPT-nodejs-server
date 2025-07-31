@@ -1,4 +1,4 @@
-const UrlResource = require("./UrlResource.js");
+
 const mongo = require("../apis/mongo.js");
 const func = require("../common_functions.js");
 const telegramErrorHandler = require("../errorHandler.js");
@@ -10,6 +10,7 @@ const elevenLabsApi = require("../apis/elevenlabs_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
 const openAIApi = require("../apis/openAI_API.js");
 const devPrompts = require("../../config/developerPrompts.js");
+const { error } = require("pdf-lib");
 
 class FunctionCall {
     #replyMsg;
@@ -46,7 +47,6 @@ constructor(obj) {
 };
 
 async removeFunctionFromQueue(){
-    
     this.#functionConfig.queue_name && await mongo.removeFunctionFromQueue(this.#functionCall.tool_call_id)
 }
 
@@ -126,13 +126,15 @@ async addFunctionToQueue(statusMessageId){
 }
 
 async handleFailedFunctionsStatus(success,functionName,queue_timeout){
-
+    
     if(!success && !queue_timeout){
+        
         const failedRuns = await this.#dialogue.metaIncrementFailedFunctionRuns(functionName)
         if(failedRuns === this.#functionConfig.try_limit){
             return {success:0,error:`Limit of unsuccessful calls is reached. Stop sending toll calls on this function, report the problem to the user and try to find another solution. To clean the limit the dialog should be reset.`}
         }
     } else {
+        
         await this.#dialogue.metaResetFailedFunctionRuns(functionName)
     }
 }
@@ -146,11 +148,12 @@ async router(){
         
         this.validateFunctionCallObject(this.#functionCall)
         this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
-        await this.preCommitStatusMessage(this.#statusMsgId)
+        await this.executionStatusMessage(this.#statusMsgId)
         await this.addFunctionToQueue(this.#statusMsgId)
 
         this.#long_wait_notes = this.triggerLongWaitNotes(this.#statusMsgId,this.#functionConfig.long_wait_notes)
        
+     
         functionOutcome = await this.functionHandler();
         functionOutcome.tool_call_id = this.#tool_call_id;
         functionOutcome.function_name = this.#functionName
@@ -186,15 +189,14 @@ async router(){
         await this.removeFunctionFromQueue()
         await this.handleFailedFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
         this.#statusMsgId && await this.finalizeStatusMessage(functionOutcome,this.#statusMsgId)
-        
-        mongo.insertFunctionUsagePromise({ //intentionally async
+
+        this.#replyMsg.insertFunctionUsage({ //intentionally async
             userInstance:this.#user,
             tool_function:this.#functionName,
-            tool_reply:functionOutcome,
+            tool_reply:{...functionOutcome, supportive_data: undefined},
             call_duration:functionOutcome?.supportive_data?.duration,
             success:functionOutcome.success
         })
-        
         return functionOutcome;
     }
 }
@@ -248,19 +250,18 @@ async functionErrorPrompt(errorObject){
 
 }
 
-
-
 triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
 
     return long_wait_notes.map(note => {        
             const options = {
                 chat_id:this.#replyMsg.chatId,
                 message_id:tgmMsgId,
+                parse_mode:"html"
             }
 
             return setTimeout(() => {
                 if(this.#inProgress){
-                const MsgText = `${this.#functionConfig.friendly_name}. Выполняется.\n${note.comment}`
+                const MsgText = `<b>${this.#functionConfig.friendly_name}</b>. Выполняется.\n${note.comment}`
                 this.#replyMsg.simpleMessageUpdate(MsgText,options)
             }
             }, note.time_ms);
@@ -276,7 +277,7 @@ clearLongWaitNotes() {
 
 async inQueueStatusMessage(statusMessageId){
 
-    const msgText = `${this.#functionConfig.friendly_name}. В очереди ... ⏳`
+    const msgText = `⏳ <b>${this.#functionConfig.friendly_name}</b>. В очереди ... `
 
     const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
@@ -294,48 +295,75 @@ async backExecutingStatusMessage(statusMessageId){
     })
 }
 
-async preCommitStatusMessage(msgId){
-
-    const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
-    const MsgText = `⏳ ${functionDescription}`
-
-    await this.#replyMsg.simpleMessageUpdate(MsgText,{
+async initStatusMessage(msgId){
+    const functionFriendlyName = this.#functionConfig.friendly_name;
+    const msgText = `⏳ <b>${functionFriendlyName}</b> ...`
+    await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
         message_id:msgId,
-        reply_markup:null
+        reply_markup:null,
+        parse_mode: "html"
+    })
+}
+
+async executionStatusMessage(msgId){
+
+    const functionFriendlyName = this.#functionConfig.friendly_name;
+    const functionDescription = this.#argumentsJson.function_description
+    let msgText;
+    if(functionDescription){
+    msgText = `⏳ <b>${functionFriendlyName}</b>: ${functionDescription} ...`
+    } else {
+    msgText = `⏳ <b>${functionFriendlyName}</b>: ...`
+    }
+
+    await this.#replyMsg.simpleMessageUpdate(msgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:msgId,
+        reply_markup:null,
+        parse_mode: "html"
     })
 }
 
 async progressStatusChange(progressText){
 
-const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name;
+const functionFriendlyName = this.#functionConfig.friendly_name;
+const functionDescription = this.#argumentsJson.function_description;
 const statusMessageId = this.#statusMsgId;
 
 if(!statusMessageId || !progressText){
     return
 }
 
+let msgText;
 const waitIcon = "⏳"
-const msgText = `${waitIcon} ${functionDescription}: ${progressText}`
+if(functionDescription){
+ msgText = `${waitIcon} <b>${functionFriendlyName}</b>: ${functionDescription} - ${progressText} ...`
+} else {
+ msgText = `${waitIcon} <b>${functionFriendlyName}</b> - ${progressText} ...`
+}
 
 await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
         message_id:statusMessageId,
-        reply_markup:null
+        reply_markup:null,
+        parse_mode: "html"
     })
 }
 
 
 async finalizeStatusMessage(functionResult,statusMessageId){
-
-    const functionDescription = this.#argumentsJson.function_description || this.#functionConfig.friendly_name
+    const functionFriendlyName = this.#functionConfig.friendly_name;
+    const functionDescription = this.#argumentsJson.function_description
+    let msgText;
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
-    const msgText = `${resultIcon} ${functionDescription}`
-
+    if(functionDescription){
+     msgText = `${resultIcon} <b>${functionFriendlyName}</b>: ${functionDescription}`
+    } else {
+     msgText = `${resultIcon} <b>${functionFriendlyName}</b>`
+    }
     const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
-
     const infoForUserEncoded = await func.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msgText})
-
     const callback_data = {e:"un_f_up",d:infoForUserEncoded}
     
     const fold_button = {
@@ -351,7 +379,8 @@ async finalizeStatusMessage(functionResult,statusMessageId){
       const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
         message_id:statusMessageId,
-        reply_markup:reply_markup
+        reply_markup:reply_markup,
+        parse_mode: "html"
     })
 }
 
@@ -364,12 +393,13 @@ return value
 }
 
 buildFunctionResultHtml(functionResult){
-
+    
     let argsText = JSON.stringify(this.#argumentsJson,this.modifyStringify,2)
     argsText = func.unWireText(argsText)
     const request = `<pre>${func.wireHtml(argsText)}</pre>`
 
     let stringifiedFunctionResult = JSON.stringify(functionResult,this.modifyStringify,2)
+    
     stringifiedFunctionResult = func.unWireText(stringifiedFunctionResult)
     
     const reply = `<pre><code class="json">${func.wireHtml(stringifiedFunctionResult)}</code></pre>`
@@ -402,7 +432,8 @@ async selectAndExecuteFunction() {
         "text_to_speech": () => this.textToSpeech(),
         "currency_converter": () => this.currencyConverter(),
         "get_currency_rates": () => this.getCurrencyRates(),
-        "web_search": () => this.webSearch()
+        "web_search": () => this.webSearch(),
+        "create_mermaid_diagram": () => this.createMermaidDiagrams(),
     };
     
     const targetFunction = functionMap[this.#functionName];
@@ -455,7 +486,6 @@ async functionHandler(){
                  } else {
                     result.supportive_data = {duration: ((new Date() - toolExecutionStart) / 1000).toFixed(2)};
                  }
-
                  return result
             } finally {
                 this.clearFunctionTimeout(); // Ensure timeout is cleared in all cases
@@ -577,30 +607,22 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
 
             return {success:1,result:`The file ${filename} ({sizeString}) has been generated and successfully sent to the user.`}
-
         }
 
         async webSearch(){
 
           this.validateRequiredFieldsFor_webSearch()
 
-          const {query_in_english,additional_query} = this.#argumentsJson
+          const {query_in_english,additional_query,user_location} = this.#argumentsJson
+          const {model} = this.#functionConfig;
 
           const urlCitationsList = [];
           const textList = [];
 
-          const {search_calls,text_list,url_citations_list} = await this.openAISearch()
+          const {search_calls,text_list,url_citations_list} = await this.openAISearch(model,user_location)
 
           if(search_calls.length === 0){
             return  {success:0,error: "web_search_call was not used",instructions:"You must repeat web_search function call"}
-          } else {
-            mongo.insertCreditUsage({
-                        userInstance: this.#user,
-                        creditType: "web_search",
-                        creditSubType: "web_search",
-                        usage:1,
-                        details: {place_in_code:"webSearch"}
-                      })
           }
 
           urlCitationsList.push(...url_citations_list);
@@ -609,31 +631,50 @@ async get_data_from_mongoDB_by_pipepine(table_name){
           return  {success:1, result: {text:textList,url_citations:urlCitationsList,search_calls:search_calls}, instructions:devPrompts.search_results_format()}
         }
 
-        async openAISearch(){
+        async openAISearch(model,user_location){
 
-          const search_model = appsettings?.functions_options?.search_model
           const function_call_id = this.#functionCall?.tool_call_id 
           const temperature = 0;
           const instructions = "MUST use web_search_call for this query.";
           
-          const inputForSearch = await this.#dialogue.getDialogueForSearch(function_call_id,search_model)
+          const inputForSearch = await this.#dialogue.getDialogueForSearch(function_call_id,model)
           
-          const tools = [
-            {
+          const searchOptions = {
                 type: "web_search_preview",
-                user_location: {
-                    type: "approximate",
-                    city: "Moscow",
-                    country: "RU",
-                    region: null,
-                    timezone: null
-                }
-            }
-          ]
-          const tool_choice = "required"
+            };
 
-          const response = await openAIApi.responseSync(search_model,instructions,inputForSearch,temperature,tools,tool_choice)
-          const {output} = response;
+            if(user_location && user_location.city && user_location.country){
+                searchOptions.user_location = {
+                    type: "approximate",
+                    city: user_location.city,
+                    country: user_location.country,
+                    region: user_location.region || null,
+                    timezone: user_location.timezone || null
+                }
+            };
+          const tools = [searchOptions];
+
+          const tool_choice = "required"
+          const output_format = { "type": "text" };
+
+          const response = await openAIApi.responseSync(model,instructions,inputForSearch,temperature,tools,tool_choice,output_format)
+          const {output,usage} = response;
+
+            mongo.insertCreditUsage({
+                          userInstance: this.#user,
+                          creditType: "text_tokens",
+                          creditSubType: "input",
+                          usage: usage.input_tokens,
+                          details: {place_in_code:"openAISearch"}
+            })
+          
+            mongo.insertCreditUsage({
+                userInstance: this.#user,
+                creditType: "text_tokens",
+                creditSubType: "output",
+                usage: usage.output_tokens,
+                details: {place_in_code:"openAISearch"}
+            })
 
           const search_calls = output.filter(tool => tool.type === "web_search_call").map(tool => {
             return {
@@ -641,6 +682,16 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             action_type: tool.action.type,
             query: JSON.parse('"'+tool.action.query+'"')
           }})
+
+          if(search_calls.length > 0){
+            mongo.insertCreditUsage({
+                        userInstance: this.#user,
+                        creditType: "web_search",
+                        creditSubType: "web_search",
+                        usage:1,
+                        details: {place_in_code:"openAISearch"}
+                      })
+          }
 
             const url_citations_list = [];
             const text_list = [];
@@ -669,24 +720,322 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             if (!url_citations_list.some(existing => existing.url === urlResource.url)) {
                 url_citations_list.push(urlResource);
             }
-
           })
             });
 
           return {search_calls,text_list,url_citations_list}
         }
 
+        async createMermaidDiagrams(){
+            this.validateRequiredFieldsFor_createMermaidDiagrams()
+            const {type,data,orientation,styles,title} = this.#argumentsJson;
+            const {model,parallel_runs,attempts_limit} = this.#functionConfig;
+
+            const versions = [];
+            const runStatus = {allowed:true};
+            const runDT = new Date();
+            for(let i = 1; i <= parallel_runs; i++){
+                versions.push((async () =>  {
+                    let success = false;
+                    let count = 0;
+                    const worker = await this.getDiagramFromOpenAI(type,data,orientation,styles,title,model,i)
+
+                    let result;
+                    
+                    while(!success && count < attempts_limit && runStatus.allowed){
+                        
+                        result = await worker();
+                        if(result.success === 1){
+                            success = true;
+                        };
+                        count++;
+                    };
+                    func.logToTempFile(`Diagram: ${type} | v ${i} ${result.success === 1 ? "true" : "false"} attempts: ${count}, ${new Date()}`,`diagramLog.txt`)
+                    mongo.saveNewTestDiagram({
+                        test_case: "self-corrected2 t=0",
+                        model: model,
+                        type: type,
+                        version: i,
+                        success: success,
+                        attempts: count,
+                        run_id: `${type}_${runDT}`
+                    })
+                    return {...result,attempts:count,type};
+                })())
+            };
+
+            const {diagram_body,success,attempts} = await Promise.race(versions)
+            //runStatus.allowed = false;
+            func.logToTempFile("------Execution finished",`diagramLog.txt`)
+            
+            const cleanDiagramBody = this.cleanOfCodeBlock(diagram_body);
+
+            func.logToTempFile(`result ${success}`,`diagramLog.txt`)
+
+            if(success){
+                return {success:1, result: {
+                    title: title,
+                    parallel_runs: parallel_runs,
+                    attempts: attempts,
+                    diagram_body:cleanDiagramBody
+                }, instructions: `(1) Insert diagram body in you responce inside mermaid code block: \`\`\`mermaid\n<diagram_body>\n\`\`\`\n(2) Inform the user that the diagram can be viewed in specialized Mermaid services by clicking on 'Live Edit' or 'Live View' links below the diagram. Also, the diagram can be viewed by clicking on "🌐" or "PDF" buttons under the message.`}
+            } else {
+                return {success:0, error: "No syntactically correct diagrams were generated", instructions: `You MUST immidiately retry the function call with the same parameters. If the error persists, try to change the data provided.`}
+            };       
+        }
+
+        async craftInstructionsForDiagram(type){
+
+            const selfCorrectedIInstruction = await mongo.getSelfCorrectedInstructions("diagrams", type);
+            if(selfCorrectedIInstruction && selfCorrectedIInstruction.instructions.length > 0){
+                const lastInstructionObject = selfCorrectedIInstruction.instructions.at(-1);
+                const lastInstructionText  = `# Common Guidelines:\n${lastInstructionObject.general}\n\n# ${type}-specific Guidelines:\n${lastInstructionObject.type_specific}\n\n# Example:\n${lastInstructionObject.example}`;
+                return lastInstructionText
+            } else {
+                return devPrompts.diagram_constraints(type);
+            }
+        }
+
+        async getDiagramFromOpenAI(type,data,orientation,styles,title,model,version){
+          let attempt = 0;
+          const temperature = 0;
+          const instructions = await this.craftInstructionsForDiagram(type);
+          const input = [
+            {
+                role:"developer",
+                content:instructions
+            },
+            {
+                role: "user",
+                content: `Create a ${type} diagram based on the following desription:\n\nData:${data}\n\nStyles:${styles}${["flowchart","classDiagram","stateDiagram-v2"].includes(type) ? "Orientation: " + orientation:null}`,
+          }];
+          
+          const tools = []
+          const tool_choice = "auto";
+          const output_format = { 
+            "type": "json_schema",
+            "name":"diagram",
+                "schema":{
+                "type": "object",
+                "properties": {
+                        "diagram_body": { "type": "string" }
+                    },
+                    "required": ["diagram_body"],
+                    "additionalProperties": false
+                } 
+            };
+
+         return async () => {
+          attempt ++;
+          const result  = await openAIApi.responseSync(model,"",input,temperature,tools,tool_choice,output_format);
+          const {output,usage} = result;
+
+          mongo.insertCreditUsage({
+                          userInstance: this.#user,
+                          creditType: "text_tokens",
+                          creditSubType: "input",
+                          usage: usage.input_tokens,
+                          details: {place_in_code:"getDiagramFromOpenAI"}
+            })
+          
+            mongo.insertCreditUsage({
+                userInstance: this.#user,
+                creditType: "text_tokens",
+                creditSubType: "output",
+                usage: usage.output_tokens,
+                details: {place_in_code:"getDiagramFromOpenAI"}
+            })
+
+            const {content} = output[0]
+            input.push({
+                    role: "assistant",
+                    content: content,
+                });
+            const diagram_body = content[0].text;
+            let diagram_body_parsed;
+            try{
+                diagram_body_parsed = JSON.parse(diagram_body);
+                this.validateStructuredOutput_diagram(diagram_body_parsed)
+            } catch(err){
+                input.push({
+                    role: "developer",
+                    content: `Error: ${err.message}. Instructions: ${err.assistant_instructions}.`,
+                })
+                return {success:0,error:err.message}
+            }
+
+            //func.saveTextToTempFile(diagram_body_parsed.diagram_body,`diagramBody_${type}_${version}-${attempt}.txt`)
+            const diagram_input_html = func.diagramHTML(diagram_body_parsed.diagram_body);
+            const {renderedHTML} = await func.htmlRendered(diagram_input_html);
+
+            const renderedContentMatch = renderedHTML.match(/<div\s+class="mermaid">([\s\S]*?)<\/div>/i);
+            const renderedContent = renderedContentMatch[1];
+
+            if(renderedContent.includes("Описание диаграммы содержит ошибку:")){
+                input.push({
+                    role: "developer",
+                    content: `Error: ${renderedContent}. Instructions: Fix the error and form new diagram body.\n\n ${devPrompts.diagram_errors(type)}`,
+                })
+                return {success:0,error:renderedContent}
+            };
+
+            if(attempt>1){
+                this.improveInstructions(type,input)
+            }
+
+            const titleDetected = this.detectTitle(diagram_body_parsed.diagram_body);
+
+            if(titleDetected){
+                const errorMessage = `Title keyword detected in the diagram body.`;
+                input.push({
+                    role: "developer",
+                    content: `Error: ${errorMessage}. Instructions: Remove title from diagram and do not use 'title' keyword as labels.`,
+                })
+                return {success:0,error:errorMessage}
+            };
+
+            const diagramWithTitle = this.addTitleToDiagramBody(diagram_body_parsed.diagram_body,title,type);
+
+          return {success:1,diagram_body:diagramWithTitle,used_instructions:instructions}
+        }
+    }
+
+    async improveInstructions(type,input){
+
+        const model = "gpt-4.1"
+        const instructions = "";
+        const temperature = 1;
+        const output_format = { 
+            "type": "json_schema",
+            "name":"diagram",
+                "schema":{
+                "type": "object",
+                "properties": {
+                        "improved_general_instructions": { "type": "string" },
+                        "improved_type_specific_instructions": { "type": "string" },
+                        "improved_example": { "type": "string" }
+                    },
+                    "required": ["improved_general_instructions", "improved_type_specific_instructions", "improved_example"],
+                    "additionalProperties": false
+                } 
+            };
+        input.push({
+            role:"user",
+            content:"Well done! You fixed the error! Now improve:\n- general instructions\n- type-specific instructions\n- example \nto ensure syntactically correct diagram generation in further. Ensure good understandability by LLM. Make minimal but sufficient changes. You can delete instructions if you consider them misleading and you can add new instructions as well."
+        })
+
+        const improvedInstructions = await openAIApi.responseSync(model,instructions,input,temperature,[], "auto", output_format);
+        const {output,usage} = improvedInstructions;
+
+        mongo.insertCreditUsage({
+                        userInstance: this.#user,
+                        creditType: "text_tokens",
+                        creditSubType: "input",
+                        usage: usage.input_tokens,
+                        details: {place_in_code:"improveInstructions"}
+            });
+        mongo.insertCreditUsage({
+            userInstance: this.#user,
+            creditType: "text_tokens",
+            creditSubType: "output",
+            usage: usage.output_tokens,
+            details: {place_in_code:"improveInstructions"}
+        });
+
+        const {content} = output[0]
+        const newInstructionsText = content[0].text;
+        let newInstructionsJSON;
+        try{
+            newInstructionsJSON = JSON.parse(newInstructionsText);
+            this.validateStructuredOutput_newInstructions(newInstructionsJSON)
+        } catch(err){
+            return
+        }
+
+        const {improved_general_instructions, improved_type_specific_instructions, improved_example} = newInstructionsJSON;
+        await mongo.addCorrectionToInstructions("diagrams",type,{
+            general: improved_general_instructions,
+            type_specific: improved_type_specific_instructions,
+            example: improved_example,
+            timestamp: new Date()
+        });
+    }
+
+    detectTitle(diagram_body){
+        const titleRegex = /^\s*title/mi;
+        const match = diagram_body.match(titleRegex);
+        return match ? true : false;
+    }
+
+    addTitleToDiagramBody(diagram_body,title,type){
+
+        let bodyWithTitle = diagram_body;
+        if(["flowchart", "sequenceDiagram","classDiagram", "stateDiagram-v2", "erDiagram"].includes(type)){
+            const titleClear = title.replace(/:/g, " - ");
+            bodyWithTitle = `---
+title: ${titleClear}
+---
+${diagram_body}`;
+
+        } else if(type === "mindmap"){
+            return bodyWithTitle
+        } else if(["gantt", "journey", "pie", "quadrantChart"].includes(type)){
+
+            const titleString = `title ${title}`;
+            const lines = bodyWithTitle.split('\n');
+            const chartTypeIndex = lines.findIndex(line => line.split(' ')[0].trim() === type);
+            lines.splice(chartTypeIndex+1, 0,titleString);
+            
+            return lines.join('\n');
+
+        } else if(type === "xychart-beta"){
+
+            const titleCleaned = title.replace(/"/g, "'")
+            const titleString = `title "${titleCleaned}"`;
+            const lines = bodyWithTitle.split('\n');
+             const chartTypeIndex = lines.findIndex(line => line.split(' ')[0].trim() === type);
+            lines.splice(chartTypeIndex+1, 0,titleString);
+            return lines.join('\n');
+        }
+
+        return bodyWithTitle
+    }
+
+            cleanOfCodeBlock(text){
+
+            if(!text){
+                return text
+            }
+
+            const codeBlockRegex = /^[\s]*```([^\s]+)?\s+([\s\S]+?)^[\s]*```/gm;
+            const match = text.match(codeBlockRegex);
+
+            if (match) {
+                // Extract the content from group 2 (the code content)
+                const codeContent = codeBlockRegex.exec(text)[2];
+                return codeContent.trim();
+            } else {
+                // If not wrapped in code block, return as is
+                return text;
+            }
+        }
+
+        wrapInCodeBlock(text, language = "mermaid") {
+
+            return `\`\`\`${language}\n${text}\n\`\`\``;
+        }
+
         async getCurrencyRates(){
 
             this.validateRequiredFieldsFor_getCurrencyRates()
             const {exchange_rates} = this.#argumentsJson
-            const queryPromises = exchange_rates.map(query => this.handleExcengerateQuery(query))
+            const queryPromises = exchange_rates.map(query => this.handleExchangeRateQuery(query))
             const promiseResult = await Promise.all(queryPromises)
             
             return {success:1, result: promiseResult}
         }
 
-        async handleExcengerateQuery(query_params){
+        async handleExchangeRateQuery(query_params){
 
             const {date,from_currency,to_currency} = query_params;
             const api_result_xml = await cbrAPI.get_rate_by_date(date);
@@ -736,6 +1085,37 @@ async get_data_from_mongoDB_by_pipepine(table_name){
         }
 
 
+        validateRequiredFieldsFor_fetchUrlContent(){
+
+
+        const {urls} = this.#argumentsJson
+
+        let error = new Error();
+        error.assistant_instructions = "Fix the error and retry the function."
+
+        if(!urls || !Array.isArray(urls) || urls.length === 0){
+            throw new Error(`'urls' parameter is missing or not an array. Provide the value for the argument.`)
+        }
+
+        for(let i = 0; i < urls.length; i++){
+
+            const url = urls[i];
+
+            if(typeof url !== "string" || url.trim() === ""){
+                error.message = `'urls[${i}]' parameter is not a string. Provide the value for the argument.`
+                throw error
+            }
+
+            try {
+                new URL(url);
+            } catch (err) {
+                error.message = `'urls[${i}]' parameter is not a valid URL. Provide the value for the argument.`
+                throw error
+            }
+        }
+
+    }
+
 validateRequiredFieldsFor_currencyConverter(){
 
 
@@ -775,7 +1155,7 @@ const {conversion_queries} = this.#argumentsJson
 
 validateRequiredFieldsFor_webSearch(){
 
-    const {query_in_english} = this.#argumentsJson
+    const {query_in_english,user_location} = this.#argumentsJson
 
     let error = new Error();
     error.assistant_instructions = "Fix the error and retry the function."
@@ -785,6 +1165,99 @@ validateRequiredFieldsFor_webSearch(){
             throw error
     }
 
+    if(user_location && typeof user_location == "object"){
+        const {city,country} = user_location;
+        if(!city || city === ""){
+            error.message = `'user_location.city' parameter is missing. Provide the value for the argument.`
+            throw error
+        }
+        if(!country || country === ""){
+            error.message = `'user_location.country' parameter is missing. Provide the value for the argument.`
+            throw error
+        }
+    }
+
+}
+
+
+validateStructuredOutput_newInstructions(textParsed){
+
+const {improved_general_instructions, improved_type_specific_instructions, improved_example} = textParsed;
+
+let error = new Error();
+error.assistant_instructions = "Fix the error and regenerate output."
+
+if(!improved_general_instructions || typeof improved_general_instructions !== "string" || improved_general_instructions.trim() === ""){
+    error.message = `'improved_general_instructions' parameter is missing or not a string. Provide the value for the argument.`
+    throw error
+}
+
+if(!improved_type_specific_instructions || typeof improved_type_specific_instructions !== "string" || improved_type_specific_instructions.trim() === ""){
+    error.message = `'improved_type_specific_instructions' parameter is missing or not a string. Provide the value for the argument.`
+    throw error
+}
+
+if(!improved_example || typeof improved_example !== "string" || improved_example.trim() === ""){
+    error.message = `'improved_example' parameter is missing or not a string. Provide the value for the argument.`
+    throw error
+}
+
+}
+
+validateStructuredOutput_diagram(textParsed){
+
+const {diagram_body} = textParsed;
+
+let error = new Error();
+error.assistant_instructions = "Fix the error and regenerate output."
+
+if(!diagram_body || typeof diagram_body !== "string" || diagram_body.trim() === ""){
+    error.message = `'diagram_body' parameter is missing or not a string. Provide the value for the argument.`
+    throw error
+}
+
+}
+
+validateRequiredFieldsFor_createMermaidDiagrams(){
+
+const {type,data,title,styles,orientation} = this.#argumentsJson
+const {parameters} = this.#functionConfig
+
+let error = new Error();
+error.assistant_instructions = "Fix the error and retry the function."
+
+    if(!type || type === ""){
+        error.message = `'type' parameter is missing. Provide the value for the argument.`
+        throw error
+    }
+
+    if(!title || title === ""){
+        error.message = `'title' parameter is missing. Provide the value for the argument.`
+        throw error
+    }
+
+    const types = parameters?.properties?.type?.enum;
+
+    if(!types.includes(type)){
+        error.message = `'type' parameter must be one of the following: ${types.join(", ")}. Provide the correct value for the argument.`
+        throw error
+    }
+
+    if(!data || data === ""){
+        error.message = `'data' parameter is missing. Provide the value for the argument.`
+        throw error
+    }
+
+    if(!styles || styles === ""){
+        error.message = `'styles' parameter is missing. Provide the value for the argument.`
+        throw error
+    }
+
+    if(!orientation || orientation === ""){
+        error.message = `'orientation' parameter is missing. Provide the value for the argument.`
+        throw error
+    }
+    
 }
 
 validateRequiredFieldsFor_getCurrencyRates(){
@@ -1085,12 +1558,9 @@ validateRequiredFieldsFor_createExcelFile(){
         async runPythonCode(){
 
             try{
+             let result;               
+             const codeToExecute = this.#argumentsJson.python_code
                 
-            let result;           
-            
-            const codeToExecute = this.#argumentsJson.python_code
-        
-            
             try{
             result = await func.executePythonCode(codeToExecute)
 
@@ -1210,8 +1680,8 @@ validateRequiredFieldsFor_createExcelFile(){
             results
         }
 
-        const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
-        console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
+        const  numberOfTokens = func.countTokensTiktokenJS(concatenatedText,this.#user.currentModel)
+        //console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
 
         if(numberOfTokens > this.#tokensLimitPerCall){
             return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, 
@@ -1253,7 +1723,6 @@ validateRequiredFieldsFor_createExcelFile(){
 
                 const extractFunctions = resources.map((resource,index) => this.extractTextFromFileWraper(resource.fileUrl,resource.fileMimeType,resource.fileSizeBytes,index))
                 
-                this.progressStatusChange("чтение файла")
                 let results = await Promise.all(extractFunctions)
                 
                 if(this.#isCanceled){return}
@@ -1281,10 +1750,8 @@ validateRequiredFieldsFor_createExcelFile(){
                     metadataText = results.map((obj,index) => `Part ${index}\n${JSON.stringify(obj.metadata,null,2)}`).join("\n");
                 }
 
-                this.progressStatusChange("проверка размера текста")
-                const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
-                console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
-                
+                const  numberOfTokens = func.countTokensTiktokenJS(concatenatedText,this.#user.currentModel)
+                //console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
                 if(numberOfTokens > this.#tokensLimitPerCall){
                     return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, 
                     error: `The volume of the file content (${numberOfTokens} tokens) exceeds the token limit (${this.#tokensLimitPerCall} tokens) and cannot be included in the dialogue.`, 
@@ -1335,37 +1802,91 @@ validateRequiredFieldsFor_createExcelFile(){
         return outputs.join('\n');
         }
 
-    async fetchUrlContentRouter(){
+    async fetchUrlContent(url,tokenLimitPerUrl){
 
-        try{
-    
-        const url = this.#argumentsJson.url
-        const myUrlResource = new UrlResource(url)
-    
-        let replyBody;
-        let numberOfTokens;
-   
-        try{
-            replyBody = await myUrlResource.getUrlBody()
-            numberOfTokens = await func.countTokensLambda(replyBody,this.#user.currentModel)
-            console.log("numberOfTokens",numberOfTokens)
-            console.log("this.#tokensLimitPerCall",this.#tokensLimitPerCall)
-            if(numberOfTokens >this.#tokensLimitPerCall){
-                return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, error: "volume of the url content is too big to fit into the dialogue", instructions:"Inform the user about the error details"}
+    try{
+        const {html,screenshot} = await func.getPageHtml(url,{delay_ms:5000,timeout_ms:this.#timeout_ms});
+        const textReply = func.convertHtmlToText(html);
+        const numberOfTokens = func.countTokensTiktokenJS(textReply,this.#user.currentModel);
+       
+        const result = {
+            text:textReply,
+            url: url,
+            screenshot: screenshot,
+            content_token_count: numberOfTokens,
+            token_limit_exceeded: numberOfTokens > tokenLimitPerUrl,
+        }
+
+        if(result.token_limit_exceeded){
+            result.success = 0;
+            result.error = `The volume of the URL content (${numberOfTokens} tokens) exceeds the token limit (${tokenLimitPerUrl} tokens) and cannot be included in the dialogue.`;
+            delete result.text;
+        } else {
+            result.success = 1;
+        }
+
+        return result;
+    } catch(err){
+        
+        return{success:0,error:`Failed to fetch URL content: ${err.message}`,screenshot:null}
+    }
+    }
+
+    async fetchUrlContentRouter(){
+ 
+        this.validateRequiredFieldsFor_fetchUrlContent()
+        const {urls} = this.#argumentsJson
+
+   try{
+       const tokenLimitPerUrl = this.#tokensLimitPerCall / urls.length;
+       const urlHandlers = urls.map((url) => this.fetchUrlContent(url,tokenLimitPerUrl));
+       const results = await Promise.all(urlHandlers);
+
+       const successfullResults = results.filter(result => result.success === 1).length;
+       const screenshots = results.map(result => result.screenshot).filter(screenshot => screenshot !== null);
+       
+       const resultWithoutScreenshot = results.map(result => { delete result.screenshot; return result; })
+
+       if(successfullResults === 0){
+           return {success:0, 
+                   error:"All URL fetch attempts failed.",
+                   results: resultWithoutScreenshot,
+                   instructions:"(1) Inform the user that all URLs fetches failed. Provide details about each URL and the respective content. (2) Consider using page screenshots provided in the next user message.",
+                   supportive_data:{
+                    screenshots: screenshots,
+                   }
+                };
+       } else if(successfullResults === urls.length){
+
+              return {success:1, 
+                     results: resultWithoutScreenshot,
+                     instructions:"Inform the user that all URLs were successfully fetched. Provide details about each URL and the respective content. Also, consider using page screenshots provided in the next user message.",
+                     supportive_data:{
+                      screenshots: screenshots,
+                     }
+                 };
+
+       } else {
+
+            const failedResults = results.filter(result => result.success === 0);
+            const successfulResults = results.filter(result => result.success === 1);
+
+            return {success:0, 
+                    error:`Some URLs fetch attempts failed. Successful fetches: ${successfulResults.length}, failed fetches: ${failedResults.length}.`,
+                    results: resultWithoutScreenshot,
+                    instructions:"(1) Inform the user about the successful and failed URL fetch attempts. Provide details about each URL and the respective content. (2) Consider using page screenshots provided in the next user message.",
+                    supportive_data:{
+                        screenshots: screenshots
+                    }
+                };
             }
 
         } catch(err){
-
-            return {success:0,error:`${err.message} ${err.stack}`,instructions:"Inform the user about the error details in simple and understandable for ordinary users words."}
-        }
-        
-        return {success:1, content_token_count:numberOfTokens, instructions:"(1) Explicitly inform the user if in you completion you use info from the url content and give relevant references (2) your should use urls from the content to browse further if it is needed for the request",result:replyBody}
-    
-            } catch(err){
                 err.place_in_code = err.place_in_code || "fetchUrlContentRouter";
                 throw err;
             }
-        };
+
+        }
 
 
     craftPromptFromArguments(){
@@ -1409,16 +1930,17 @@ validateRequiredFieldsFor_createExcelFile(){
 
     async downloadFileBufferFromTgm(tgmFileId){
     
-      
       const tgm_url = await this.#replyMsg.getUrlByTgmFileId(tgmFileId)
+      const mimeType = func.getMimeTypeFromUrl(tgm_url)
+      console.log("tgm_url",tgm_url,"mimeType",mimeType)
       const downloadStream = await func.startFileDownload(tgm_url)
       const buffer = await func.streamToBuffer(downloadStream.data)
-      
-      return buffer
+
+      return {buffer,mimeType}
     }
 
     async uploadFileToS3FromTgm(tgmFileId,userInstance){
-
+        
         const tgm_url = await this.#replyMsg.getUrlByTgmFileId(tgmFileId)
         const fileName = func.extractFileNameFromURL(tgm_url)
         const fileExtension = func.extractFileExtention(fileName)
@@ -1444,11 +1966,13 @@ validateRequiredFieldsFor_createExcelFile(){
 
             const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
             
-            const [aws_url, buffer] = await Promise.all([
+            
+
+            const [aws_url, {buffer,mimeType}] = await Promise.all([
                 this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
                 this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
             ])
-            const {sizeBytes} = func.calculateFileSize(buffer)
+            const sizeBytes = sent_result.photo.at(-1).file_size
 
             const buttons = generate_result.mdjMsg.options
             const labels = buttons.map(button => button.label)
@@ -1475,6 +1999,7 @@ validateRequiredFieldsFor_createExcelFile(){
                         image_url:aws_url,
                         size_bites:sizeBytes,
                         base64:buffer.toString('base64'),
+                        mimetype: mimeType
                     }
                 };
             };
@@ -1490,7 +2015,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,buttonPushed.prompt)
 
-                const [aws_url, buffer] = await Promise.all([
+                const [aws_url, {buffer,mimeType}] = await Promise.all([
                     this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
                     this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
                 ])
@@ -1518,7 +2043,8 @@ validateRequiredFieldsFor_createExcelFile(){
                             midjourney_prompt:buttonPushed.prompt,
                             image_url:aws_url,
                             size_bites:sizeBytes,
-                            base64:buffer.toString('base64')
+                            base64:buffer.toString('base64'),
+                            mimetype: mimeType
                         }
                     };
             }
@@ -1534,7 +2060,7 @@ validateRequiredFieldsFor_createExcelFile(){
                 
                 const sent_result = await  this.#replyMsg.sendMdjImage(generate_result,prompt)
 
-                const [aws_url, buffer] = await Promise.all([
+                const [aws_url, {buffer,mimeType}] = await Promise.all([
                     this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
                     this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
                 ])
@@ -1561,7 +2087,8 @@ validateRequiredFieldsFor_createExcelFile(){
                             midjourney_prompt:prompt,
                             image_url:aws_url,
                             size_bites:sizeBytes,
-                            base64:buffer.toString('base64')
+                            base64:buffer.toString('base64'),
+                            mimetype: mimeType
                         }
                     };
                 };

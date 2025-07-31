@@ -46,7 +46,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
   if(current_regime==="translator" || current_regime === "texteditor"){
         await resetNonDialogueHandler(requestMsgInstance)
-        await this.commitInitialSystemPromptToDialogue(current_regime)
+        await dialogueInstance.commitInitialSystemPromptToDialogue(current_regime)
   }
 
   await requestMsgInstance.getFileLinkFromTgm()
@@ -111,7 +111,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
     const url = s3UploadResult.Location
     await dialogueInstance.commitFileToDialogue(url)
-    // await dialogueInstance.sendSuccessFileMsg(devPrompt)
+    
     if(fileCaption){
       await Promise.all([
        dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
@@ -130,18 +130,30 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   } else if(requestMsgInstance.fileType === "document"){
 
     const isAllowedFileType = requestMsgInstance.isAllowedFileType()
-    const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
 
-    if(s3UploadResult.success === 0 || !isAllowedFileType){
+    const fileMimeType = requestMsgInstance.fileMimeType;
+
+    const [s3UploadResult,downloadBufferResult] = await Promise.all([
+      uploadFileToS3Handler(requestMsgInstance),
+      downloadFileBufferFromTgm(requestMsgInstance)
+    ])
+
+    if(s3UploadResult.success === 0 || downloadBufferResult.success === 0 || !isAllowedFileType){
       //Add info to the dialogue and notify user about problems with the file upload
       await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
       await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
       return responses;
     }
-
     const url = s3UploadResult.Location
-    const devPrompt = await dialogueInstance.commitFileToDialogue(url)
-    // await dialogueInstance.sendSuccessFileMsg(devPrompt)
+
+    if(fileMimeType === "application/pdf"){
+        const {numpages} = await otherFunctions.parsePDF(downloadBufferResult.buffer)
+        const base64 = downloadBufferResult.buffer.toString('base64')
+        await dialogueInstance.commitFileToDialogue(url,base64,numpages)
+    } else {
+        await dialogueInstance.commitFileToDialogue(url)
+    }
+
     if(fileCaption){
       await Promise.all([
         dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
@@ -185,8 +197,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       if(fileCaption){
         fileComment.user_prompt = fileCaption
       }
-      await dialogueInstance.commitImageToDialogue(url,base64,fileComment,sizeBytes)
-  
+    await dialogueInstance.commitImageToDialogue(fileComment,{url,base64,sizeBytes,sizeBytes,mimetype:downloadBufferResult.mimeType})
 
     if(fileCaption){
       dialogueInstance.triggerCallCompletion()
@@ -199,14 +210,17 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 }
 
 async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
+  
   let responses =[];
 
   switch(requestMsgInstance.user.currentRegime) {
     case "chat":
+      console.time("msgRouter.textMsgRouter.chat before completion trigger")
       await Promise.all([
         dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance),
         dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
       ])
+      console.timeEnd("msgRouter.textMsgRouter.chat before completion trigger")
       dialogueInstance.triggerCallCompletion()
       
     break;
@@ -237,7 +251,7 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
 }
 
 async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgInstance){
-
+ console.time("textCommandRouter")
   const cmpName = requestMsgInstance.commandName
   const userInstance = requestMsgInstance.user;
   const isRegistered = userInstance.isRegistered
@@ -251,7 +265,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     regime: userInstance.currentRegime,
     featureType: "command"
   })
-
+  console.timeEnd("textCommandRouter")
   if(cmpName==="start"){
 
     if(isRegistered){
@@ -282,10 +296,11 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     }
 
   }  else if(cmpName==="resetchat" || cmpName==="Перезапустить диалог"){
-
+    console.time("textCommandRouter to reset")
     const response = await dialogueInstance.resetDialogue()
 
     responses.push(response)
+    console.timeEnd("textCommandRouter to reset")
 
   } else if(cmpName==="unregister"){
     const response = await unregisterHandler(requestMsgInstance);
@@ -359,9 +374,13 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       context:otherFunctions.getLocalizedPhrase("imagine",userInstance.language_code,placeholders)
     }
     
-    await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,outcome.supportive_data?.base64,fileComment,outcome.supportive_data?.size_bites)
-    
-  
+    await dialogueInstance.commitImageToDialogue(fileComment,{
+      url:outcome.supportive_data?.image_url,
+      base64:outcome.supportive_data?.base64,
+      sizeBytes:outcome.supportive_data?.size_bites,
+      mimetype:outcome.supportive_data?.mimetype
+    })
+
   } else {
       dialogueInstance.triggerCallCompletion();
     }
@@ -495,6 +514,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
    
     const filename = `file_${String(requestMsg.refMsgId)}.html`
     const formatedHtml = await otherFunctions.markdownToHtmlPure(text,filename)
+    
     const filebuffer = otherFunctions.generateTextBuffer(formatedHtml)
     const mimetype = "application/octet-stream"
     const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
@@ -571,8 +591,9 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       text: "Скрыть",
       callback_data: JSON.stringify(new_callback_data),
     };
+
     const downloadPDF_button = {
-      text: "Отчет о выполнии в PDF",
+      text: "Отчет о выполнении в PDF",
       callback_data: JSON.stringify({e:"hashToPDF",d:callback_data_input}),
     };
 
@@ -697,9 +718,14 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       public_url:outcome.supportive_data.image_url,
       midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
-    
-    await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,outcome.supportive_data?.base64,fileComment,outcome.supportive_data?.size_bites)
-    
+
+    await dialogue.commitImageToDialogue(fileComment,{
+      url:outcome.supportive_data.image_url,
+      base64:outcome.supportive_data?.base64,
+      sizeBytes:outcome.supportive_data?.size_bites,
+      mimetype:outcome.supportive_data?.mimetype
+    });
+
     } else {
       dialogue.triggerCallCompletion();
     }
@@ -833,17 +859,19 @@ async function adminHandler(requestMsgInstance) {
 async function downloadFileBufferFromTgm(requestMsgInstance){
 
   try{
-  const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
-  const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
-  
-  return {...{buffer},...{success:1}}
-  } catch(err){
 
+    const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+    const mimeType = otherFunctions.getMimeTypeFromUrl(requestMsgInstance.fileLink)
+    const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
+
+  return {...{buffer},...{success:1},...{mimeType}}
+
+  } catch(err){
     requestMsgInstance.uploadFileError = err.message
     requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. при обработке файла возникла ошибка.`
     const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
     requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
-    
+    console.log("downloadFileBufferFromTgm. File upload failed:", requestMsgInstance.uploadFileError)
     return {success:0}
   }
 }
@@ -864,7 +892,7 @@ return {...{filename},...uploadResult,...{success:1}}
   requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. при обработке файла возникла ошибка.`
   const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
   requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
-  
+  console.log("uploadFileToS3Handler. File upload failed:", requestMsgInstance.uploadFileError)
   return {success:0}
 }
 }

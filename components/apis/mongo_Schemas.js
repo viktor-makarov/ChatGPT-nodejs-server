@@ -284,7 +284,9 @@ const TelegramDialogSheema = new Schema(
     fileExtention:{ type: String },
     fileMimeType:{ type: String },
     fileAIDescription: { type: String },
-    fileSizeBytes: { type: String },
+    fileSizeBytes: { type: Number },
+    pdfSizePages: { type: Number },
+    pdf_input: { type: Boolean},
     fileDurationSeconds: { type: String },
     function_name: { type: String },
     function_arguments: { type: Object },
@@ -329,6 +331,9 @@ const DialogMetaSheema = new Schema(
     image_input_bites: { type: Number},
     image_input_count: { type: Number},
     image_input_limit_exceeded: { type: Boolean},
+    pdf_input_bites: { type: Number},
+    pdf_input_pages: { type: Number},
+    pdf_input_limit_exceeded: { type: Boolean},
     function_calls: {type: Object},
   },
   { collection: appsettings.mongodb_names.col_dialogue_meta }
@@ -363,6 +368,33 @@ const ResponseEventsSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_response_events }
 );  
 
+const TestDiagramSheema = new Schema(
+  {
+    datetimeUTC: {
+      type: Date,
+      default: Date.now,
+    },
+    test_case: { type: String},
+    model: { type: String },
+    type: { type: String },
+    version: { type: Number },
+    success: { type: Boolean },
+    attempts: { type: Number },
+    run_id: { type: String }
+
+  },
+  { collection: appsettings.mongodb_names.coll_test_diagram_log }
+);  
+
+const SelfCorrectedInstructionsSheema = new Schema(
+  {
+    domain: { type: String},
+    type: { type: String },
+    instructions: { type: Object, default: []},
+  },
+  { collection: appsettings.mongodb_names.coll_self_corrected_instructions }
+);
+
 module.exports = {
   ProfileSheema,
   LogsSheema,
@@ -382,5 +414,7 @@ module.exports = {
   VoicesElevenLabsSheema,
   ModelsElevenLabsSheema,
   ExchangeRates,
-  ResponseEventsSheema
+  ResponseEventsSheema,
+  TestDiagramSheema,
+  SelfCorrectedInstructionsSheema
 };

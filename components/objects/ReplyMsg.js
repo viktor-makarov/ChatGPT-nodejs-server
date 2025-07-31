@@ -4,6 +4,7 @@ const otherFunctions = require("../common_functions");
 const ErrorHandler = require("../errorHandler");
 const FormData = require("form-data");
 const axios = require("axios");
+const mongo = require("../apis/mongo.js");
 
 class ReplyMsg extends EventEmitter {
 
@@ -20,11 +21,7 @@ class ReplyMsg extends EventEmitter {
 
 #chatId;
 #lastMsgSentId
-
-#sendAttempts=0;
-
 #completionRegenerateButtons;
-
 
 #versionBtnsAllias = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 
@@ -119,10 +116,36 @@ async getUrlByTgmFileId(fileId){
   return await this.#botInstance.getFileLink(fileId)
 }
 
+async insertFunctionUsage(object){
+
+  try{
+  await mongo.insertFunctionUsagePromise(object)
+  } catch(err){
+        ErrorHandler.main(
+            {
+              replyMsgInstance:this,
+              error_object:err
+            })
+  }
+}
+
+async getDetailsByTgmFileId(fileId){
+  const result =  await this.#botInstance.getFile(fileId)
+  console.log("File details:", result)
+  return result
+}
+
 async sendStatusMsg(){
    const result = await this.sendToNewMessage("...")
    return result
 }
+
+async sendStatusMsg(){
+   const result = await this.sendToNewMessage("...")
+   return result
+}
+
+
 
 async sendTelegramWaitMsg(seconds){
       const text = msqTemplates.telegram_wait_time.replace(

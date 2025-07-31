@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const scheemas = require("./mongo_Schemas.js");
 const moment = require("moment-timezone");
+const { error } = require("console");
 const fs = require("fs").promises;
 
 //Models
@@ -25,6 +26,51 @@ const elevenlabs_models_collection = global.mongoConnection.model(global.appsett
 
 const exchange_rates_international_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_exchange_rates_international,scheemas.ExchangeRates);
 const response_events_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_response_events,scheemas.ResponseEventsSheema);
+const test_diagram_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_test_diagram_log,scheemas.TestDiagramSheema);
+const self_corrected_instructions_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_self_corrected_instructions,scheemas.SelfCorrectedInstructionsSheema);
+
+
+async function getSelfCorrectedInstructions(domain, type) {
+  try {
+    const result = await self_corrected_instructions_collection.findOne(
+      { domain: domain, type: type },
+      { _id: 0, __v: 0 }
+    ).lean();
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getSelfCorrectedInstructions";
+    throw err;
+  }
+}
+
+async function addCorrectionToInstructions(domain, type, newInstruction){
+  try {
+    const result = await self_corrected_instructions_collection.updateOne(
+      { domain: domain, type: type },
+      { $push: { instructions: newInstruction } },
+      { upsert: true }
+    );
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "addCorrectionToInstructions";
+    throw err;
+  }
+}
+
+async function saveNewTestDiagram(object){
+  try {
+    const newTestDiagram = new test_diagram_collection(object);
+    return await newTestDiagram.save();
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveNewTestDiagram";
+      throw err;
+  }
+}
+
 
 
 async function getEventsList() {
@@ -34,6 +80,7 @@ async function getEventsList() {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getEventsList";
     throw err;
   }
 }
@@ -54,6 +101,7 @@ async function saveNewEvent(event){
     return result;
   } catch (err) {
       err.code = "MONGO_ERR";
+      err.place_in_code = "saveNewEvent";
       throw err;
   }
 }
@@ -64,6 +112,7 @@ async function getExchangeRateInternational(time_last_update_unix){
     return await exchange_rates_international_collection.findOne({ time_last_update_unix: time_last_update_unix }, { _id: 0, __v: 0 }).lean()
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getExchangeRateInternational";
     throw err;
   }
 }
@@ -85,6 +134,7 @@ async function saveExchangeRateInternational(object){
     return result;
   } catch (err) {
       err.code = "MONGO_ERR";
+      err.place_in_code = "saveExchangeRateInternational";
       throw err;
   }
 }
@@ -97,6 +147,7 @@ async function getFunctionQueueByName(queue_name){
     return await function_queue_collection.findOne({ name: queue_name }, { _id: 0, __v: 0 }).lean()
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getFunctionQueueByName";
     throw err;
   }
 }
@@ -107,6 +158,7 @@ async function removeFunctionFromQueue(function_id){
     return await function_queue_collection.deleteOne({ function_id: function_id });
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "removeFunctionFromQueue";
     throw err;
   }
 
@@ -133,6 +185,7 @@ async function addFunctionToQueue(queue_name,function_id,max_concurrent){
 
   } catch(err){
     err.code = "MONGO_ERR";
+    err.place_in_code = "addFunctionToQueue";
     throw err;
   } finally {
     session.endSession();
@@ -146,6 +199,7 @@ async function createDialogueMeta(object){
     return await newDialogieMetaObject.save();
   } catch (err) {
       err.code = "MONGO_ERR";
+      err.place_in_code = "createDialogueMeta";
       throw err;
   }
 }
@@ -155,6 +209,7 @@ async function deleteDialogueMeta(userid){
     return await dialog_meta_collection.deleteMany({ userid: userid });
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "deleteDialogueMeta";
     throw err;
   }
 }
@@ -168,6 +223,7 @@ async function updateDialogueMeta(userid,object){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateDialogueMeta";
     throw err;
   }
 }
@@ -181,6 +237,7 @@ async function resetAllInProgressDialogueMeta(){
     return result.modifiedCount || 0
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "resetAllInProgressDialogueMeta";
     throw err;
   }
 }
@@ -190,6 +247,7 @@ async function readDialogueMeta(userid){
     return  await dialog_meta_collection.findOne({ userid: userid },{ _id: 0,__v:0}).lean()
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "readDialogueMeta";
     throw err;
   }
 };
@@ -206,6 +264,7 @@ async function getKwgItemBy(id){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getKwgItemBy";
     throw err;
   }
 };
@@ -224,6 +283,7 @@ async function getKwgItemsForUser(user){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getKwgItemsForUser";
     throw err;
   }
 };
@@ -232,7 +292,7 @@ async function getKwgItemsForUser(user){
 
 async function saveHash(hash,json){
   try {
-
+    
     return await hash_storage.updateOne(
       { hash: hash },
       {hash:hash,
@@ -242,6 +302,7 @@ async function saveHash(hash,json){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "saveHash";
     throw err;
   }
 };
@@ -264,6 +325,7 @@ async function getJsonBy(hash){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getJsonBy";
     throw err;
   }
 };
@@ -297,6 +359,7 @@ async function insert_mdj_msg(msg,userInstance){
 
 } catch (err) {
   err.code = "MONGO_ERR";
+  err.place_in_code = "insert_mdj_msg";
   throw err;
 }
 };
@@ -310,6 +373,7 @@ async function get_mdj_msg_byId(msgId){
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "get_mdj_msg_byId";
     throw err;
   }
 };
@@ -324,6 +388,7 @@ async function insert_details_logPromise(object,place_in_code) {
     return await newLog.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_details_logPromise";
     throw err;
   }
 }
@@ -336,6 +401,7 @@ async function insert_error_logPromise(errorJSON) {
     return await newLog.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_error_logPromise";
     throw err;
   }
 }
@@ -368,7 +434,7 @@ async function insert_reg_eventPromise(
     return await newRegEvent.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-
+    err.place_in_code = "insert_reg_eventPromise";
     throw err;
   }
 }
@@ -392,8 +458,8 @@ async function insertFunctionUsagePromise(obj){
     return await newFunctionUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insertFunctionUsagePromise";
 
-    throw err;
   }
 };
 
@@ -413,7 +479,7 @@ async function insertFeatureUsage(obj){
     return await newFeatureUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-
+    err.place_in_code = "insertFeatureUsage";
     throw err;
   }
 };
@@ -435,7 +501,7 @@ async function insertCreditUsage(obj){
     return await newCreditUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-
+    err.place_in_code = "insertCreditUsage";
     throw err;
   }
 };
@@ -449,7 +515,7 @@ const queryTokensLogsByAggPipeline = async (agg_pipeline) => {
     return await token_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
-
+    err.place_in_code = "queryTokensLogsByAggPipeline";
     throw err;
   }
 };
@@ -460,6 +526,7 @@ const queryLogsErrorByAggPipeline = async (agg_pipeline) => {
     return await error_log_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "queryLogsErrorByAggPipeline";
     throw err;
   }
 };
@@ -469,6 +536,7 @@ const functionsUsageByAggPipeline = async (agg_pipeline) => {
     return await function_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "functionsUsageByAggPipeline";
     throw err;
   }
 };
@@ -489,6 +557,7 @@ async function insertTokenUsage(obj){
     return await newTokenUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insertTokenUsage";
     throw err;
   }
 };
@@ -505,6 +574,7 @@ async function updateCompletionInDb(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateCompletionInDb";
     throw err;
   }
 };
@@ -522,6 +592,7 @@ async function addTokensUsage(sourceid,numberOfTokens){
 
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "addTokensUsage";
     throw err;
   }
 }
@@ -539,6 +610,7 @@ async function updateManyEntriesInDbById(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateManyEntriesInDbById";
     throw err;
   }
 };
@@ -557,6 +629,7 @@ async function addMsgIdToToolCall(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "addMsgIdToToolCall";
     throw err;
   }
 };
@@ -573,6 +646,7 @@ async function getExtractedTextByReff(content_reff){
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getExtractedTextByReff";
     throw err;
   }
 }
@@ -588,6 +662,7 @@ async function getUploadedFilesBySourceId(sourceid_list){
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getUploadedFilesBySourceId";
     throw err;
   }
 }
@@ -601,6 +676,7 @@ async function upsertPrompt(promptObj){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "upsertPrompt";
     throw err;
   }
 };
@@ -616,6 +692,7 @@ async function updateInputMsgTokenUsage(documentId,tokens){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateInputMsgTokenUsage";
     throw err;
   }
 };
@@ -640,6 +717,7 @@ async function insertFunctionObject(obj){
     return result
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insertFunctionObject";
     throw err;
   }
 };
@@ -655,6 +733,7 @@ const upsertCompletionPromise = async (CompletionObject) => {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "upsertCompletionPromise";
     throw err;
   }
 };
@@ -678,6 +757,7 @@ async function  updateToolCallResult(result){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateToolCallResult";
     throw err;
   }
 };
@@ -701,6 +781,7 @@ const upsertProfilePromise = async (msg) => {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "upsertProfilePromise";
     throw err;
   }
 };
@@ -725,6 +806,7 @@ async function registerUser(requestMsgInstance,token) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "registerUser";
     throw err;
   }
 }
@@ -760,6 +842,7 @@ async function registerBotUser(botInfo){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "registerBotUser";
     throw err;
   }
 }
@@ -777,6 +860,7 @@ async function insert_blank_profile(newToken){
     return await newBlankProfile.save();
   } catch (err) {
       err.code = "MONGO_ERR";
+      err.place_in_code = "insert_blank_profile";
       throw err;
   }
 }
@@ -800,6 +884,7 @@ const insert_profilePromise = async (msg) => {
       return err.keyValue;
     } else {
       err.code = "MONGO_ERR";
+      err.place_in_code = "insert_profilePromise";
       throw err;
     }
   }
@@ -810,6 +895,7 @@ const updateOnePromise = async (model, filter, update, options) => {
     return await model.updateOne(filter, update, options);
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateOnePromise";
     throw err;
   }
 };
@@ -829,6 +915,7 @@ const getDocByTgmBtnsFlag = async (userid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getDocByTgmBtnsFlag";
     throw err;
   }
 };
@@ -849,6 +936,7 @@ const getDocByTgmRegenerateBtnFlag = async (userid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getDocByTgmRegenerateBtnFlag";
     throw err;
   }
 };
@@ -867,6 +955,7 @@ async function getLastCompletion(userid, regime) {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getLastCompletion";
     throw err;
   }
 }
@@ -887,6 +976,7 @@ const getDialogueFromDB = async (userid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getDialogueFromDB";
     throw err;
   }
 };
@@ -961,6 +1051,7 @@ async function insert_permissions_migrationPromise(msg) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_permissions_migrationPromise";
     throw err;
   }
 }
@@ -978,6 +1069,7 @@ async function insert_adminRolePromise(requestMsgInstance) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_adminRolePromise";
     throw err;
   }
 }
@@ -994,6 +1086,7 @@ async function insert_read_sectionPromise(requestMsgInstance) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_read_sectionPromise";
     throw err;
   }
 }
@@ -1010,6 +1103,7 @@ async function insert_read_section_migrationPromise(msg) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_read_section_migrationPromise";
     throw err;
   }
 }
@@ -1061,6 +1155,7 @@ const setDefaultVauesForNonExiting = async () => {
     return { modifiedCount: totalModified, matchedCount: totalMatched, processedCount };
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "setDefaultVauesForNonExiting";
     throw err;
   }
 };
@@ -1383,6 +1478,7 @@ const getCompletionById = async (sourceid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getCompletionById";
     throw err;
   }
 };
@@ -1425,6 +1521,7 @@ async function UpdateSettingPromise(requestMsgInstance, pathString, value){
     return res;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "UpdateSettingPromise";
     throw err;
   }
 };
@@ -1443,6 +1540,7 @@ async function updateCurrentRegimeSetting(requestMsgInstance){
       if (!err.code) { // Only override code if it's not already set
           err.code = "MONGO_ERR";
       }
+      err.place_in_code = "updateCurrentRegimeSetting";
       throw err;
   }
 };
@@ -1530,6 +1628,7 @@ async function deleteMsgFromDialogById (requestMsgInstance){
     return res;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "deleteMsgFromDialogById";
     throw err;
   }
 };
@@ -1557,6 +1656,8 @@ const deleteDialogByUserPromise = (userid, regime) => {
         }
       });
     } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "deleteDialogByUserPromise";
       reject(err);
     }
   });
@@ -1579,7 +1680,8 @@ const delete_profile_by_id_arrayPromise = (profileIdArray) => {
         }
       );
     } catch (err) {
-
+      err.code = "MONGO_ERR";
+      err.place_in_code = "delete_profile_by_id_arrayPromise";
       reject(err);
     }
   });
@@ -1661,5 +1763,8 @@ module.exports = {
   getDocByTgmRegenerateBtnFlag,
   saveNewEvent,
   getEventsList,
-  addTokensUsage
+  addTokensUsage,
+  saveNewTestDiagram,
+  addCorrectionToInstructions,
+  getSelfCorrectedInstructions
 };

@@ -21,8 +21,14 @@ module.exports = {
                     "o1":{
                         "name":"O1",
                     },
+                    "o3":{
+                        "name":"O3",
+                    },
                     "o3-mini":{
                         "name":"O3 Мини",
+                    },
+                    "o4-mini":{
+                        "name":"O4 Мини",
                     },
                     "back":{
                         "name":"<< Назад"

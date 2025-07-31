@@ -31,7 +31,8 @@ async function GetLibrariesFromAPIs() {
     const oai_models_array = await openAIApi.getModels(); //обновляем список моделей в базе
     const write_oai_models = await mongo.update_models_listPromise(oai_models_array.data);
     console.log(new Date(), `Success! OpenAI models updated: ${write_oai_models}`);
-
+    
+    
     const elevenlabs_models_array = await elevenLabsApi.getAvailableModels(); //обновляем список моделей в базе
     global.elevenlabs_models = otherFunctions.arrayToObjectByKey(elevenlabs_models_array,"modelId")
     const write_elevenlabs_models = await mongo.update_elevenlabs_models_list(elevenlabs_models_array);
@@ -96,6 +97,7 @@ await botInstance.answerInlineQuery(id, results);
 }
 
 async function eventRouter(event,botInstance){
+  console.time("mainRouter.eventRouter before switch");
 
   let user,requestMsg,replyMsg;
   
@@ -139,7 +141,7 @@ async function eventRouter(event,botInstance){
     }
    
     let responses = [];
-      
+      console.timeEnd("mainRouter.eventRouter before switch");
       switch(requestMsg.inputType) {
         case "text_command":
           responses = await telegramCmdHandler.textCommandRouter(requestMsg,dialogue,replyMsg)
@@ -160,6 +162,8 @@ async function eventRouter(event,botInstance){
             responses = [{text:msqTemplates.unknown_msg_type}]
     };
 
+
+    console.time("mainRouter.eventRouter after switch");
   for (const response of responses){
 
     if(response.operation === "updatePinnedMsg" ){
@@ -178,7 +182,7 @@ async function eventRouter(event,botInstance){
       await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options)
     }
     }
-  
+    console.timeEnd("mainRouter.eventRouter after switch");
   } catch (err) {
     err.place_in_code = err.place_in_code || "routerTelegram.eventRouter";
 

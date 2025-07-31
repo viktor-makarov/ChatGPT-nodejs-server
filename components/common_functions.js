@@ -18,6 +18,10 @@ const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const { execSync } = require("child_process");
 const pako = require('pako');
 const devPrompts = require("../config/developerPrompts.js");
+const { convert } = require('html-to-text');
+
+const { Tiktoken } = require("js-tiktoken/lite");
+const o200k_base = require("js-tiktoken/ranks/o200k_base");
 
 const showdown  = require('showdown'), showdownHighlight = require("showdown-highlight");
 
@@ -358,7 +362,7 @@ async function startFileDownload(url){
     url,
     method: 'GET',
     responseType: 'stream',
-    timeout: 5000
+    timeout: 150000
   });
 
 return response
@@ -374,9 +378,7 @@ function streamToBuffer(stream) {
 }
 
 
-async function parsePDF(pdfBuffer) {
-  return await pdf(pdfBuffer);
-}
+
 
 
 async function splitPDFByPageChunks(pdfBuffer, limit) {
@@ -444,6 +446,7 @@ async function encodeJson(json){
   
   let hash = cryptofy.createHash('md5');
   hash =  hash.update(JSON.stringify(json)).digest('hex');
+  
   await mongo.saveHash(hash,json);
   return hash
 };
@@ -705,6 +708,12 @@ function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
 
       const referenceToPDF = getLocalizedPhrase("pdf_html_reference",user_language_code)
       
+      // Secure codeblocks from altering by other replacements
+      convertedText = convertedText.replace(/^[\s]*```\s*([\s\S]+?)^[\s]*```/gm, (match, code) => {
+        const encoded = Buffer.from(match).toString('base64');
+        return `CODEBLOCKPLACEHOLDER${encoded}PLACEHOLDER`;
+        });
+
       const formulasObj = {};
             // Handle LaTeX block formulas using \[...\]
           convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (_, formula) => {
@@ -741,6 +750,12 @@ function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
       // Extract code blocks and replace them with placeholders/ We withdraw code blocks to awoid their altering by other replacements
       const placeholder = '\uFFFF';  // Character unlikely to appear in Markdown
       const codeObj = {};
+
+      //Restore code blocks
+      convertedText = convertedText.replace(/CODEBLOCKPLACEHOLDER([A-Za-z0-9+/=]+)PLACEHOLDER/g, (match, content) => {
+        const decoded = Buffer.from(content, 'base64').toString();
+        return decoded;
+      });
       
       // Inline code handling. 
       convertedText = convertedText.replace(/^[\s]*```markdown?\s+([\s\S]+?)^[\s]*```/gm, (_, code) => {
@@ -858,6 +873,65 @@ function wireHtml(text){
 
   }
 
+  async function getPageHtml(url, options = {}) {
+    const { timeout = 30_000, delay_ms = 5_000} = options;
+    
+    const page = await global.chromeBrowserHeadless.newPage();
+    try {
+
+      await page.goto(url);
+
+      await delay(delay_ms);
+
+      const screenshot = {page_url: url};
+
+      try{
+        for (const quality of [80,60,40,20,0]) {
+          screenshot.buffer = await page.screenshot({ fullPage: true,type: 'jpeg',quality: quality });
+          screenshot.sizeBytes = screenshot.buffer.length;
+          screenshot.quality = quality;
+          if (screenshot.sizeBytes <= 10 * 1024 * 1024) {
+            break; // Exit loop if size is within limit
+          }
+        }
+        
+        if (screenshot.sizeBytes > 10*1024*1024) {
+          throw new Error(`Screenshot size (${screenshot.sizeBytes} bytes) exceeds 10 MB limit`);
+        }
+        screenshot.base64 = screenshot.buffer.length > 0 ? screenshot.buffer.toString('base64') : null;
+        screenshot.mimetype = "image/jpeg";
+        
+      } catch (screenshotError) {
+        screenshot.error = screenshotError.message;
+      }
+
+      const html = await page.content();
+      return { html, screenshot };
+      
+    } catch (error) {
+      console.error('Error in getPageHtml:', error.message);
+      throw error;
+    } finally {
+      await page.close();
+    }
+  }
+
+
+  async function htmlRendered(htmlString, timeout = 180000) {
+    const page = await global.chromeBrowserHeadless.newPage();
+    try {
+    
+      await page.setContent(htmlString, {
+        waitUntil: 'networkidle0',
+    });
+      const renderedHTML = await page.content();
+
+      return {renderedHTML}
+    } finally {
+      page.close();
+    }
+  }
+
   async function htmlToPdfBuffer(htmlString, pdfOptions = {},timeout = 18000) {
 
     const page = await global.chromeBrowserHeadless.newPage();
@@ -917,6 +991,60 @@ function wireHtml(text){
       sizeBytes: bytes,
       sizeString: `${formattedSize} ${units[unitIndex]}`
     };
+  }
+
+    // Remove special tokens and potentially harmful content from text
+  function sanitizeText(text) {
+    if (!text || typeof text !== 'string') {
+      return '';
+    }
+    
+    // Default common special tokens
+    const defaultTokens = [
+      '<|endoftext|>',
+      '<|startoftext|>',
+      '<|im_start|>',
+      '<|im_end|>',
+      '<|system|>',
+      '<|user|>',
+      '<|assistant|>'
+    ];
+
+    const customTokens = [];
+    
+    // Combine default and custom tokens
+    const tokensToRemove = [...defaultTokens, ...customTokens];
+    
+    let sanitized = text;
+    
+    // Remove special tokens (case insensitive)
+    tokensToRemove.forEach(token => {
+      const regex = new RegExp(escapeRegex(token), 'gi');
+      sanitized = sanitized.replace(regex, '');
+
+    });
+    
+    return sanitized.trim();
+  }
+
+  // Helper function to escape special regex characters
+  function escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+function countTokensTiktokenJS(text,model){
+
+  text = sanitizeText(text);
+
+  let enc;
+  if(model.startsWith('gpt-4o') || model.startsWith('gpt-4.1')){
+    enc = new Tiktoken(o200k_base);
+    } else {
+    enc = new Tiktoken(o200k_base);
+    }
+
+    const tokens = enc.encode(text);
+    return tokens.length;
   }
 
 async function countTokensLambda(text,model){
@@ -1001,6 +1129,7 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
 }
 
 
+
 function extentionNormaliser(filename,mimeType){
 
     const mimeTypeArray = mimeType.split("/")
@@ -1015,7 +1144,6 @@ function extentionNormaliser(filename,mimeType){
         return filename
     }
 }
-
 
 async function audioReadableStream(url,mime_type){
     const response = await axios({
@@ -1164,7 +1292,6 @@ function startDeveloperPrompt(userInstance){
     prompt += "\n\n" + devPrompts.responseStyle(userInstance.response_style)
   }
     prompt += devPrompts.latex_constraints()
-    prompt += devPrompts.diagram_constraints()
 
   return prompt
 }
@@ -1612,6 +1739,23 @@ function saveTextToTempFile(text, filename) {
   return path.join(tempDir, filename)
 }
 
+
+function logToTempFile(text, filename) {
+  const tempDir = path.join(__dirname, '../tempfiles');
+  
+  // Create directory if it doesn't exist
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+  
+  const filePath = path.join(tempDir, filename);
+  
+  // Append text with newline to file (creates file if it doesn't exist)
+  fs.appendFileSync(filePath, text + '\n', 'utf8');
+  
+  return filePath;
+}
+
 function saveBufferToTempFile(buffer, filename) {
   const tempDir = path.join(__dirname, '../tempfiles');
   // Create directory if it doesn't exist
@@ -1624,6 +1768,52 @@ function saveBufferToTempFile(buffer, filename) {
   }
 
   return path.join(tempDir, filename);
+}
+
+function diagramHTML(diagram_body){
+return `
+          <html>
+          <head>
+          <script type="module">
+            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.esm.min.mjs';
+
+            document.addEventListener("DOMContentLoaded", async () => {
+              mermaid.initialize({ startOnLoad: false });
+              document.querySelectorAll('.mermaid').forEach(renderMermaidDiagram);
+            });
+
+            async function renderMermaidDiagram(element, index) {
+              const code = element.textContent;
+              const insertError = (message) => {
+                element.innerHTML = \`<div style="color: red; font-weight: bold;">Описание диаграммы содержит ошибку:<br>\${message}</div>\`;
+              };
+              try {
+              await mermaid.parse(code)
+
+              } catch (e) {
+                console.log("parce error")
+                insertError(e?.message || 'Неизвестная ошибка (parse)');
+                return;
+              }
+              
+            mermaid.render('generatedDiagram' + index, code)
+            .then(({svg}) => {
+              element.innerHTML = svg;
+            })
+            .catch(e => {
+              console.log("render error")
+              insertError(e?.message || 'Неизвестная ошибка (render)');
+            });
+            }
+
+          </script>
+          </head>
+            <body>
+              <div class="mermaid">
+                ${diagram_body}
+              </div>
+            </body>
+      </html>`
 }
 
 function formatHtml(html,filename){
@@ -1827,7 +2017,13 @@ function getManualHTML(language){
 function secureLatexBlocks(markdownText) {
 
       let convertedText = markdownText;
+      // Handle code blocks first - extract and replace with placeholders
 
+        // Handle code blocks without language specifiers
+        convertedText = convertedText.replace(/^[\s]*```\s*([\s\S]+?)^[\s]*```/gm, (match, code) => {
+        const encoded = Buffer.from(match).toString('base64');
+        return `CODEBLOCKPLACEHOLDER${encoded}PLACEHOLDER`;
+        });
 
        convertedText = convertedText.replace(/(?:^|\n)\s*\\\[(.*?)\\\]/gms, (match, content) => {
             const encoded = Buffer.from(content.trim()).toString('base64');
@@ -1849,14 +2045,18 @@ function secureLatexBlocks(markdownText) {
             return 'LATEXINLINEPLACEHOLDER' + encoded + 'PLACEHOLDER';
         });
 
+        // Restore code blocks
+        convertedText = convertedText.replace(/CODEBLOCKPLACEHOLDER([A-Za-z0-9+/=]+)PLACEHOLDER/g, (match, content) => {
+          const decoded = Buffer.from(content, 'base64').toString();
+          return decoded;
+        });
+
       convertedText = convertedText.replace(/^\s*```\s*mermaid\s*([\s\S]*?)^\s*```/gm, (match, content) => {
-
           const contentTrimed = content.trim();
-
           const encoded = Buffer.from(contentTrimed).toString('base64');
-          
           return `DIAGRAMMPLACEHOLDERSTART${encoded}DIAGRAMMPLACEHOLDEREND`;
       });
+
 
       return convertedText
 }
@@ -1892,7 +2092,7 @@ function restoredPlaceholders(html){
         const decoded = Buffer.from(content, 'base64').toString();
         const mermaidUrlEdit = genPakoLink(decoded,"edit");
         const mermaidUrlView = genPakoLink(decoded,"view");
-        return `<div  class="mermaid">\n${decoded}\n</div>\n<div><a href="${mermaidUrlEdit}" target="_blank">Live edit</a> | <a href="${mermaidUrlView}" target="_blank">Live view</a></div>`;
+        return `<div  class="mermaid">${decoded}\n</div>\n<div><a href="${mermaidUrlEdit}" target="_blank">Live edit</a> | <a href="${mermaidUrlView}" target="_blank">Live view</a></div>`;
     });
 
    return restored
@@ -2247,8 +2447,119 @@ const newText = text.replace(/\\r\\n/g, '\n')
  return newText
 }
 
+function convertHtmlToText(html){
+
+  const text = convert(html, {
+                  wordwrap: false,
+                  format: {
+                    // Custom handler for 'a' tags
+                    anchor: function(elem, walk, builder, formatOptions) {
+                      const href = elem.attribs.href || '';
+                      
+                      // Check if it's an external URL (starts with http/https or is a full URL)
+                      const isExternalUrl = href.startsWith('http://') || 
+                                          href.startsWith('https://')
+                      
+                      builder.openTag(true);
+                      walk(elem.children, builder);
+                      
+                      // Only add URL for external links
+                      if (isExternalUrl) {
+                        builder.addInline(' (');
+                        builder.addInline(href);
+                        builder.addInline(')');
+                      }
+                      
+                      builder.closeTag();
+                    }
+                  }
+                })
+
+    return text;
+}
+
+
+async function parsePDF(pdfBuffer) {
+  return await pdf(pdfBuffer);
+}
+
+// Add this method to your FunctionCall class
+
+function getMimeTypeFromUrl(url) {
+    if (!url || typeof url !== 'string') {
+        return 'application/octet-stream'; // Default fallback
+    }
+
+    // Extract file extension from URL
+    const urlPath = url.split('?')[0]; // Remove query parameters
+    const extension = urlPath.split('.').pop()?.toLowerCase();
+
+    // MIME type mapping
+    const mimeTypes = {
+        // Images
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'gif': 'image/gif',
+        'webp': 'image/webp',
+        'bmp': 'image/bmp',
+        'svg': 'image/svg+xml',
+        'ico': 'image/x-icon',
+        'tiff': 'image/tiff',
+        'tif': 'image/tiff',
+
+        // Audio
+        'mp3': 'audio/mpeg',
+        'wav': 'audio/wav',
+        'ogg': 'audio/ogg',
+        'oga': 'audio/ogg',
+        'opus': 'audio/opus',
+        'm4a': 'audio/mp4',
+        'aac': 'audio/aac',
+        'flac': 'audio/flac',
+
+        // Video
+        'mp4': 'video/mp4',
+        'avi': 'video/x-msvideo',
+        'mov': 'video/quicktime',
+        'wmv': 'video/x-ms-wmv',
+        'flv': 'video/x-flv',
+        'webm': 'video/webm',
+        'mkv': 'video/x-matroska',
+
+        // Documents
+        'pdf': 'application/pdf',
+        'doc': 'application/msword',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'xls': 'application/vnd.ms-excel',
+        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'ppt': 'application/vnd.ms-powerpoint',
+        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'txt': 'text/plain',
+        'rtf': 'application/rtf',
+        'csv': 'text/csv',
+
+        // Archives
+        'zip': 'application/zip',
+        'rar': 'application/vnd.rar',
+        '7z': 'application/x-7z-compressed',
+        'tar': 'application/x-tar',
+        'gz': 'application/gzip',
+
+        // Web files
+        'html': 'text/html',
+        'htm': 'text/html',
+        'css': 'text/css',
+        'js': 'application/javascript',
+        'json': 'application/json',
+        'xml': 'application/xml'
+    };
+
+    return mimeTypes[extension] || 'application/octet-stream';
+}
 
 module.exports = {
+  convertHtmlToText,
   formatObjectToText,
   countTokens,
   wireStingForMarkdown,
@@ -2316,5 +2627,11 @@ module.exports = {
   audioReadableStream,
   voiceToTextConstraintsCheck,
   getManualHTML,
-  unWireText
+  unWireText,
+  diagramHTML,
+  htmlRendered,
+  logToTempFile,
+  countTokensTiktokenJS,
+  getPageHtml,
+  getMimeTypeFromUrl
 };
