@@ -5,6 +5,7 @@ const ErrorHandler = require("../errorHandler");
 const FormData = require("form-data");
 const axios = require("axios");
 const mongo = require("../apis/mongo.js");
+const { Readable } = require('stream');
 
 class ReplyMsg extends EventEmitter {
 
@@ -177,31 +178,17 @@ async sendLatexFormulaWaiterMsg(){
 
 async simpleSendNewImage(obj){
 
-  const imageBuffer = obj.imageBuffer
-  const fileName = obj.fileName
-  const contentType = obj.contentType
-  const caption = obj.caption
-  const reply_markup = obj.reply_markup
+  const { imageBuffer,fileName,contentType,caption,reply_markup,parse_mode } = obj;
 
   const options = {
     contentType: contentType ?? 'image/jpeg',
   }
 
-  if(fileName){
-    options.filename = fileName
-  }
-
-  if(contentType){
-    options.contentType = contentType
-  }
-
-  if(caption){
-    options.caption = caption
-  }
-
-  if(reply_markup){
-    options.reply_markup = JSON.stringify(reply_markup)
-  }
+  if(fileName)  options.filename = fileName
+  if(parse_mode) options.parse_mode = parse_mode;
+  if(contentType) options.contentType = contentType
+  if(caption) options.caption = caption
+  if(reply_markup)  options.reply_markup = JSON.stringify(reply_markup)
 
 return await this.#botInstance.sendPhoto(
   this.#chatId,
@@ -364,6 +351,57 @@ async updateMessageReplyMarkup(msgId,reply_markup){
     reply_markup,
     {chat_id:this.#chatId,message_id:msgId}
 )
+}
+
+async updateMediaFromBuffer2(msgId,buffer,file_name,type,caption,reply_markup,parse_mode="html"){
+
+  console.log("Updating media from buffer",msgId,buffer.length,file_name,type,caption,reply_markup)
+  const media = {
+    type: type,
+    media: { source: buffer, filename: file_name }
+  }
+  const options = { chat_id:this.#chatId,message_id:msgId }
+
+  if(caption) media.caption = caption;
+  if(reply_markup) options.reply_markup = reply_markup;
+  if(parse_mode) media.parse_mode = parse_mode;
+
+  return await this.#botInstance.editMessageMedia(media,options)
+}
+
+async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,parse_mode="html"){
+
+  const formData = new FormData();
+  formData.append('chat_id', this.#chatId);
+  formData.append('message_id', msgId);
+
+  const media = {
+    type,
+    media: `attach://${file_name}`,
+  };
+  if(caption) media.caption = caption;
+  if(parse_mode) media.parse_mode = parse_mode;
+  formData.append('media', JSON.stringify(media));
+  formData.append(file_name, this.bufferToStream(buffer), { filename: file_name });
+
+  if(reply_markup) formData.append('reply_markup', JSON.stringify(reply_markup));
+  
+
+  const result = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageMedia`, 
+          formData, {
+            headers: formData.getHeaders(),
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+          });
+      
+      return result.data;
+}
+
+bufferToStream(buffer) {
+  const stream = new Readable();
+  stream.push(buffer);
+  stream.push(null); // Signal the end of the stream
+  return stream;
 }
 
 async sendToNewMessage(text,reply_markup,parse_mode,add_options){
@@ -585,6 +623,23 @@ async sendMdjImage(generateResult,prompt){
 
   return sent_result
 }
+
+async sendOAIImage(imageBuffer,prompt,imageId,format,mime_type,parse_mode="html"){
+ 
+  //const reply_markup = await this.generateMdjButtonsFromPIAPI(generateResult.mdjMsg);
+ 
+  let sent_result = await this.simpleSendNewImage({
+    caption:prompt,
+    reply_markup:null,
+    contentType:mime_type,
+    fileName:`oai_imagine_${imageId}.${format}`,
+    imageBuffer:imageBuffer,
+    parse_mode:parse_mode
+  });
+
+  return sent_result
+}
+
 
 async generateMdjButtonsFromPIAPI(msg){
 

@@ -2558,6 +2558,90 @@ function getMimeTypeFromUrl(url) {
     return mimeTypes[extension] || 'application/octet-stream';
 }
 
+function getMimeTypeFromPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') {
+    return 'application/octet-stream'; // Default fallback
+  }
+
+  // Extract file extension from path
+  const extension = path.extname(filePath).toLowerCase().substring(1); // Remove the dot
+
+  // MIME type mapping (same as getMimeTypeFromUrl)
+  const mimeTypes = {
+    // Images
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'bmp': 'image/bmp',
+    'svg': 'image/svg+xml',
+    'ico': 'image/x-icon',
+    'tiff': 'image/tiff',
+    'tif': 'image/tiff',
+
+    // Audio
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    'ogg': 'audio/ogg',
+    'oga': 'audio/ogg',
+    'opus': 'audio/opus',
+    'm4a': 'audio/mp4',
+    'aac': 'audio/aac',
+    'flac': 'audio/flac',
+
+    // Video
+    'mp4': 'video/mp4',
+    'avi': 'video/x-msvideo',
+    'mov': 'video/quicktime',
+    'wmv': 'video/x-ms-wmv',
+    'flv': 'video/x-flv',
+    'webm': 'video/webm',
+    'mkv': 'video/x-matroska',
+
+    // Documents
+    'pdf': 'application/pdf',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xls': 'application/vnd.ms-excel',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'ppt': 'application/vnd.ms-powerpoint',
+    'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'txt': 'text/plain',
+    'rtf': 'application/rtf',
+    'csv': 'text/csv',
+
+    // Archives
+    'zip': 'application/zip',
+    'rar': 'application/vnd.rar',
+    '7z': 'application/x-7z-compressed',
+    'tar': 'application/x-tar',
+    'gz': 'application/gzip',
+
+    // Web files
+    'html': 'text/html',
+    'htm': 'text/html',
+    'css': 'text/css',
+    'js': 'application/javascript',
+    'json': 'application/json',
+    'xml': 'application/xml'
+  };
+
+  return mimeTypes[extension] || 'application/octet-stream';
+}
+
+function toHHMMSS(totalSeconds) {
+  const sec   = Math.floor(totalSeconds % 60);
+  const mins  = Math.floor(totalSeconds / 60) % 60;
+  const hours = Math.floor(totalSeconds / 3600);
+  // padStart ensures two-digit fields
+  return [
+    hours.toString().padStart(2, '0'),
+    mins.toString().padStart(2, '0'),
+    sec.toString().padStart(2, '0')
+  ].join(':');
+}
+
 module.exports = {
   convertHtmlToText,
   formatObjectToText,
@@ -2633,5 +2717,7 @@ module.exports = {
   logToTempFile,
   //countTokensTiktokenJS,
   getPageHtml,
-  getMimeTypeFromUrl
+  getMimeTypeFromUrl,
+  toHHMMSS,
+  getMimeTypeFromPath
 };

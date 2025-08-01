@@ -87,10 +87,47 @@ async function lambda_invoke(funcName, payload){
     return result
   }
 
+  async function uploadFileToS3FromBuffer(buffer,filename){
+    
+    const key = process.env.S3_STORAGE_INCOMINGFILES_FOLDER+"/"+filename
+    const bucketName = process.env.S3_BUCKET_NAME
+    
+    const parallelUploads3 = new Upload({
+      client: new S3({}) || new S3Client({}),
+      params: {
+        Bucket: bucketName, // Use access point ARN as Bucket
+        Key: key,
+        Body: buffer,
+        ACL: 'public-read' // Optional: To make file publicly readable
+      },
+  
+      // optional tags
+      tags: [
+        /*...*/
+      ],
+  
+      // additional optional fields show default values below:
+  
+      // (optional) concurrency configuration
+      queueSize: 4,
+  
+      // (optional) size of each part, in bytes, at least 5MB
+      partSize: 1024 * 1024 * 5,
+  
+      // (optional) when true, do not automatically call AbortMultipartUpload when
+      // a multipart upload fails to complete. You should then manually handle
+      // the leftover parts.
+      leavePartsOnError: false,
+    });
+    const result = await parallelUploads3.done();
+    return result
+  }
+
 
   module.exports = {
     lambda_invoke,
     uploadFileToS3,
+    uploadFileToS3FromBuffer,
     deleteS3FilesByPefix
 };
 

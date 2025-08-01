@@ -197,7 +197,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       if(fileCaption){
         fileComment.user_prompt = fileCaption
       }
-    await dialogueInstance.commitImageToDialogue(fileComment,{url,base64,sizeBytes,sizeBytes,mimetype:downloadBufferResult.mimeType})
+    await dialogueInstance.commitImageToDialogue(fileComment,{url,base64,sizeBytes,mimetype:downloadBufferResult.mimeType})
 
     if(fileCaption){
       dialogueInstance.triggerCallCompletion()

@@ -64,7 +64,7 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
-    "includeUsage":["code_interpreter_call.outputs"],
+    "includeUsage":["code_interpreter_call.outputs","message.input_image.image_url"],
     "long_wait_notes": [
         {time_ms:15000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:30000,comment:"Этот запрос не так прост, как казалось! Придется еще немного подождать!"},

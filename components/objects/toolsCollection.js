@@ -5,6 +5,20 @@ const ExRateAPI = require("../apis/exchangerate_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
 
 const list = [
+        {type: "image_generation",
+         model:"gpt-image-1",
+         moderation: "auto",
+         partial_images: 3,
+         output_compression: 100,
+         output_format: "png",
+         quality: "auto",
+         size: "auto",
+         availableInRegimes: ["chat"],
+         availableForGroups: ["admin","basic"],
+         availableForToolCalls: true,
+         category:"hosted",
+         depricated:false,
+        },
         {
             type: "code_interpreter",
             container: {
@@ -389,7 +403,7 @@ const list = [
                 },
                 required: ["textprompt","function_description"],
             },
-            friendly_name: "Генерация изображения",
+            friendly_name: "Изображение Midjourney",
             timeout_ms:360000,
             long_wait_notes: [
                 {time_ms:60000,comment:"Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️"},
@@ -1033,7 +1047,19 @@ async function getAvailableTools(userClass){
 
 async function getAvailableToolsForCompletion(userClass){
     const availableForToolCalls = await getAvailableTools(userClass)
-    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ type:tool.type, name:tool.name, description:tool.description, parameters:tool.parameters, strict:tool.strict, user_location:tool.user_location, container:tool.container}));
+    return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({ 
+        type:tool.type, 
+        name:tool.name, 
+        description:tool.description, 
+        parameters:tool.parameters, 
+        strict:tool.strict, 
+        container:tool.container,
+        output_format: tool.output_format,
+        partial_images: tool.partial_images,
+        output_compression: tool.output_compression,
+        quality: tool.quality,
+        size: tool.size
+    }));
 }
 
 async function toolConfigByFunctionName(functionName,userClass){

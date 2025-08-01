@@ -1932,7 +1932,6 @@ validateRequiredFieldsFor_createExcelFile(){
     
       const tgm_url = await this.#replyMsg.getUrlByTgmFileId(tgmFileId)
       const mimeType = func.getMimeTypeFromUrl(tgm_url)
-      console.log("tgm_url",tgm_url,"mimeType",mimeType)
       const downloadStream = await func.startFileDownload(tgm_url)
       const buffer = await func.streamToBuffer(downloadStream.data)
 

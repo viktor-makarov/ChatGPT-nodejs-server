@@ -8,7 +8,10 @@ const openAIApi = require("../apis/openAI_API.js");
 const FunctionCall  = require("./FunctionCall.js");
 const toolsCollection = require("./toolsCollection.js");
 const { error } = require('console');
+const AsyncQueue = require("./AsyncQueue.js");
 const { url } = require('inspector');
+const { format } = require('path');
+const awsApi = require("../apis/AWS_API.js")
 
 
 class Completion extends EventEmitter {
@@ -51,9 +54,14 @@ class Completion extends EventEmitter {
     #long_wait_notes;
     #timeout;
 
+    #reasoningAsyncQueue;
+    #codeInterpreterAsyncQueue;
+    #imageGenerationAsyncQueue
     #tool_calls=[];
     #hostedSearchWebToolCall;
     #hostedCodeInterpreterCall;
+    #hostedReasoningCall;
+    #hostedImageGenerationCall;
     #tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100;
     #overalTokenLimit;
     
@@ -101,7 +109,7 @@ class Completion extends EventEmitter {
             const {sequence_number, response,output_index,item,content_index } = event;
             const response_type = event.type;
             await this.registerNewEvent(event,evensOccured)
-            //console.log(sequence_number,new Date(),response_type,output_index,content_index)
+            console.log(sequence_number,new Date(),response_type,output_index,content_index)
 
             switch (response_type) {
                 case 'response.created':
@@ -142,7 +150,7 @@ class Completion extends EventEmitter {
                         this.#message_items[output_index].deliverResponseToTgm = this.deliverResponseToTgmHandler(statusMsg.message_id,statusMsg.text.length,output_index);
                         this.#message_items[output_index].completion_version = this.#completionCurrentVersionNumber;
                         statusMsg =null;
-                        this.#message_items[output_index].throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#message_items[output_index].deliverResponseToTgm,appsettings.telegram_options.send_throttle_ms)        
+                        this.#message_items[output_index].throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#message_items[output_index].deliverResponseToTgm.run,appsettings.telegram_options.send_throttle_ms)        
                         
                         if(this.#hostedCodeInterpreterCall){
                           this.#hostedCodeInterpreterCall.finalyze()
@@ -161,16 +169,31 @@ class Completion extends EventEmitter {
                       case 'code_interpreter_call':
                         if(!this.#hostedCodeInterpreterCall){
                           this.#hostedCodeInterpreterCall = this.codeInterpreterCall(event,statusMsg)
+                          this.#codeInterpreterAsyncQueue = new AsyncQueue({delayMs: 0});
                           statusMsg = null;
                           this.#hostedCodeInterpreterCall.initialCommit() //intentionally async
                         } else {
                           this.#hostedCodeInterpreterCall.resumeCommit() //intentionally async
                         }
-                        console.log("Code interpreter call started")
                         break;
                       case 'reasoning':
-                        console.log("Reasoning started")
+
+                        if(!this.#hostedReasoningCall){
+                          this.#hostedReasoningCall = this.reasoningCall(event,statusMsg)
+                          this.#reasoningAsyncQueue = new AsyncQueue({delayMs: 0});
+                          statusMsg = null;
+
+                          this.#hostedReasoningCall.initialCommit() //intentionally async
+                        } else {
+                          this.#hostedReasoningCall.resumeCommit() //intentionally async
+                        }
                         break;
+                      case 'image_generation_call':
+                          this.#hostedImageGenerationCall = this.imageGenerationCall(event,statusMsg)
+                          this.#imageGenerationAsyncQueue = new AsyncQueue({delayMs: 100});
+                          statusMsg = null;
+                          this.#hostedImageGenerationCall.initialCommit() //intentionally async
+                      break;
                     }
                     break;
                 case 'response.output_text.delta':
@@ -193,10 +216,16 @@ class Completion extends EventEmitter {
                 case 'response.output_item.done':
                     switch (this.#output_items[output_index].type) {
                       case 'message':
-                        this.#message_items[output_index].status = item?.status;
-                        this.#message_items[output_index].content = [item?.content[0]];
-                        const completionObj = this.#message_items[output_index];
-                        await this.#dialogue.commitCompletionDialogue(completionObj)
+                        
+                        if(this.#message_items[output_index].text !=""){
+                          this.#message_items[output_index].status = item?.status;
+                          this.#message_items[output_index].content = [item?.content[0]];
+                          const completionObj = this.#message_items[output_index];
+                          await this.#dialogue.commitCompletionDialogue(completionObj)
+                        } else {
+                          console.log("Message output item is empty, skipping commit to dialogue",this.#message_items[output_index].deliverResponseToTgm.statusMsgId)
+                          this.#replyMsg.deleteMsgByID(this.#message_items[output_index].deliverResponseToTgm.statusMsgId);
+                        }
                         this.completedOutputItem(output_index)
                       break;
                       case 'function_call':
@@ -211,32 +240,36 @@ class Completion extends EventEmitter {
                       case 'code_interpreter_call':
                         this.#hostedCodeInterpreterCall.endCommit(event)
                         this.completedOutputItem(output_index)
-                        console.log("Code interpreter call completed")
                         break;
                       case 'reasoning':
-                        console.log("Reasoning call completed")
-                         break;
+                        this.#hostedReasoningCall.endCommit()
+                        this.completedOutputItem(output_index)
+                        break;
+                      case 'image_generation_call':
+                        this.#hostedImageGenerationCall.endCommit(event)
+                        
+                        this.completedOutputItem(output_index)
+                      break;
                     }
                     break;
 
-                case "response.image_generation_call.in_progress":
-                   // console.log(event)
-                break;
+                case 'response.image_generation_call.partial_image':
 
-                case "response.image_generation_call.partial_image":
-                    console.log(event)
-                break;
+                    this.#hostedImageGenerationCall.partialCommit(event)
+                break
 
                 case 'response.completed':
+                    
                     await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,response.usage)
-                    console.log(JSON.stringify(event.output,null,2))
                     break;
 
                 case 'response.incomplete':
+      
                     await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,response.usage)
                     break;
 
                 case 'response.failed':
+
                     const {error} = response;
                     const {code,message} = error;
                     const err = new Error(`${code}: ${message}`);
@@ -248,6 +281,147 @@ class Completion extends EventEmitter {
         }
       }
 
+      reasoningCall(initialEvent,statusMsg){
+
+        const statusMsgId = statusMsg?.message_id
+        const {output_index,item} = initialEvent;
+        const {type,code,status,id} = item;
+        let functionDescription = "Рассуждение";
+        let totalDurationSec = 0;
+        let itemStartTime;
+        let itemEndTime;
+        
+        return {
+          "initialCommit":() => {
+            itemStartTime = Date.now();
+            let details = "думаю...";
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+
+            console.log(`reasoning initialCommit msgID: ${statusMsgId}`)
+            this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            }))
+          },
+          "resumeCommit": async () => {
+            itemStartTime = Date.now();
+            let details = "снова думаю ...";
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+            console.log(`reasoning resumeCommit msgID: ${statusMsgId}`)
+            this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            }))
+          },
+          "endCommit": async () => {
+            itemEndTime = Date.now();
+            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
+            totalDurationSec += itemDurationSec;
+            const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`
+            console.log(`reasoning endCommit msgID: ${statusMsgId}`)
+            this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
+                chat_id:this.#replyMsg.chatId,
+                message_id:statusMsgId,
+                reply_markup:null,
+                parse_mode: "html"
+            }))
+          }
+      }
+    }
+
+      imageGenerationCall(initialEvent,statusMsg){
+
+        const statusMsgId = statusMsg?.message_id
+        let imageMsgId;
+        const {output_index,item} = initialEvent;
+        const {type,status,id} = item;
+        let functionDescription = "Изображение OpenAI";
+        let totalDurationSec = 0;
+        let itemStartTime;
+        let itemEndTime;
+
+        return {
+          "initialCommit":async () => {
+            let details = "генерирую ...";
+            itemStartTime = Date.now();
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+            this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            })
+          },
+          "partialCommit": async (event) => {
+            const {partial_image_index,partial_image_b64,output_format,item_id} = event;
+            const partialImageBuffer = Buffer.from(partial_image_b64, 'base64');
+            const filename = `partial_image_${item_id.slice(0, 10)}_${partial_image_index}.${output_format}`;
+            const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
+            let details = "это еще не все. Продолжаю ..."
+            const caption = `⏳ <b>${functionDescription}</b>: ${details}`;
+
+            if(!imageMsgId){
+            const [{message_id},deleteResult] = await Promise.all([
+              this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html"),
+              this.#replyMsg.deleteMsgByID(statusMsgId)
+            ]);
+            imageMsgId = message_id;
+            } else {
+              this.#imageGenerationAsyncQueue.add(() => this.#replyMsg.updateMediaFromBuffer(imageMsgId,partialImageBuffer,filename,"photo",caption,null));
+            }
+
+          },
+          "endCommit": async (completedEvent) => {
+            itemEndTime = Date.now();
+            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
+            totalDurationSec += itemDurationSec;
+            const {item,output_index} = completedEvent;
+            const {status,background,output_format,quality,type,id,result,revised_prompt,size} = item;
+
+            
+            const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
+            const imageBuffer = Buffer.from(result, 'base64');
+            const filename = `image_${id}.${output_format}`;
+            const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`;
+            const caption = `${msgText}\n\n${revised_prompt} --size ${size} --quality ${quality} --background ${background}`;
+            const fileComment = {
+              image_id: id,
+              format: output_format,
+              revised_prompt: revised_prompt,
+              content: "User used OpenAI image generation tool",
+            }
+   
+            this.#imageGenerationAsyncQueue.add(() => this.#replyMsg.updateMediaFromBuffer(imageMsgId,imageBuffer,filename,"photo",caption,null))
+            const [ImageCommitResult,{Location}] = await Promise.all([
+             this.#dialogue.commitImageToDialogue(fileComment,{url:null,base64:result,sizeBytes:imageBuffer.length,mimetype:mime_type}),
+             awsApi.uploadFileToS3FromBuffer(imageBuffer,`oai_image_${id}.${output_format}`)
+            ])
+
+            if(Location){
+              const btnText = otherFunctions.getLocalizedPhrase(`full_size_image`,this.#user.language);
+              const reply_markup = {
+                one_time_keyboard: true,
+                inline_keyboard: [[{text:btnText, url:Location}]]
+              };
+              this.#imageGenerationAsyncQueue.add(() => this.#replyMsg.updateMessageReplyMarkup(imageMsgId,reply_markup))
+            }
+
+            mongo.insertCreditUsage({
+                    userInstance: this.#user,
+                    creditType: "oai_image_generation",
+                    creditSubType: "create",
+                    usage: 1,
+                    details: {place_in_code:"imageGenerationCall"}
+                })
+
+          }
+      }
+    }
+
       codeInterpreterCall(initialEvent,statusMsg){
 
         const statusMsgId = statusMsg?.message_id
@@ -257,34 +431,40 @@ class Completion extends EventEmitter {
         
         let codeInterpreterOutputText = "";
         let reply_markup = null;
+        let totalDurationSec = 0;
+        let itemStartTime;
+        let itemEndTime;
 
         return {
-          "initialCommit":async () => {
+          "initialCommit":() => {
+            itemStartTime = Date.now();
             let details = "в работе ...";
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            console.log("initialCommit")
-            await this.#replyMsg.simpleMessageUpdate(MsgText,{
+            console.log(`codeInterpreter initialCommit msgID: ${statusMsgId}`)
+            this.#codeInterpreterAsyncQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
               reply_markup:null,
               parse_mode: "html"
-            }).catch(result => {})
+            }))
           },
           "resumeCommit": async () => {
-
+            itemStartTime = Date.now();
             let details = "снова в работе ...";
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            console.log("resumeCommit")
-            await this.#replyMsg.simpleMessageUpdate(MsgText,{
+            console.log(`codeInterpreter resumeCommit msgID: ${statusMsgId}`)
+            this.#codeInterpreterAsyncQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
               reply_markup:null,
               parse_mode: "html"
-            }).catch(result => {})
+            }))
           },
           "endCommit": async (completedEvent) => {
+            itemEndTime = Date.now();
+            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
+            totalDurationSec += itemDurationSec;
             const {item,output_index} = completedEvent;
-            
             const {action,type,code,outputs} = item;
             if(code){
               codeInterpreterOutputText += `\n${code}`;
@@ -298,14 +478,14 @@ class Completion extends EventEmitter {
               }
             }
 
-            const msgText = `✅ <b>${functionDescription}</b>`
-            console.log("finalCommit")
-            await this.#replyMsg.simpleMessageUpdate(msgText,{
+            const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`
+            console.log(`codeInterpreter endCommit msgID: ${statusMsgId}`)
+            this.#codeInterpreterAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
                 chat_id:this.#replyMsg.chatId,
                 message_id:statusMsgId,
                 reply_markup:null,
                 parse_mode: "html"
-            }).catch(result => {})
+            }))
 
             reply_markup = await this.craftReplyMarkupForDetails(item,codeInterpreterOutputText,msgText)
           },
@@ -314,6 +494,14 @@ class Completion extends EventEmitter {
              this.#replyMsg.updateMessageReplyMarkup(statusMsgId,reply_markup),
              this.#dialogue.commitCodeInterpreterOutputToDialogue(id,codeInterpreterOutputText)
            ])
+
+           mongo.insertCreditUsage({
+                    userInstance: this.#user,
+                    creditType: "code_interpreter",
+                    creditSubType: "create",
+                    usage: 1,
+                    details: {place_in_code:"codeInterpreterCall"}
+                })
         }
       }
     }
@@ -819,19 +1007,17 @@ class Completion extends EventEmitter {
           let completion_delivered = false;
           const completionObject = this.#message_items[output_index];
            
-      return async () =>{
+      return {
+        "statusMsgId": initialMsgId,
+        "run":async () =>{
 
           try{
             const text = completionObject.text || ""
             const completion_ended = completionObject.completion_ended || false;
 
-            if (text === "") {
-              return {success:0,error:"Empty response from the service."};
-            };
+            if (text === "") return {success:0,error:"Empty response from the service."};
 
-            if(completion_delivered){
-              return {success:0,error:"Completion already delivered."};
-            }
+            if(completion_delivered) return {success:0,error:"Completion already delivered."};
 
             const splitIndexBorders = this.splitTextBoarders(text,appsettings.telegram_options.big_outgoing_message_threshold);
             const textChunks = this.splitTextChunksBy(text,splitIndexBorders,completion_ended);
@@ -850,7 +1036,7 @@ class Completion extends EventEmitter {
                 replyMarkUpCount.push(null)
                 
                 await otherFunctions.delay(updateResult.wait_time_ms)
-                const result = await completionObject.deliverResponseToTgm() //deliver the response after delay
+                const result = await completionObject.deliverResponseToTgm.run() //deliver the response after delay
                 return result
             }
             await this.sendMessages(messages,sentMsgIds,sentMsgsCharCount,replyMarkUpCount)
@@ -863,7 +1049,7 @@ class Completion extends EventEmitter {
             }
 
             if(!completion_delivered && completionObject.completion_ended){
-              const result = await completionObject.deliverResponseToTgm()
+              const result = await completionObject.deliverResponseToTgm.run()
               return result
             }
            return {success:1,completion_delivered}
@@ -877,6 +1063,7 @@ class Completion extends EventEmitter {
             return {success:0,error:err.message}
           }
           }
+        }
     }
 
     throttleWithImmediateStart(func, delay=0) {
