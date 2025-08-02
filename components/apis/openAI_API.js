@@ -6,7 +6,6 @@ const modelSettings = require("../../config/telegramModelsSettings.js");
 const modelConfig = require("../../config/modelConfig.js");
 const { Readable } = require("stream");
 const mongo = require("./mongo.js");
-const toolsCollection = require("../objects/toolsCollection.js");
 const otherFunctions = require("../common_functions.js");
 const axios = require("axios");
 const OpenAI = require("openai");
@@ -14,12 +13,17 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   timeout: 180000
 });
+const AvailableTools = require("../objects/AvailableTools.js");
 
 async function responseStream(dialogueClass,instructions = null) {
 
 const userInstance = dialogueClass.userInstance
 const model = userInstance.currentModel
+
+console.time('responseStream getDialogueForRequest');
 const input = await dialogueClass.getDialogueForRequest(model)
+console.timeEnd('responseStream getDialogueForRequest');
+
 const options = {
     model: model,
     input: input,
@@ -41,9 +45,8 @@ const modelCanUseTemperature = modelConfig[model].canUseTemperature
 if (modelCanUseTemperature) {
     options.temperature = userInstance.currentTemperature;
 }
-
-const available_tools =  await toolsCollection.getAvailableToolsForCompletion(userInstance)
-
+const availableToolsInstance = new AvailableTools(userInstance);
+const available_tools =  await availableToolsInstance.getAvailableToolsForCompletion()
 const modelCanUseTools = modelConfig[model].canUseTool
 
 if(available_tools && available_tools.length>0 && modelCanUseTools){
@@ -256,8 +259,8 @@ async function chatCompletionStreamAxiosRequest(
       },
     };
     
-    const available_tools =  await toolsCollection.getAvailableToolsForCompletion(dialogueClass.userInstance)
-    
+    const availableToolsInstance = new AvailableTools(dialogueClass.userInstance);
+    const available_tools =  await availableToolsInstance.getAvailableToolsForCompletion()
     const canUseTools = modelConfig[requestMsg.user.currentModel].canUseTool
     const canUseTemperature = modelConfig[requestMsg.user.currentModel].canUseTemperature
     

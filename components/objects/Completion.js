@@ -6,12 +6,12 @@ const modelConfig = require("../../config/modelConfig");
 const telegramErrorHandler = require("../errorHandler.js");
 const openAIApi = require("../apis/openAI_API.js");
 const FunctionCall  = require("./FunctionCall.js");
-const toolsCollection = require("./toolsCollection.js");
 const { error } = require('console');
 const AsyncQueue = require("./AsyncQueue.js");
 const { url } = require('inspector');
 const { format } = require('path');
 const awsApi = require("../apis/AWS_API.js")
+const AvailableTools = require("./AvailableTools.js");
 
 
 class Completion extends EventEmitter {
@@ -109,7 +109,7 @@ class Completion extends EventEmitter {
             const {sequence_number, response,output_index,item,content_index } = event;
             const response_type = event.type;
             await this.registerNewEvent(event,evensOccured)
-            console.log(sequence_number,new Date(),response_type,output_index,content_index)
+            //console.log(sequence_number,new Date(),response_type,output_index,content_index)
 
             switch (response_type) {
                 case 'response.created':
@@ -169,7 +169,7 @@ class Completion extends EventEmitter {
                       case 'code_interpreter_call':
                         if(!this.#hostedCodeInterpreterCall){
                           this.#hostedCodeInterpreterCall = this.codeInterpreterCall(event,statusMsg)
-                          this.#codeInterpreterAsyncQueue = new AsyncQueue({delayMs: 0});
+                          this.#codeInterpreterAsyncQueue = new AsyncQueue({delayMs: 0, ttl: 20 * 60 * 1000});
                           statusMsg = null;
                           this.#hostedCodeInterpreterCall.initialCommit() //intentionally async
                         } else {
@@ -180,7 +180,7 @@ class Completion extends EventEmitter {
 
                         if(!this.#hostedReasoningCall){
                           this.#hostedReasoningCall = this.reasoningCall(event,statusMsg)
-                          this.#reasoningAsyncQueue = new AsyncQueue({delayMs: 0});
+                          this.#reasoningAsyncQueue = new AsyncQueue({delayMs: 0, ttl: 20 * 60 * 1000});
                           statusMsg = null;
 
                           this.#hostedReasoningCall.initialCommit() //intentionally async
@@ -190,7 +190,7 @@ class Completion extends EventEmitter {
                         break;
                       case 'image_generation_call':
                           this.#hostedImageGenerationCall = this.imageGenerationCall(event,statusMsg)
-                          this.#imageGenerationAsyncQueue = new AsyncQueue({delayMs: 100});
+                          this.#imageGenerationAsyncQueue = new AsyncQueue({delayMs: 100, ttl: 20 * 60 * 1000});
                           statusMsg = null;
                           this.#hostedImageGenerationCall.initialCommit() //intentionally async
                       break;
@@ -223,7 +223,6 @@ class Completion extends EventEmitter {
                           const completionObj = this.#message_items[output_index];
                           await this.#dialogue.commitCompletionDialogue(completionObj)
                         } else {
-                          console.log("Message output item is empty, skipping commit to dialogue",this.#message_items[output_index].deliverResponseToTgm.statusMsgId)
                           this.#replyMsg.deleteMsgByID(this.#message_items[output_index].deliverResponseToTgm.statusMsgId);
                         }
                         this.completedOutputItem(output_index)
@@ -343,6 +342,10 @@ class Completion extends EventEmitter {
         let totalDurationSec = 0;
         let itemStartTime;
         let itemEndTime;
+        const reply_markup = {
+                one_time_keyboard: true,
+                inline_keyboard: []
+              }
 
         return {
           "initialCommit":async () => {
@@ -365,6 +368,7 @@ class Completion extends EventEmitter {
             const caption = `⏳ <b>${functionDescription}</b>: ${details}`;
 
             if(!imageMsgId){
+              console.log(`imageGenerationCall delete status message: ${statusMsgId}`)
             const [{message_id},deleteResult] = await Promise.all([
               this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html"),
               this.#replyMsg.deleteMsgByID(statusMsgId)
@@ -387,7 +391,15 @@ class Completion extends EventEmitter {
             const imageBuffer = Buffer.from(result, 'base64');
             const filename = `image_${id}.${output_format}`;
             const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`;
-            const caption = `${msgText}\n\n${revised_prompt} --size ${size} --quality ${quality} --background ${background}`;
+            
+            let caption;
+            console.log("caption check",revised_prompt,appsettings.telegram_options.big_outgoing_caption_threshold)
+            if(revised_prompt<=appsettings.telegram_options.big_outgoing_caption_threshold){
+             caption = `${msgText}\n\n${revised_prompt} --size ${size} --quality ${quality} --background ${background}`;
+            } else {
+             caption = `${msgText}\n\n${revised_prompt.slice(0, appsettings.telegram_options.big_outgoing_caption_threshold)}... --size ${size} --quality ${quality} --background ${background}`;
+            }
+            
             const fileComment = {
               image_id: id,
               format: output_format,
@@ -403,10 +415,7 @@ class Completion extends EventEmitter {
 
             if(Location){
               const btnText = otherFunctions.getLocalizedPhrase(`full_size_image`,this.#user.language);
-              const reply_markup = {
-                one_time_keyboard: true,
-                inline_keyboard: [[{text:btnText, url:Location}]]
-              };
+              reply_markup.inline_keyboard.push([{text: btnText, url:Location}])
               this.#imageGenerationAsyncQueue.add(() => this.#replyMsg.updateMessageReplyMarkup(imageMsgId,reply_markup))
             }
 
@@ -636,6 +645,8 @@ class Completion extends EventEmitter {
         const {id,call_id,name,status} = item;
         const item_type = item.type;
 
+        const availableTools = new AvailableTools(this.#user);
+        const toolConfig = await availableTools.toolConfigByFunctionName(name);
         const options ={
             functionCall:{
               responseId:id,
@@ -644,7 +655,7 @@ class Completion extends EventEmitter {
               tool_call_index:output_index,
               tool_call_type:item_type,
               function_name:name,
-              tool_config:await toolsCollection.toolConfigByFunctionName(name,this.#user)
+              tool_config:toolConfig
            },
             replyMsgInstance:this.#replyMsg,
             dialogueInstance:this.#dialogue,

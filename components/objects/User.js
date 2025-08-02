@@ -13,6 +13,7 @@ class User{
     #active;
     #prefered_name;
     #response_style;
+    #image_choice;
     #plan;
     #groups;
     #currentRegime;
@@ -57,7 +58,7 @@ class User{
         this.#isAdmin = this.#groups?.includes("admin")
         this.#prefered_name = this.#settings[this.#currentRegime]?.prefered_name;
         this.#response_style = this.#settings[this.#currentRegime]?.response_style ?? "neutral";
-
+        this.#image_choice = this.#settings[this.#currentRegime]?.image_choice ?? "auto";
     } else {
         this.#active = false;
         this.#isRegistered = false;
@@ -125,6 +126,10 @@ class User{
 
     get response_style(){
         return this.#response_style
+    }
+
+    get image_choice(){
+        return this.#image_choice
     }
     
     get openAIToken(){

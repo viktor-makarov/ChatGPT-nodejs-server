@@ -21,6 +21,7 @@ const ProfileSheema = new Schema(
       chat: {
         prefered_name : { type: String },
         response_style: { type: String },
+        image_choice: { type: String },
         temperature: { type: Number, default: 1 },
         model: { type: String, default: modelSettings.chat.default_model },
       },

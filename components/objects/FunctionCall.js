@@ -2,7 +2,6 @@
 const mongo = require("../apis/mongo.js");
 const func = require("../common_functions.js");
 const telegramErrorHandler = require("../errorHandler.js");
-const toolsCollection = require("./toolsCollection.js");
 const awsApi = require("../apis/AWS_API.js")
 const PIAPI = require("../apis/piapi.js");
 const ExRateAPI = require("../apis/exchangerate_API.js");
@@ -11,6 +10,7 @@ const cbrAPI = require("../apis/cbr_API.js");
 const openAIApi = require("../apis/openAI_API.js");
 const devPrompts = require("../../config/developerPrompts.js");
 const { error } = require("pdf-lib");
+const AvailableTools = require("./AvailableTools.js");
 
 class FunctionCall {
     #replyMsg;
@@ -92,7 +92,9 @@ async addFunctionToQueue(statusMessageId){
 
     await func.delay(500*this.#functionCall.tool_call_index)
 
-    const queueConfig = toolsCollection.queueConfig[queue_name] || {max_concurrent:3,timeout_ms:30000,interval_ms:3000}
+    const availableTools = new AvailableTools(this.#user);
+    const queueConfig = availableTools.queueConfig(queue_name);
+    console.log("queueConfig chaecked",queueConfig)
     const {max_concurrent, timeout_ms, interval_ms} = queueConfig
     const startTime = Date.now();
 
@@ -205,7 +207,9 @@ async functionErrorPrompt(errorObject){
 
     const {tool_call_id, functionName, errorMessage, errorStack, assistant_instructions,user_instructions} = errorObject;
 
-    const availableFunctions = await toolsCollection.getAvailableToolsForCompletion(this.#dialogue.userInstance)
+    const availableToolsInstance = new AvailableTools(this.#dialogue.userInstance);
+
+    const availableFunctions = await availableToolsInstance.getAvailableToolsForCompletion()
     const otherAvailableFunctions = availableFunctions.map(func => func.name).filter(funcName => funcName !== functionName);
 
     let prompt = `
@@ -358,9 +362,9 @@ async finalizeStatusMessage(functionResult,statusMessageId){
     let msgText;
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
     if(functionDescription){
-     msgText = `${resultIcon} <b>${functionFriendlyName}</b>: ${functionDescription}`
+     msgText = `${resultIcon} <b>${functionFriendlyName}</b>: ${functionDescription} ${func.toHHMMSS(functionResult?.supportive_data?.duration)}`
     } else {
-     msgText = `${resultIcon} <b>${functionFriendlyName}</b>`
+     msgText = `${resultIcon} <b>${functionFriendlyName}</b> ${func.toHHMMSS(functionResult?.supportive_data?.duration)}`
     }
     const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
     const infoForUserEncoded = await func.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msgText})

@@ -8,8 +8,8 @@ const openAIApi = require("./apis/openAI_API.js");
 const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const awsApi = require("./apis/AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
-const toolsCollection  = require("./objects/toolsCollection.js");
 const telegramErrorHandler = require("./errorHandler.js");
+const AvailableTools = require("./objects/AvailableTools.js");
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -343,6 +343,9 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     const functionName = "imagine_midjourney"
     const functionArguments = {prompt}    
 
+    const availableTools = new AvailableTools(userInstance);
+    const toolConfig = await availableTools.toolConfigByFunctionName(functionName);
+
     const functionCallOptions = {
       responseId:null,
       status:"in_progress",
@@ -351,7 +354,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
-      tool_config:await toolsCollection.toolConfigByFunctionName(functionName,userInstance)
+      tool_config:toolConfig
     };
 
     const functionInstance = new FunctionCall({
@@ -684,7 +687,9 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const functionArguments = {
       buttonPushed : jsonDecoded
     }
-    
+     const availableTools = new AvailableTools(userInstance);
+    const toolConfig = await availableTools.toolConfigByFunctionName(functionName);
+
     const functionCallOptions = {
       responseId:null,
       status:"in_progress",
@@ -693,7 +698,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
-      tool_config:await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance),
+      tool_config:toolConfig,
       statusMsg:statusMsg
     };
 
@@ -1120,11 +1125,11 @@ async function resetNonDialogueHandler(requestMsgInstance) {
 }
 
 async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
-
+  
   const userInstance = requestMsgInstance.user;
   let responses = [];
   let callbackArray = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
-
+  
   if(requestMsgInstance.callback_data){
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
       callbackArray =  callbackArray.concat(callback_data)

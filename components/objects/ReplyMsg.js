@@ -353,21 +353,6 @@ async updateMessageReplyMarkup(msgId,reply_markup){
 )
 }
 
-async updateMediaFromBuffer2(msgId,buffer,file_name,type,caption,reply_markup,parse_mode="html"){
-
-  console.log("Updating media from buffer",msgId,buffer.length,file_name,type,caption,reply_markup)
-  const media = {
-    type: type,
-    media: { source: buffer, filename: file_name }
-  }
-  const options = { chat_id:this.#chatId,message_id:msgId }
-
-  if(caption) media.caption = caption;
-  if(reply_markup) options.reply_markup = reply_markup;
-  if(parse_mode) media.parse_mode = parse_mode;
-
-  return await this.#botInstance.editMessageMedia(media,options)
-}
 
 async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,parse_mode="html"){
 
@@ -382,7 +367,7 @@ async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,par
   if(caption) media.caption = caption;
   if(parse_mode) media.parse_mode = parse_mode;
   formData.append('media', JSON.stringify(media));
-  formData.append(file_name, this.bufferToStream(buffer), { filename: file_name });
+  formData.append(file_name, buffer, { filename: file_name });
 
   if(reply_markup) formData.append('reply_markup', JSON.stringify(reply_markup));
   
@@ -392,16 +377,10 @@ async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,par
             headers: formData.getHeaders(),
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
+            timeout: 180000, // 180 seconds timeout
           });
       
       return result.data;
-}
-
-bufferToStream(buffer) {
-  const stream = new Readable();
-  stream.push(buffer);
-  stream.push(null); // Signal the end of the stream
-  return stream;
 }
 
 async sendToNewMessage(text,reply_markup,parse_mode,add_options){

@@ -170,6 +170,10 @@ module.exports = {
         "en": "Full size image",
         "ru": "Полноразмерное изображение"
     },
+    "full_size_prompt":{
+        "en": "Full size prompt",
+        "ru": "Полноразмерный запрос"
+    },
     "manual_file_pdf":{
         "en": "User manual.pdf",
         "ru": "Руководство пользователя.pdf"

@@ -1,11 +1,23 @@
 
 class AsyncQueue {
-  constructor({ delayMs = 0 } = {}) {
+  constructor({ delayMs = 0, ttl = 60 * 60 * 1000 } = {}) {
+    if (ttl === undefined || ttl === null) {
+      throw new Error('TTL parameter is required');
+    }
+    if (typeof ttl !== 'number' || ttl <= 0) {
+      throw new Error('TTL must be a positive number');
+    }
+    
     this._delayMs = delayMs;
+    this._ttl = ttl;
     this._tasks   = [];
     this._running = false;
     this._closed  = false;
     this._onEmptyResolver = null;
+    this._ttlTimer = null;
+    
+    // Запускаем таймер TTL
+    this._startTTLTimer();
   }
 
   add(task) {
@@ -21,11 +33,26 @@ class AsyncQueue {
 
   async close() {
     this._closed = true;
+    
+    // Очищаем таймер TTL если он еще активен
+    if (this._ttlTimer) {
+      clearTimeout(this._ttlTimer);
+      this._ttlTimer = null;
+    }
+    
     if (this._running || this._tasks.length)
       await new Promise(res => (this._onEmptyResolver = res));
   }
 
   /* ---------- private ---------- */
+  _startTTLTimer() {
+    this._ttlTimer = setTimeout(() => {
+      this.close().catch(err => {
+        console.error('Error during TTL auto-close:', err);
+      });
+    }, this._ttl);
+  }
+
   async _start() {
     if (this._running) return;
     this._running = true;

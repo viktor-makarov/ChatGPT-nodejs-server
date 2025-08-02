@@ -78,9 +78,11 @@ class Dialogue {
 
         const image_size_limit = modelConfig[model]?.image_input_limit_bites ?? 1024 * 1024
         const image_count_limit = modelConfig[model]?.image_input_limit_count ?? 5
-        
+        console.time('mongo getDialogueForRequest');
         const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid,this.#user.currentRegime) || []
+        console.timeEnd('mongo getDialogueForRequest');
         const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFromDB,image_size_limit,image_count_limit)
+        
         return this.mapValuesToDialogue(dialogueFilteredByImageLimit);
     }
 

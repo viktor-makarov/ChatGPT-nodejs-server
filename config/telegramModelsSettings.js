@@ -71,6 +71,25 @@ module.exports = {
                     }
             }
             },
+            "image_choice":{
+                "name":"Генератор изображений",
+                "options_desc":"Выберите сервис для генерации изображений:",
+                "templateRespMsg":"Сервис генерации изображений изменен на <b>[value]</b>.",
+                "options":{
+                    "mdj":{
+                        "name":"Midjourney",
+                    },
+                    "oai":{
+                        "name":"OpenAI",
+                    },
+                    "auto":{
+                        "name":"Автоматически",
+                    },
+                    "back":{
+                        "name":"<< Назад"
+                    }
+                }
+            },
             "back":{
                 "name":"<< Назад"
             }
