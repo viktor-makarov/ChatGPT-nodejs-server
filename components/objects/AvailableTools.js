@@ -4,9 +4,26 @@ const ExRateAPI = require("../apis/exchangerate_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
 
 class AvailableTools {
+
+#userClass;
+#toolsList;
+#queueConfig;
+#mcpTools;
+
     constructor(userClass) {
-        this.userClass = userClass;
-        this.toolsList = [
+        this.#userClass = userClass;
+        this.#toolsList = [
+            {
+                type: "mcp",
+                server_label: "deepwiki",
+                server_url: "https://mcp.deepwiki.com/mcp",
+                require_approval: "never",
+                availableInRegimes: ["chat"],
+                availableForGroups: ["admin", "basic"],
+                availableForToolCalls: true,
+                category: "hosted",
+                deprecated: false,
+            },
             {
                 type: "image_generation",
                 model: "gpt-image-1",
@@ -20,7 +37,7 @@ class AvailableTools {
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
                 category: "hosted",
-                depricated: false,
+                deprecated: false,
                 imageGeneration: function (image_choice) {
                     if (image_choice === "mdj") {
                         this.availableInRegimes = this.availableInRegimes.filter(regime => regime !== "chat");
@@ -36,7 +53,7 @@ class AvailableTools {
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
                 category: "hosted",
-                depricated: false,
+                deprecated: false,
             },
             {
                 type: "function",
@@ -91,7 +108,7 @@ class AvailableTools {
                 availableForGroups: ["admin", "basic"],
                 model: "gpt-4.1",
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -146,7 +163,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -173,7 +190,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 addProperties: async function (){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
@@ -206,7 +223,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 addProperties: async function(){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
@@ -239,7 +256,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 addProperties: async function(){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
@@ -274,7 +291,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 addUserID: function(userid){
                     return this.userid = userid
                 },
@@ -305,7 +322,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -338,7 +355,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -371,7 +388,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -424,7 +441,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 queue_name: "midjourney",
                 category: "custom",
                 imageGeneration: function (image_choice) {
@@ -463,7 +480,7 @@ class AvailableTools {
                 availableInRegimes: ["chat", "translator", "texteditor"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: false,
-                depricated: false,
+                deprecated: false,
                 queue_name: "midjourney",
                 category: "custom"
             },
@@ -513,7 +530,7 @@ class AvailableTools {
                 availableInRegimes: ["chat", "translator", "texteditor"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: false,
-                depricated: false,
+                deprecated: false,
                 queue_name: "midjourney",
                 category: "custom"
             },
@@ -550,7 +567,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -577,7 +594,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: false,
-                depricated: true,
+                deprecated: true,
                 category: "custom"
             },
             {
@@ -604,7 +621,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: true,
+                deprecated: true,
                 category: "custom"
             },
             {
@@ -653,7 +670,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -821,7 +838,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -864,7 +881,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -912,7 +929,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -962,7 +979,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 category: "custom"
             },
             {
@@ -1012,7 +1029,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForGroups: ["admin", "basic"],
                 availableForToolCalls: true,
-                depricated: false,
+                deprecated: false,
                 addProperties: async function(){
                     const currentDate = new Date().toISOString().split("T")[0]; // Get current date in YYYY-MM-DD format
                     this.parameters.properties.exchange_rates.items.properties.date.description = `Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date ${currentDate} and must be in the past.`
@@ -1020,7 +1037,7 @@ class AvailableTools {
                 category: "custom"
             }
         ];
-        this.queueConfig = {
+        this.#queueConfig = {
             "midjourney": {
                 max_concurrent: 12,
                 timeout_ms: 180000,
@@ -1032,29 +1049,106 @@ class AvailableTools {
                 interval_ms: 3000
             }
         };
+
+        this.#mcpTools = {
+            deepwiki:
+                [
+            {
+                "annotations": null,
+                "description": "Get a list of documentation topics for a GitHub repository",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "repoName": {
+                            "type": "string",
+                            "description": "GitHub repository: owner/repo (e.g. \"facebook/react\")"
+                        }
+                    },
+                    "required": [
+                        "repoName"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "name": "read_wiki_structure"
+            },
+            {
+                "annotations": null,
+                "description": "View documentation about a GitHub repository",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "repoName": {
+                            "type": "string",
+                            "description": "GitHub repository: owner/repo (e.g. \"facebook/react\")"
+                        }
+                    },
+                    "required": [
+                        "repoName"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "name": "read_wiki_contents"
+            },
+            {
+                "annotations": null,
+                "description": "Ask any question about a GitHub repository",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "repoName": {
+                            "type": "string",
+                            "description": "GitHub repository: owner/repo (e.g. \"facebook/react\")"
+                        },
+                        "question": {
+                            "type": "string",
+                            "description": "The question to ask about the repository"
+                        }
+                    },
+                    "required": [
+                        "repoName",
+                        "question"
+                    ],
+                    "additionalProperties": false,
+                    "$schema": "http://json-schema.org/draft-07/schema#"
+                },
+                "name": "ask_question"
+            }
+        ]
+            
+        }
+    }
+
+    get toolsList() {
+        return this.#toolsList;
+    }
+
+    get mcpTools(){
+        return this.#mcpTools;
     }
 
     queueConfig(queue_name) {
-        return this.queueConfig[queue_name] || {max_concurrent:3,timeout_ms:30000,interval_ms:3000};
+        return this.#queueConfig[queue_name] || {max_concurrent:3,timeout_ms:30000,interval_ms:3000};
     }
 
     // Главный метод для получения доступных инструментов
     async getAvailableTools() {
         // Применяем все методы к инструментам
-        for (const tool of this.toolsList) {
-            tool.addUserID  &&  tool.addUserID(this.userClass.userid)
+        for (const tool of this.#toolsList) {
+            tool.addUserID  &&  tool.addUserID(this.#userClass.userid)
             tool.addProperties && await tool.addProperties()
-            tool.imageGeneration && tool.imageGeneration(this.userClass.image_choice)
+            tool.imageGeneration && tool.imageGeneration(this.#userClass.image_choice)
         }
 
         // Фильтруем инструменты по группам и режимам пользователя
-        const availableForToolCalls = this.toolsList.filter((tool) => {
+        const availableForToolCalls = this.#toolsList.filter((tool) => {
             const availableForGroups = tool.availableForGroups || [];
-            const userGroups = this.userClass.groups || [];
+            const userGroups = this.#userClass.groups || [];
             const isInGroup = userGroups.some(group => availableForGroups.includes(group));
 
-            return tool.availableInRegimes.includes(this.userClass.currentRegime)
-                && !tool.depricated
+            return tool.availableInRegimes.includes(this.#userClass.currentRegime)
+                && !tool.deprecated
                 && isInGroup;
         });
 
@@ -1075,7 +1169,10 @@ class AvailableTools {
             partial_images: tool.partial_images,
             output_compression: tool.output_compression,
             quality: tool.quality,
-            size: tool.size
+            size: tool.size,
+            server_label: tool.server_label,
+            server_url: tool.server_url,
+            require_approval: tool.require_approval
         }));
     }
 

@@ -313,7 +313,21 @@ const TelegramDialogSheema = new Schema(
     includeInSearch:{type: Boolean},
     image_size_bites: { type: Number},
     image_input: { type: Boolean},
-    tokens:{ type: Number}
+    tokens:{ type: Number},
+//for mcp
+    mcp_tool_call_id: { type: String},
+    mcp_tools: { type: Object },
+    mcp_server_label: { type: String},
+    mcp_error: { type: String},
+    mcp_approval_request_id: { type: String},
+    mcp_call_name: { type: String},
+    mcp_call_arguments: { type: String},
+    mcp_approval_response_id: { type: String},
+    mcp_call_approve: { type: Boolean},
+    mcp_call_user_response_reason: { type: String},
+    mcp_call_id: { type: String},
+    mcp_call_error: { type: String},
+    mcp_call_output: { type: String},
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );

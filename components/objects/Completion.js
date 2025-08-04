@@ -62,6 +62,10 @@ class Completion extends EventEmitter {
     #hostedCodeInterpreterCall;
     #hostedReasoningCall;
     #hostedImageGenerationCall;
+    #hostedMCPToolRequest;
+    #MCPToolRequestAsyncQueue;
+    #hostedMCPApprovalRequest;
+    #hostedMCPCall;
     #tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100;
     #overalTokenLimit;
     
@@ -109,7 +113,7 @@ class Completion extends EventEmitter {
             const {sequence_number, response,output_index,item,content_index } = event;
             const response_type = event.type;
             await this.registerNewEvent(event,evensOccured)
-            //console.log(sequence_number,new Date(),response_type,output_index,content_index)
+            console.log(sequence_number,new Date(),response_type,output_index,content_index)
 
             switch (response_type) {
                 case 'response.created':
@@ -133,7 +137,7 @@ class Completion extends EventEmitter {
                       statusMsg = await this.#replyMsg.sendStatusMsg()
                     }
                     this.#telegramMsgIds = [statusMsg.message_id];
-
+      
                     switch (item_type) {
                       case 'message':
                         this.#message_items[output_index] =  this.#completionObjectDefault
@@ -192,9 +196,25 @@ class Completion extends EventEmitter {
                           this.#hostedImageGenerationCall = this.imageGenerationCall(event,statusMsg)
                           this.#imageGenerationAsyncQueue = new AsyncQueue({delayMs: 100, ttl: 20 * 60 * 1000});
                           statusMsg = null;
-                          this.#hostedImageGenerationCall.initialCommit() //intentionally async
+                          this.#imageGenerationAsyncQueue.add(() => this.#hostedImageGenerationCall.initialCommit()) //intentionally async
+                      break;
+
+                      case 'mcp_list_tools':
+                        this.#hostedMCPToolRequest = this.MCPToolsRequest(event,statusMsg)
+                        statusMsg = null;
+                        this.#hostedMCPToolRequest.initialCommit() //intentionally async
+                        break;
+                      case 'mcp_call':
+                        this.#hostedMCPCall = this.MCPCall(event,statusMsg)
+                        statusMsg = null;
+                        this.#hostedMCPCall.initialCommit(event) //intentionally async
+                        break;
+                      case 'mcp_approval_request':
+                        this.#hostedMCPApprovalRequest = this.MCPApprovalRequest(event,statusMsg)
+                        statusMsg = null;
                       break;
                     }
+
                     break;
                 case 'response.output_text.delta':
                     switch (this.#output_items[output_index].type) {
@@ -216,7 +236,7 @@ class Completion extends EventEmitter {
                 case 'response.output_item.done':
                     switch (this.#output_items[output_index].type) {
                       case 'message':
-                        
+                        console.log(new Date(),`message done triggered`)
                         if(this.#message_items[output_index].text !=""){
                           this.#message_items[output_index].status = item?.status;
                           this.#message_items[output_index].content = [item?.content[0]];
@@ -245,8 +265,21 @@ class Completion extends EventEmitter {
                         this.completedOutputItem(output_index)
                         break;
                       case 'image_generation_call':
-                        this.#hostedImageGenerationCall.endCommit(event)
-                        
+                        this.#imageGenerationAsyncQueue.add(() => this.#hostedImageGenerationCall.endCommit(event))
+                        this.completedOutputItem(output_index)
+                      break;
+                      case 'mcp_list_tools':
+                        this.#hostedMCPToolRequest.endCommit(event)
+                        this.completedOutputItem(output_index)
+                      break;
+
+                      case 'mcp_call':
+                        this.#hostedMCPCall.endCommit(event)
+                        this.completedOutputItem(output_index)
+                      break;
+
+                      case 'mcp_approval_request':
+                        this.#hostedMCPApprovalRequest.approvalRequest(event)
                         this.completedOutputItem(output_index)
                       break;
                     }
@@ -254,7 +287,7 @@ class Completion extends EventEmitter {
 
                 case 'response.image_generation_call.partial_image':
 
-                    this.#hostedImageGenerationCall.partialCommit(event)
+                    this.#imageGenerationAsyncQueue.add(() => this.#hostedImageGenerationCall.partialCommit(event))
                 break
 
                 case 'response.completed':
@@ -284,7 +317,7 @@ class Completion extends EventEmitter {
 
         const statusMsgId = statusMsg?.message_id
         const {output_index,item} = initialEvent;
-        const {type,code,status,id} = item;
+        const {type,status,id} = item;
         let functionDescription = "Рассуждение";
         let totalDurationSec = 0;
         let itemStartTime;
@@ -296,7 +329,7 @@ class Completion extends EventEmitter {
             let details = "думаю...";
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
 
-            console.log(`reasoning initialCommit msgID: ${statusMsgId}`)
+
             this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
@@ -321,7 +354,6 @@ class Completion extends EventEmitter {
             const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
             totalDurationSec += itemDurationSec;
             const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`
-            console.log(`reasoning endCommit msgID: ${statusMsgId}`)
             this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
                 chat_id:this.#replyMsg.chatId,
                 message_id:statusMsgId,
@@ -332,10 +364,222 @@ class Completion extends EventEmitter {
       }
     }
 
+      MCPToolsRequest(initialEvent,statusMsg){
+
+        const statusMsgId = statusMsg?.message_id
+        const {output_index,item} = initialEvent;
+        const {server_label} = item;
+        let functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
+        let totalDurationSec = 0;
+        let itemStartTime;
+        let itemEndTime;
+        
+        return {
+          "initialCommit":() => {
+            itemStartTime = Date.now();
+            let details = "получаю список инструментов ...";
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+            this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            })
+          },
+          "endCommit": async (mcp_tool_event) => {
+
+            itemEndTime = Date.now();
+            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
+            totalDurationSec += itemDurationSec;
+
+            let details = "список инструментов";
+            const msgText = `✅ <b>${functionDescription}</b>: ${details} ${otherFunctions.toHHMMSS(totalDurationSec)}`
+            await Promise.all([
+            this.#replyMsg.simpleMessageUpdate(msgText,{
+                chat_id:this.#replyMsg.chatId,
+                message_id:statusMsgId,
+                reply_markup:null,
+                parse_mode: "html"
+            }),
+            this.#dialogue.commitMCPToolsToDialogue(this.#responseId,output_index,mcp_tool_event.item)
+            ]);
+          }
+      }
+    }
+
+    MCPApprovalRequest(initialEvent,statusMsg){
+
+        const statusMsgId = statusMsg?.message_id
+        
+        return {
+          "approvalRequest": async (event) => {
+
+            const {output_index,item} = event;
+            const {type,server_label,id,name} = item;
+            const call_arguments = item.arguments;
+
+            const functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
+            const MsgText = `<b>${functionDescription}</b> запрашивает подтверждение. \nПодтвердите выполнение запроса <code>${name}</code> со следующими агрументами: <code>${call_arguments}</code>.`
+
+            const reply_markup = await this.craftReplyMarkupForMCPApprovalRequest(this.#responseId,output_index,item,statusMsgId,MsgText);
+            
+            await Promise.all([
+            this.#replyMsg.simpleMessageUpdate(MsgText,{
+                chat_id:this.#replyMsg.chatId,
+                message_id:statusMsgId,
+                reply_markup:reply_markup,
+                parse_mode: "html"
+            }),
+            this.#dialogue.commitMCPApprovalRequestToDialogue(this.#responseId,output_index,item,statusMsgId)
+          ])
+          }
+        }
+      }
+
+      async craftReplyMarkupForMCPApprovalRequest(responseId,output_index,item,tgm_msg_id,msg_text){
+
+        const {server_label,id} = item;
+
+        const approval_text = `${msg_text} \n\n✅ Подтвержден`
+        const cancel_text = `${msg_text} \n\n❌ Отменен`
+
+        const approve_object = {
+          request_id: id,
+          server_label,
+          approve: true,
+          reason: null,
+          responseId,
+          output_index,
+          tgm_msg_id,
+          msg_text: approval_text
+        };
+
+        const cancel_object = {
+          request_id: id,
+          server_label,
+          approve: false,
+          reason: null,
+          responseId,
+          output_index,
+          tgm_msg_id,
+          msg_text: cancel_text
+        };
+
+        const approve_hash = await otherFunctions.encodeJson(approve_object)
+        const cancel_hash = await otherFunctions.encodeJson(cancel_object)
+
+        const approve_callback_data = {e:"mcp_req",d:approve_hash}
+        const cancel_callback_data = {e:"mcp_req",d:cancel_hash}
+
+        const approve_button = {
+          text: "Подтвердить",
+          callback_data: JSON.stringify(approve_callback_data),
+        };
+
+        const cancel_button = {
+          text: "Отменить",
+          callback_data: JSON.stringify(cancel_callback_data),
+        };
+
+      return {
+        one_time_keyboard: true,
+        inline_keyboard: [[approve_button, cancel_button]],
+      };
+      }
+    
+    MCPCall(initialEvent,statusMsg){
+
+        const statusMsgId = statusMsg?.message_id
+        const {output_index,item} = initialEvent;
+        const {type,server_label,id,name,approval_request_id,} = item;
+        let functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
+        let totalDurationSec = 0;
+        let itemStartTime;
+        let itemEndTime;
+        
+        return {
+          "initialCommit":(event) => {
+            itemStartTime = Date.now();
+            const {item} = event;
+            const {name} = item;
+            let details = `запрос '${name}'  ...`;
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+            this.#replyMsg.simpleMessageUpdate(MsgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            })
+          },
+          "endCommit": async (event) => {
+            const {output_index,item} = event;
+            const {type,server_label,id,name,output,error} = item;
+            const call_arguments = item.arguments;
+            itemEndTime = Date.now();
+            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
+            totalDurationSec += itemDurationSec;
+            const requestName = `запрос '${name}'`;
+            let msgText;
+            if (error) {
+              msgText = `❌ <b>${functionDescription}</b>: ${requestName} ${otherFunctions.toHHMMSS(totalDurationSec)}`
+            } else {
+              msgText = `✅ <b>${functionDescription}</b>: ${requestName} ${otherFunctions.toHHMMSS(totalDurationSec)}`
+            }
+
+            const reply_markup = await this.craftReplyMarkupForMCPCall(item,msgText);
+            
+            await Promise.all([
+            this.#replyMsg.simpleMessageUpdate(msgText,{
+                chat_id:this.#replyMsg.chatId,
+                message_id:statusMsgId,
+                reply_markup:reply_markup,
+                parse_mode: "html"
+            }),
+              this.#dialogue.commitMCPCallToDialogue(this.#responseId,output_index,item,statusMsgId)
+            ])
+
+          }
+      }
+    }
+
+    async craftReplyMarkupForMCPCall(call_item,msg_text){
+
+      const unfoldedTextHtml = this.buildMCPCallOutputHtml(call_item)
+
+      const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msg_text})
+      const callback_data = {e:"un_f_up",d:infoForUserEncoded}
+
+      const fold_button = {
+        text: "Показать подробности",
+        callback_data: JSON.stringify(callback_data),
+      };
+
+      return {
+        one_time_keyboard: true,
+        inline_keyboard: [[fold_button]],
+      };
+    }
+
+    buildMCPCallOutputHtml(call_item){
+          const {type,server_label,id,name,output,error} = call_item;
+          const call_arguments = call_item.arguments;
+
+          const request = `<pre>${otherFunctions.wireHtml(call_arguments)}</pre>`
+
+          const result = error || output;
+          const success = error ? 0 : 1;
+
+          const responseUnwired = otherFunctions.unWireText(result)
+          const reply = `<pre><code>${otherFunctions.wireHtml(responseUnwired)}</code></pre>`
+
+          const htmlToSend = `<b>mcp server:</b> ${server_label}\n<b>name:</b> ${name}\n<b>id:</b> ${id}\n<b>type:</b> ${type}\n<b>success:</b> ${success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
+          return htmlToSend;
+        }
+
       imageGenerationCall(initialEvent,statusMsg){
 
         const statusMsgId = statusMsg?.message_id
-        let imageMsgId;
+        let imageMsgId = new Set([]);
         const {output_index,item} = initialEvent;
         const {type,status,id} = item;
         let functionDescription = "Изображение OpenAI";
@@ -360,6 +604,7 @@ class Completion extends EventEmitter {
             })
           },
           "partialCommit": async (event) => {
+
             const {partial_image_index,partial_image_b64,output_format,item_id} = event;
             const partialImageBuffer = Buffer.from(partial_image_b64, 'base64');
             const filename = `partial_image_${item_id.slice(0, 10)}_${partial_image_index}.${output_format}`;
@@ -367,19 +612,26 @@ class Completion extends EventEmitter {
             let details = "это еще не все. Продолжаю ..."
             const caption = `⏳ <b>${functionDescription}</b>: ${details}`;
 
-            if(!imageMsgId){
-              console.log(`imageGenerationCall delete status message: ${statusMsgId}`)
+
+            if(Array.from(imageMsgId).length===0){
             const [{message_id},deleteResult] = await Promise.all([
               this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html"),
               this.#replyMsg.deleteMsgByID(statusMsgId)
             ]);
-            imageMsgId = message_id;
+            imageMsgId.add(message_id);
             } else {
-              this.#imageGenerationAsyncQueue.add(() => this.#replyMsg.updateMediaFromBuffer(imageMsgId,partialImageBuffer,filename,"photo",caption,null));
+              const lastImageMsgId = Array.from(imageMsgId).at(-1);
+              const [{message_id},deleteResult] = await Promise.all([
+                this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html"),
+                this.#replyMsg.deleteMsgByID(lastImageMsgId)
+              ]);
+            imageMsgId.add(message_id);
             }
-
+            
+     
           },
           "endCommit": async (completedEvent) => {
+    
             itemEndTime = Date.now();
             const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
             totalDurationSec += itemDurationSec;
@@ -389,11 +641,11 @@ class Completion extends EventEmitter {
             
             const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
             const imageBuffer = Buffer.from(result, 'base64');
-            const filename = `image_${id}.${output_format}`;
+            const filename = otherFunctions.valueToMD5(String(this.#user))+ "_" + this.#user.currentRegime + "_" + otherFunctions.valueToMD5(String(imageMsgId)) + "." + output_format;
             const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`;
             
             let caption;
-            console.log("caption check",revised_prompt,appsettings.telegram_options.big_outgoing_caption_threshold)
+
             if(revised_prompt<=appsettings.telegram_options.big_outgoing_caption_threshold){
              caption = `${msgText}\n\n${revised_prompt} --size ${size} --quality ${quality} --background ${background}`;
             } else {
@@ -406,17 +658,22 @@ class Completion extends EventEmitter {
               revised_prompt: revised_prompt,
               content: "User used OpenAI image generation tool",
             }
+            
    
-            this.#imageGenerationAsyncQueue.add(() => this.#replyMsg.updateMediaFromBuffer(imageMsgId,imageBuffer,filename,"photo",caption,null))
-            const [ImageCommitResult,{Location}] = await Promise.all([
+            const lastImageMsgId = Array.from(imageMsgId).at(-1);
+            const [deleteResult,{message_id}  ,ImageCommitResult,{Location}] = await Promise.all([
+             this.#replyMsg.deleteMsgByID(lastImageMsgId),
+             this.#replyMsg.sendOAIImage(imageBuffer,caption,id,output_format,mime_type,"html"),
              this.#dialogue.commitImageToDialogue(fileComment,{url:null,base64:result,sizeBytes:imageBuffer.length,mimetype:mime_type}),
-             awsApi.uploadFileToS3FromBuffer(imageBuffer,`oai_image_${id}.${output_format}`)
+             awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
             ])
+            imageMsgId.add(message_id);
 
+            
             if(Location){
               const btnText = otherFunctions.getLocalizedPhrase(`full_size_image`,this.#user.language);
               reply_markup.inline_keyboard.push([{text: btnText, url:Location}])
-              this.#imageGenerationAsyncQueue.add(() => this.#replyMsg.updateMessageReplyMarkup(imageMsgId,reply_markup))
+              this.#replyMsg.updateMessageReplyMarkup(Array.from(imageMsgId).at(-1),reply_markup)
             }
 
             mongo.insertCreditUsage({
@@ -812,10 +1069,17 @@ class Completion extends EventEmitter {
             if(err.resetDialogue){
               const response = await this.#dialogue.resetDialogue()
               await this.#replyMsg.simpleMessageUpdate(response.text,{
-                chat_id:replyMsg.chatId,
-                message_id:replyMsg.lastMsgSentId
+                chat_id:this.#replyMsg.chatId,
+                message_id:this.#replyMsg.lastMsgSentId
               })
               await this.#replyMsg.sendToNewMessage(err.resetDialogue?.message_to_user,null,null)
+              return
+            } else if(err.userResponseRequired){
+              
+              await this.#replyMsg.simpleMessageUpdate(err.user_message,{
+                chat_id:this.#replyMsg.chatId,
+                message_id:this.#replyMsg.lastMsgSentId
+              })
               return
             } else {
               throw err

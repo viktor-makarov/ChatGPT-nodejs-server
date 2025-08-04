@@ -13,6 +13,7 @@ try{
     err.userid = replyMsgInstance?.user?.userid || null;
     err = enrichErrorObject(err,replyMsgInstance)
 
+    console.log("Error occurred:", err)
 //Log to mongodb
 const error_to_log  = createErrorObject(err);
 if(err.mongodblog){

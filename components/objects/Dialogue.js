@@ -6,6 +6,7 @@ const Completion = require("./Completion.js");
 const devPrompts = require("../../config/developerPrompts.js");
 const modelConfig = require("../../config/modelConfig.js");
 const { error } = require("pdf-lib");
+const AvailableTools = require("./AvailableTools.js");
 
 class Dialogue {
 
@@ -78,9 +79,7 @@ class Dialogue {
 
         const image_size_limit = modelConfig[model]?.image_input_limit_bites ?? 1024 * 1024
         const image_count_limit = modelConfig[model]?.image_input_limit_count ?? 5
-        console.time('mongo getDialogueForRequest');
         const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid,this.#user.currentRegime) || []
-        console.timeEnd('mongo getDialogueForRequest');
         const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFromDB,image_size_limit,image_count_limit)
         
         return this.mapValuesToDialogue(dialogueFilteredByImageLimit);
@@ -103,7 +102,27 @@ class Dialogue {
     mapValuesToDialogue(dialogue){
 
         return dialogue.map(doc => {
-            const {role,content,status,type,function_name,tool_call_id,function_arguments} = doc;
+            const {role,
+                content,
+                status,
+                type,
+                function_name,
+                tool_call_id,
+                function_arguments,
+                mcp_tool_call_id,
+                mcp_tools,
+                mcp_server_label,
+                mcp_error,
+                mcp_approval_request_id,
+                mcp_call_name,
+                mcp_call_arguments,
+                mcp_approval_response_id,
+                mcp_call_approve,
+                mcp_call_user_response_reason,
+                mcp_call_id,
+                mcp_call_error,
+                mcp_call_output
+            } = doc;
 
             if(type === "message"){
                 return {role,status,type,content};
@@ -117,6 +136,57 @@ class Dialogue {
                     call_id: tool_call_id,
                     name:function_name,
                     arguments:function_arguments
+                } 
+            } else if (type === "image_generation_call"){
+                return {type,
+                    id: null,
+                    status:null,
+                    result:null
+                }
+            } else if (type === "code_interpreter_call"){
+                return {type,
+                    id: null,
+                    status:null,
+                    container_id:null,
+                    code: null,
+                    outputs:null
+                }
+            } else if (type === "reasoning"){
+                return {type,
+                    id: null,
+                    status:null,
+                    encrypted_content:null,
+                    summary: null
+                }
+            } else if (type === "mcp_list_tools"){
+                return {type,
+                    id: mcp_tool_call_id,
+                    server_label:mcp_server_label,
+                    tools:mcp_tools,
+                    error: mcp_error
+                }
+            } else if (type === "mcp_approval_request"){
+                return {type,
+                    id: mcp_approval_request_id,
+                    server_label:mcp_server_label,
+                    name:mcp_call_name,
+                    arguments: mcp_call_arguments
+                }
+            } else if (type === "mcp_approval_response"){
+                return {type,
+                    id: mcp_approval_response_id,
+                    approval_request_id:mcp_approval_request_id,
+                    approve:mcp_call_approve,
+                    reason: mcp_call_user_response_reason
+                }
+            } else if (type === "mcp_call"){
+                return {type,
+                    id: mcp_call_id,
+                    server_label:mcp_server_label,
+                    name:mcp_call_name,
+                    arguments:mcp_call_arguments,
+                    error: mcp_call_error,
+                    output: mcp_call_output
                 }
             } else {
                 return null
@@ -273,6 +343,7 @@ class Dialogue {
         const deletedFiles = deleteS3Results.Deleted
         await this.deleteMeta()     
         await this.commitInitialSystemPromptToDialogue("chat")
+        await this.commitMCPToolsAtRestartToDialogue("chat")
         await this.createMeta()
 
         const buttons = {
@@ -566,6 +637,194 @@ class Dialogue {
         console.log("DEVELOPER MESSAGE")
     };
 
+    async commitMCPToolsAtRestartToDialogue(regime){
+
+        const availableToolsInstance = new AvailableTools(this.#userid);
+        const allToolsList = availableToolsInstance.toolsList;
+        const mcpServers = allToolsList.
+        filter(tool => tool.type === "mcp" && tool.availableForToolCalls && !tool.deprecated && tool.availableInRegimes.includes(regime)).
+        map(tool => tool.server_label);
+        
+        const commitPromises = mcpServers.map(async(mcp_server) => {
+            const mcpToolsList = availableToolsInstance.mcpTools[mcp_server] || [];
+            if(mcpToolsList.length > 0) await this.initialCommitMCPToolsToDialogue(mcp_server,mcpToolsList);
+        });
+
+        await Promise.all(commitPromises);
+    }
+
+    async initialCommitMCPToolsToDialogue(server_label,mcp_tools){
+
+        const datetime = new Date();
+        const id = "mcpl_" + otherFunctions.valueToMD5(datetime.toISOString())
+        const sourceid = `initial_mcp_tools_list_${server_label}_${id}`;
+
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "developer",
+            mcp_tool_call_id: id,
+            mcp_tools: mcp_tools,
+            mcp_server_label: server_label,
+            status:"completed",
+            type:"mcp_list_tools",
+            includeInSearch: false
+          }
+
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.mcp_tools),this.#user.currentModel)
+        
+        console.log("INITIAL MCP TOOLS LIST COMMITED")
+    };
+
+    async commitMCPToolsToDialogue(responseId,output_index,mcp_tool_item,tgm_msg_id){
+
+        const {id,server_label,tools} = mcp_tool_item;
+        const datetime = new Date();
+        const sourceid = `${responseId}_output_index_${output_index}`;
+
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "assistant",
+            responseId:responseId,
+            mcp_tool_call_id: id,
+            mcp_tools: tools,
+            mcp_server_label: server_label,
+            mcp_error: null,
+            status:"completed",
+            type:"mcp_list_tools",
+            includeInSearch: false,
+            telegramMsgId:[tgm_msg_id]
+          }
+
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.mcp_tools),this.#user.currentModel)
+        
+        console.log("MCP TOOLS LIST COMMITED")
+    };
+
+    async commitMCPApprovalRequestToDialogue(responseId,output_index,request_item,tgm_msg_id){
+
+        const {id,server_label,name,type} = request_item;
+        const call_arguments = request_item.arguments;
+        const datetime = new Date();
+        const sourceid = `${responseId}_output_index_${output_index}_request`;
+
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "assistant",
+            responseId:responseId,
+            mcp_approval_request_id: id,
+            mcp_call_name: name,
+            mcp_call_arguments: call_arguments,
+            mcp_server_label: server_label,
+            status:"completed",
+            type:"mcp_approval_request",
+            includeInSearch: false,
+            telegramMsgId:[tgm_msg_id]
+          }
+
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.mcp_call_arguments),this.#user.currentModel)
+        
+        console.log("MCP APPROVAL REQUEST COMMITED")
+    };
+
+    async commitMCPCallToDialogue(responseId,output_index,call_item,tgm_msg_id){
+
+        const {id,server_label,name,error,output} = call_item;
+        const call_arguments = call_item.arguments;
+        const datetime = new Date();
+        const sourceid = `${responseId}_output_index_${output_index}_call`;
+
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "assistant",
+            responseId:responseId,
+            mcp_call_id: id,
+            mcp_call_name: name,
+            mcp_call_arguments: call_arguments,
+            mcp_call_error: error,
+            mcp_call_output: output,
+            mcp_server_label: server_label,
+            status:"completed",
+            type:"mcp_call",
+            includeInSearch: false,
+            telegramMsgId:[tgm_msg_id]
+          }
+
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.mcp_call_output),this.#user.currentModel)
+        
+        console.log("MCP CALL COMMITED")
+    };
+
+    async commitMCPApprovalResponseToDialogue(response_item){
+
+        const {request_id,server_label,approve,reason,responseId,output_index,tgm_msg_id} = response_item;
+        const datetime = new Date();
+        const sourceid = `${responseId}_output_index_${output_index}_response`;
+        const response_id = "mcpa_" + otherFunctions.valueToMD5(datetime.toISOString()); //response_id is optional, so we set it to null if not present
+
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "user",
+            responseId:responseId,
+            mcp_approval_response_id: response_id,
+            mcp_approval_request_id: request_id,
+            mcp_call_approve: approve,
+            mcp_call_user_response_reason: reason,
+            mcp_server_label: server_label,
+            type:"mcp_approval_response",
+            includeInSearch: false,
+            telegramMsgId:[tgm_msg_id]
+          }
+
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.mcp_call_user_response_reason || ""),this.#user.currentModel)
+        
+        console.log("MCP APPROVAL REQUEST COMMITED")
+    };
+
     async commitCodeInterpreterOutputToDialogue(id,text){
 
         const datetime = new Date();
@@ -604,7 +863,6 @@ class Dialogue {
         const resultTGM = await this.#replyMsg.simpleSendNewMessage(MsgText,null,"html",null)
     }
 
-  
     async checkPDFLimit(pdf_size_bites,pdf_pages){
 
         if(this.#metaObject.pdf_input_limit_exceeded){

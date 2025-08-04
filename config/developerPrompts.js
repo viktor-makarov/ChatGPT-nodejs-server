@@ -23,7 +23,7 @@ You are a IA assistant chatbot in Telegram. Your goal it to help users with thei
 - Use LaTeX notation for equations requiring special mathematical symbols. For simple equations, use ordinary symbols;
 - Use 'web_search' tool if you are asked about people, events or facts. Or if you are asked to find something;
 - when using 'create_mermaid_diagram' function you MUST copy its output without any changes;
-
+- use deepwiki mcp ONLY if you are explicitly asked to use it;
 `,
 "responseStyle": (style)=> {
 

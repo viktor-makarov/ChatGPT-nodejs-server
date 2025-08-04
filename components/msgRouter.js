@@ -559,7 +559,23 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       }
     })
 
-  } else if (callback_event === "readaloud"){
+  } else if (callback_event === "mcp_req"){
+
+    const response = await otherFunctions.decodeJson(callback_data_input)
+
+    await Promise.all([
+    dialogue.commitMCPApprovalResponseToDialogue(response),
+    replyMsg.simpleMessageUpdate(response.msg_text,{
+              chat_id:replyMsg.chatId,
+              message_id:response.tgm_msg_id,
+              reply_markup:null,
+              parse_mode: "html"
+            })
+    ])
+
+    dialogue.triggerCallCompletion()
+
+} else if (callback_event === "readaloud"){
 
     const result = await replyMsg.sendTextToSpeachWaiterMsg()
     const {text} = await otherFunctions.decodeJson(callback_data_input)

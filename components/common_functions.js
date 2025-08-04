@@ -13,8 +13,6 @@ const { PDFDocument } = require('pdf-lib');
 const Excel = require('exceljs');
 const cheerio = require('cheerio');
 const cssFiles = preloadFiles();
-const openAIApi = require("./apis/openAI_API.js");
-const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const { execSync } = require("child_process");
 const pako = require('pako');
 const devPrompts = require("../config/developerPrompts.js");
@@ -1075,58 +1073,9 @@ async function countTokensLambda(text,model){
   }
 }
 
-async function transcribeAudioFile(userInstance,url,mine_type,duration,sizeBytes){
 
-  const readableStream = await audioReadableStream(url,mine_type);
-  let transcript;
 
-  try{
-        try {
-            const {words} = await elevenLabsApi.speechToText(readableStream)
-            transcript = textByRolesFromWords(words);
 
-            mongo.insertCreditUsage({
-              userInstance: userInstance,
-              creditType: "speech_to_text",
-              creditSubType: "elevenlabs",
-              usage:duration || 0,
-              details: {place_in_code:"transcribeAudioFile"}
-            })
-
-        } catch(err){
-          const checkResult = voiceToTextConstraintsCheck(mine_type,sizeBytes);
-          if(checkResult.success===0){
-            responses.push(checkResult.responce)
-            return responses;
-          }
-          transcript = await openAIApi.VoiceToText(readableStream,userInstance.openAIToken,userInstance)
-
-        }
-
-        console.log("transcript:",transcript)
-        return {success:1,text:transcript}
-
-      } catch(err){
-      return {success:0,error:err.message}
-    }
-}
-
-function voiceToTextConstraintsCheck(mine_type,sizeBytes){
-
-if(!appsettings.voice_to_text.wisper_mime_types.includes(mine_type)){
- return {success:0,response:{text:msqTemplates.audiofile_format_limit_error}}
-}
-
-if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
-
-    return {success:0,response:{text:msqTemplates.audiofile_format_limit_error.replace(
-        "[size]",
-        appsettings.voice_to_text.filesize_limit_mb.toString()
-      )}}
-}
-
- return {success:1}
-}
 
 
 
@@ -2631,6 +2580,7 @@ function getMimeTypeFromPath(filePath) {
 }
 
 function toHHMMSS(totalSeconds) {
+  if(!totalSeconds) return "";
   const sec   = Math.floor(totalSeconds % 60);
   const mins  = Math.floor(totalSeconds / 60) % 60;
   const hours = Math.floor(totalSeconds / 3600);
@@ -2706,10 +2656,8 @@ module.exports = {
   markdownToHtmlPure,
   firstMinuteOfToday,
   textByRolesFromWords,
-  transcribeAudioFile,
   extentionNormaliser,
   audioReadableStream,
-  voiceToTextConstraintsCheck,
   getManualHTML,
   unWireText,
   diagramHTML,

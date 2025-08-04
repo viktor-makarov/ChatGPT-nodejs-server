@@ -94,7 +94,6 @@ async addFunctionToQueue(statusMessageId){
 
     const availableTools = new AvailableTools(this.#user);
     const queueConfig = availableTools.queueConfig(queue_name);
-    console.log("queueConfig chaecked",queueConfig)
     const {max_concurrent, timeout_ms, interval_ms} = queueConfig
     const startTime = Date.now();
 
@@ -1639,13 +1638,67 @@ validateRequiredFieldsFor_createExcelFile(){
     async speechToTextWraper(userInstance,resource_url,resource_mine_type,duration,sizeBytes,index){
 
             try{
-                const extractedObject = await func.transcribeAudioFile(userInstance,resource_url,resource_mine_type,duration,sizeBytes)
+                const extractedObject = await this.transcribeAudioFile(userInstance,resource_url,resource_mine_type,duration,sizeBytes)
                 return {...extractedObject,index,resource_url,resource_mine_type}
                 
             } catch(err){
                 return {success:0,index,resource_url,resource_mine_type, error:`${err.message}\n ${err.stack}`}
             }
     }
+
+
+    async transcribeAudioFile(userInstance,url,mine_type,duration,sizeBytes){
+    
+      const readableStream = await func.audioReadableStream(url,mine_type);
+      let transcript;
+    
+      try{
+            try {
+                const {words} = await elevenLabsApi.speechToText(readableStream)
+                transcript = func.textByRolesFromWords(words);
+    
+                mongo.insertCreditUsage({
+                  userInstance: userInstance,
+                  creditType: "speech_to_text",
+                  creditSubType: "elevenlabs",
+                  usage:duration || 0,
+                  details: {place_in_code:"transcribeAudioFile"}
+                })
+    
+            } catch(err){
+              const checkResult = this.voiceToTextConstraintsCheck(mine_type,sizeBytes);
+              if(checkResult.success===0){
+                responses.push(checkResult.response)
+                return responses;
+              }
+              transcript = await openAIApi.VoiceToText(readableStream,userInstance.openAIToken,userInstance)
+    
+            }
+    
+            console.log("transcript:",transcript)
+            return {success:1,text:transcript}
+    
+          } catch(err){
+          return {success:0,error:err.message}
+        }
+    }
+
+    voiceToTextConstraintsCheck(mine_type,sizeBytes){
+
+if(!appsettings.voice_to_text.wisper_mime_types.includes(mine_type)){
+ return {success:0,response:{text:msqTemplates.audiofile_format_limit_error}}
+}
+
+if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
+
+    return {success:0,response:{text:msqTemplates.audiofile_format_limit_error.replace(
+        "[size]",
+        appsettings.voice_to_text.filesize_limit_mb.toString()
+      )}}
+}
+
+ return {success:1}
+}
 
     async speechToText(){
 

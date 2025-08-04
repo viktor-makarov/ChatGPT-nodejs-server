@@ -969,7 +969,32 @@ const getDialogueFromDB = async (userid, regime) => {
     const result = await dialog_collection
       .find(
         filter,
-        { role: 1, content: 1, status: 1, type: 1, function_name: 1, respoonseId: 1,tool_call_id:1,function_arguments:1,tokens:1,image_size_bites:1,image_input:1,includeInSearch:1}
+        { role: 1, 
+          content: 1, 
+          status: 1, 
+          type: 1, 
+          function_name: 1, 
+          respoonseId: 1,
+          tool_call_id:1,
+          function_arguments:1,
+          tokens:1,
+          image_size_bites:1,
+          image_input:1,
+          includeInSearch:1,
+          mcp_tool_call_id:1,
+          mcp_tools:1,
+          mcp_server_label:1,
+          mcp_error:1,
+          mcp_approval_request_id:1,
+          mcp_call_name:1,
+          mcp_call_arguments:1,
+          mcp_approval_response_id:1,
+          mcp_call_approve:1,
+          mcp_call_user_response_reason:1,
+          mcp_call_id:1,
+          mcp_call_error:1,
+          mcp_call_output:1
+        }
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.

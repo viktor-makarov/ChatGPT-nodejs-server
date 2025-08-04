@@ -20,10 +20,8 @@ async function responseStream(dialogueClass,instructions = null) {
 const userInstance = dialogueClass.userInstance
 const model = userInstance.currentModel
 
-console.time('responseStream getDialogueForRequest');
 const input = await dialogueClass.getDialogueForRequest(model)
-console.timeEnd('responseStream getDialogueForRequest');
-
+otherFunctions.saveTextToTempFile(JSON.stringify(input), "input.json");
 const options = {
     model: model,
     input: input,
@@ -58,7 +56,6 @@ let responseStream;
 try {
     responseStream = await openai.responses.create(options);
 } catch (error) {
-      console.log("Error in responseStream:", error.message);
       const errorAugmented = await OpenAIErrorHandle(error,dialogueClass);
       throw errorAugmented
 }
@@ -310,6 +307,13 @@ async function OpenAIErrorHandle(error,dialogueClass) {
             newErr.resetDialogue = {
               message_to_user: otherFunctions.getLocalizedPhrase("image_size_exceeded",dialogueClass.userInstance.language_code,placeholders)  
             }
+          } else if(error.message.includes("MCP approval requests do not have an approval")){
+            
+             newErr.user_message = otherFunctions.getLocalizedPhrase("mcp_approval_required",dialogueClass.userInstance.language_code);
+             newErr.mongodblog = false;
+             newErr.adminlog = false;
+             newErr.code = "OAI_ERR_400"
+             newErr.userResponseRequired = true;
           }
             return newErr;
           

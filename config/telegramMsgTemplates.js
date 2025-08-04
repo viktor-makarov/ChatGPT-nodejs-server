@@ -1,5 +1,5 @@
 module.exports = {
-    "register_depricated":"Команда /register более не используется для регистрации. Вместо нее используйте коданду /start с указанием кода регистрации после пробела.",
+    "register_deprecated":"Команда /register более не используется для регистрации. Вместо нее используйте коданду /start с указанием кода регистрации после пробела.",
     "bot_description":"R2D2 - это \"ИИ помощник\", оснащенный множеством нейронных сетей. Полную инструкцию можно найти в меню Помощь.",
     "info":"<b>🤖 R2D2 - ИИ помощник</b>\n\n" +
            "<b>Быстрый старт:</b>\n" +
@@ -56,6 +56,10 @@ module.exports = {
     "token_limit_exceeded":{
         "en":"Unfortunately, the size of the dialogue exceeded the limit. The dialogue was automatically restarted",
         "ru":"К сожалению, размер диалога превысил лимит. Диалог был автоматически перезапущен."
+    },
+    "mcp_approval_required":{
+        "en":"MCP approval is required to proceed with this request. Push 'Approve' or 'Cancel'.",
+        "ru":"Сначала нужно ответить на запрос. Нажмите 'Подтвердить' или 'Отменить'."
     },
     "image_size_exceeded": {
         "en":"Unfortunately, there are too many images in this conversation. Their total size ([actualsize]) exceeded the limit of [limit]. The conversation was automatically restarted.😔",
