@@ -64,7 +64,7 @@ class Dialogue {
             dialogueClass:this
         })
 
-        this.deleteRegenerateButton() //made async on purpose
+       // this.deleteRegenerateButton() //made async on purpose
 
         await this.#completionInstance.router()
     }
@@ -121,7 +121,16 @@ class Dialogue {
                 mcp_call_user_response_reason,
                 mcp_call_id,
                 mcp_call_error,
-                mcp_call_output
+                mcp_call_output,
+                image_id,
+                image_result_base64,
+                reasoning_id,
+                reasoning_encrypted_content,
+                reasoning_summary,
+                code_id,
+                code_container_id,
+                code,
+                outputs
             } = doc;
 
             if(type === "message"){
@@ -139,24 +148,23 @@ class Dialogue {
                 } 
             } else if (type === "image_generation_call"){
                 return {type,
-                    id: null,
-                    status:null,
-                    result:null
+                    id: image_id,
+                    status:status,
+                    result:image_result_base64
                 }
             } else if (type === "code_interpreter_call"){
                 return {type,
-                    id: null,
-                    status:null,
-                    container_id:null,
-                    code: null,
-                    outputs:null
+                    id: code_id,
+                    status:status,
+                    container_id:code_container_id,
+                    code: code,
+                    outputs:outputs
                 }
             } else if (type === "reasoning"){
                 return {type,
-                    id: null,
-                    status:null,
-                    encrypted_content:null,
-                    summary: null
+                    id: reasoning_id,
+                    encrypted_content:reasoning_encrypted_content,
+                    summary: reasoning_summary
                 }
             } else if (type === "mcp_list_tools"){
                 return {type,
@@ -790,6 +798,39 @@ class Dialogue {
         console.log("MCP CALL COMMITED")
     };
 
+
+   
+
+
+    async commitReasoningToDialogue(responseId,output_index,reasoning_item){
+
+        const {id,encrypted_content,summary} = reasoning_item;
+        const datetime = new Date();
+        const sourceid = `${responseId}_output_index_${output_index}_reasoning`;
+
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "assistant",
+            responseId:responseId,
+            reasoning_id: id,
+            reasoning_encrypted_content: encrypted_content,
+            reasoning_summary: summary,
+            type:"reasoning",
+            includeInSearch: false
+          }
+
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        console.log("REASONING CALL COMMITED")
+    };
+
     async commitMCPApprovalResponseToDialogue(response_item){
 
         const {request_id,server_label,approve,reason,responseId,output_index,tgm_msg_id} = response_item;
@@ -825,12 +866,58 @@ class Dialogue {
         console.log("MCP APPROVAL REQUEST COMMITED")
     };
 
-    async commitCodeInterpreterOutputToDialogue(id,text){
+     async commitCodeInterpreterToDialogue(responseId,output_index,code_int_item,tgm_msg_id){
+
+        const {id,code,container_id,outputs=[]} = code_int_item;
 
         const datetime = new Date();
-        const sourceid = id;
+        const sourceid = `${responseId}_output_index_${output_index}_code_interpreter`;
+
         const unixTimestamp = Math.floor(datetime.getTime() / 1000)
-        text = `code_interpreter_call returned the following output: ${text}`
+        let systemObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "assistant",
+            responseId:responseId,
+            code_id: id,
+            code: code,
+            code_container_id: container_id,
+            outputs: outputs, 
+            status:"completed",
+            type:"code_interpreter_call",
+            includeInSearch: false,
+            telegramMsgId:[tgm_msg_id]
+          }
+
+        const savedSystem = await mongo.upsertPrompt(systemObj); //записываем prompt в базу
+
+        this.addTokensUsage(systemObj.sourceid,JSON.stringify(systemObj.code)+JSON.stringify(systemObj.outputs),this.#user.currentModel)
+        
+        console.log("CODE INTERPRETER OUTPUT COMMITED")
+    };
+
+    async commitCodeInterpreterOutputToDialogue(responseId,output_index,code_int_item,tgm_msg_id){
+
+        const datetime = new Date();
+        const sourceid = `${responseId}_output_index_${output_index}_code_interpreter_output`;
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000)
+        const {id,code,container_id,outputs=[]} = code_int_item;
+
+        const text = `code_interpreter_call returned the following output: 
+        Code: 
+        ${code}
+
+        Container ID: ${container_id}
+        
+        Output:
+        ${JSON.stringify(outputs,null,2)}
+        `
+        
         let systemObj = {
             sourceid: sourceid,
             createdAtSourceTS: unixTimestamp,
@@ -840,13 +927,18 @@ class Dialogue {
             userLastName: this.#user.user_last_name,
             regime: this.#user.currentRegime,
             role: "developer",
+            code_id: id,
+            code: code,
+            code_container_id: container_id,
+            outputs: outputs, 
             content: [{
                 text:text,
                 type:"input_text"
             }],
             status:"completed",
             type:"message",
-            includeInSearch: false
+            includeInSearch: false,
+            telegramMsgId:[tgm_msg_id]
           }
 
         await mongo.upsertPrompt(systemObj); //записываем prompt в базу
@@ -901,7 +993,7 @@ class Dialogue {
         }
     }
 
-    async commitImageToDialogue(descriptionJson, image, index=1){
+    async commitImageToDialogue(descriptionJson, image, index=1,tgm_msg_id){
              
         const content = [];
         let image_input = null;
@@ -952,7 +1044,8 @@ class Dialogue {
             type:"message",
             includeInSearch:true,
             image_size_bites: total_byte_size,
-            image_input: image_input
+            image_input: image_input,
+            telegramMsgId: tgm_msg_id ? [tgm_msg_id] : null
           }
  
         await mongo.upsertPrompt(promptObj); //записываем prompt в базу
@@ -961,6 +1054,38 @@ class Dialogue {
         const text_content = content.filter(item => item.type === "input_text");
         this.addTokensUsage(promptObj.sourceid,JSON.stringify(text_content),this.#user.currentModel)
         console.log("USER IMAGE")
+    }
+
+
+
+
+    async commitOAIImageToDialogue(responseId,output_index,image_item,tgm_msg_id){
+
+        const {id,result} = image_item;
+
+        const datetime = new Date();
+        const sourceid = `${responseId}_output_index_${output_index}_image`;
+        const unixTimestamp = Math.floor(datetime.getTime() / 1000);
+
+        let promptObj = {
+            sourceid: sourceid,
+            createdAtSourceTS: unixTimestamp,
+            createdAtSourceDT_UTC: new Date(unixTimestamp * 1000),
+            userid: this.#user.userid,
+            userFirstName: this.#user.user_first_name,
+            userLastName: this.#user.user_last_name,
+            regime: this.#user.currentRegime,
+            role: "assistant",
+            image_id: id,
+            image_result_base64: result,
+            status:"completed",
+            type:"image_generation_call",
+            telegramMsgId: [tgm_msg_id],
+          }
+
+        await mongo.upsertPrompt(promptObj); //записываем prompt в базу
+
+        console.log("IMAGE GENERATION COMMITED")
     }
 
     async commitFileToDialogue(url,base64,sizePages){

@@ -1,6 +1,8 @@
+const ErrorHandler = require("../errorHandler");
+
 
 class AsyncQueue {
-  constructor({ delayMs = 0, ttl = 60 * 60 * 1000 } = {}) {
+  constructor({ delayMs = 0, ttl = 60 * 60 * 1000, name, replyInstance } = {}) {
     if (ttl === undefined || ttl === null) {
       throw new Error('TTL parameter is required');
     }
@@ -15,6 +17,8 @@ class AsyncQueue {
     this._closed  = false;
     this._onEmptyResolver = null;
     this._ttlTimer = null;
+    this._name = name || 'default';
+    this._replyInstance = replyInstance;
     
     // Запускаем таймер TTL
     this._startTTLTimer();
@@ -23,10 +27,17 @@ class AsyncQueue {
   add(task) {
     if (this._closed) throw new Error('Queue is closed');
     return new Promise((resolve, reject) => {
-      this._tasks.push(async () => {
-        try   { resolve(await task()); }
-        catch (e){ reject(e); }
-      });
+    this._tasks.push(async () => {
+      try   { resolve(await task()); }
+      catch (err){
+        err.place_in_code = `AsyncQueue.${this._name}`;
+        ErrorHandler.main({
+            replyMsgInstance: this._replyInstance,
+            error_object: err
+            });
+        //reject(err); 
+      }
+    });
       this._start();          // запускаем обработчик, если он остановлен
     });
   }

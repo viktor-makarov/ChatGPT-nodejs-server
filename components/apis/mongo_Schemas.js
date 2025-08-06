@@ -18,6 +18,7 @@ const ProfileSheema = new Schema(
     settings: {
       current_regime: { type: String, default: "chat" },
       pinnedHeaderAllowed: { type: Boolean, default: true },
+      showDetails: { type: Boolean, default: false },
       chat: {
         prefered_name : { type: String },
         response_style: { type: String },
@@ -328,6 +329,15 @@ const TelegramDialogSheema = new Schema(
     mcp_call_id: { type: String},
     mcp_call_error: { type: String},
     mcp_call_output: { type: String},
+    image_id: { type: String},
+    image_result_base64: { type: String},
+    reasoning_id: { type: String},
+    reasoning_encrypted_content: { type: String},
+    reasoning_summary: { type: Object },
+    code_id: { type: String},
+    code_container_id: { type: String},
+    code:   { type: Object },
+    outputs: { type: Array },
   },
   { collection: appsettings.mongodb_names.tokens_log }
 );

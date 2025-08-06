@@ -21,7 +21,7 @@ const userInstance = dialogueClass.userInstance
 const model = userInstance.currentModel
 
 const input = await dialogueClass.getDialogueForRequest(model)
-otherFunctions.saveTextToTempFile(JSON.stringify(input), "input.json");
+
 const options = {
     model: model,
     input: input,
@@ -326,6 +326,10 @@ async function OpenAIErrorHandle(error,dialogueClass) {
           newErr.data = error.data
           newErr.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",newErr?.message ?? "отсутствует");
           newErr.mongodblog = false;
+          return newErr;
+        } else if (error.status === 500 || error.message.includes("500")) {
+          newErr.code = "OAI_ERR_500";
+          newErr.user_message = msqTemplates.OAI_ERR_500.replace("[original_message]",newErr?.message ?? "отсутствует");
           return newErr;
         } else if (error.status === 501 || error.message.includes("501")) {
           newErr.code = "OAI_ERR_501";

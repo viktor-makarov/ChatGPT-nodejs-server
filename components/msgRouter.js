@@ -197,7 +197,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       if(fileCaption){
         fileComment.user_prompt = fileCaption
       }
-    await dialogueInstance.commitImageToDialogue(fileComment,{url,base64,sizeBytes,mimetype:downloadBufferResult.mimeType})
+    await dialogueInstance.commitImageToDialogue(fileComment,{url,base64,sizeBytes,mimetype:downloadBufferResult.mimeType},0,null)
 
     if(fileCaption){
       dialogueInstance.triggerCallCompletion()
@@ -382,7 +382,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
       base64:outcome.supportive_data?.base64,
       sizeBytes:outcome.supportive_data?.size_bites,
       mimetype:outcome.supportive_data?.mimetype
-    })
+    },0,null)
 
   } else {
       dialogueInstance.triggerCallCompletion();
@@ -526,7 +526,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype,{caption})
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
-  } else if (callback_event === "regenerate"){
+  } /*else if (callback_event === "regenerate"){
 
     if(requestMsg.user.currentRegime != callback_data_input){
       responses.push(checkResult.response)
@@ -539,7 +539,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     dialogue.regenerateCompletionFlag = true
 
     dialogue.triggerCallCompletion()
-  } else if (callback_event === "choose_ver"){
+  }*/ else if (callback_event === "choose_ver"){
 
     const doc = await dialogue.getLastCompletionDoc()
     await replyMsg.deleteMsgsByIDs(doc?.telegramMsgId)
@@ -745,7 +745,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       base64:outcome.supportive_data?.base64,
       sizeBytes:outcome.supportive_data?.size_bites,
       mimetype:outcome.supportive_data?.mimetype
-    });
+    },0,null);
 
     } else {
       dialogue.triggerCallCompletion();

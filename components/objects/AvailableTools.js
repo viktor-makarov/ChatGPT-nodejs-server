@@ -125,7 +125,7 @@ class AvailableTools {
                         },
                         type: {
                             type: "string",
-                            enum: ["flowchart", "sequenceDiagram", "classDiagram", "stateDiagram-v2", "erDiagram", "gantt", "journey", "pie", "mindmap", "quadrantChart", "xychart-beta"],
+                            enum: ["flowchart", "sequenceDiagram", "classDiagram", "stateDiagram-v2", "erDiagram", "gantt", "journey", "pie", "mindmap", "quadrantChart"],
                             description: "Specifies the required Mermaid diagram type."
                         },
                         title: {

@@ -602,15 +602,27 @@ async sendMdjImage(generateResult,prompt){
   return sent_result
 }
 
-async sendOAIImage(imageBuffer,prompt,imageId,format,mime_type,parse_mode="html"){
- 
-  //const reply_markup = await this.generateMdjButtonsFromPIAPI(generateResult.mdjMsg);
+async sendOAIImage(imageBuffer,prompt,imageId,format,mime_type,parse_mode="html",reply_markup){
  
   let sent_result = await this.simpleSendNewImage({
     caption:prompt,
-    reply_markup:null,
+    reply_markup:reply_markup,
     contentType:mime_type,
     fileName:`oai_imagine_${imageId}.${format}`,
+    imageBuffer:imageBuffer,
+    parse_mode:parse_mode
+  });
+
+  return sent_result
+}
+
+async sendCodeInterpreterImage(imageBuffer,caption,filename,mime_type,parse_mode="html",reply_markup){
+
+  let sent_result = await this.simpleSendNewImage({
+    caption:caption,
+    reply_markup:reply_markup,
+    contentType:mime_type,
+    fileName:filename,
     imageBuffer:imageBuffer,
     parse_mode:parse_mode
   });

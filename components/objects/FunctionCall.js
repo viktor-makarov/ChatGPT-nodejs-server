@@ -31,6 +31,7 @@ class FunctionCall {
     #tool_call_id
     #statusMsg
     #statusMsgId
+    #functionTimer
     
 constructor(obj) {
     this.#functionCall = obj.functionCall;
@@ -44,11 +45,59 @@ constructor(obj) {
     this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
     this.#statusMsg = obj?.statusMsg;
     this.#statusMsgId = this.#statusMsg.message_id;
+    this.#functionTimer = this.timer();
 };
 
 async removeFunctionFromQueue(){
     this.#functionConfig.queue_name && await mongo.removeFunctionFromQueue(this.#functionCall.tool_call_id)
 }
+
+
+timer(){
+        const timeLaps = [];
+        let isrunning = false;
+        let lapStartTime;
+
+        return {
+          start_lap: () => {
+            if (!isrunning) {
+              lapStartTime = Date.now();
+              isrunning = true;
+            } else {
+              console.log("Timer is already running. Please stop the current lap before starting a new one.");
+            }
+          },
+          stop_lap: () => {
+            if (isrunning) {
+              const lapDuration = Date.now() - lapStartTime;
+              timeLaps.push(lapDuration);
+              isrunning = false;
+            } else {
+              console.log("Timer is not running. Please start a lap before stopping it.");
+            }
+          },
+         get_laps: function() {
+            if (isrunning) {
+              const currentLapDuration = Date.now() - lapStartTime;
+              return [...timeLaps, currentLapDuration];
+            } else {
+              return timeLaps;
+            }
+         },
+        get_total_seconds: function() {
+          const laps = this.get_laps();
+          return laps.reduce((total, lap) => total + lap, 0) / 1000;
+        },
+        get_total_HHMMSS: function() {
+          const totalSeconds = this.get_total_seconds();
+          return func.toHHMMSS(totalSeconds);
+        }
+      }
+    }
+
+    startFunctionTimer(){
+        this.#functionTimer.start_lap();
+    }
 
 get functionName(){
     return this.#functionName;
@@ -149,6 +198,7 @@ async router(){
         
         this.validateFunctionCallObject(this.#functionCall)
         this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
+        
         await this.executionStatusMessage(this.#statusMsgId)
         await this.addFunctionToQueue(this.#statusMsgId)
 
@@ -187,6 +237,7 @@ async router(){
         functionOutcome =  {success:0,error:err.message + (err.stack ? "\n" + err.stack : ""),tool_call_id:this.#tool_call_id,function_name:this.#functionName}
     } finally {
         this.clearLongWaitNotes()
+        this.#functionTimer.stop_lap();
         await this.removeFunctionFromQueue()
         await this.handleFailedFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
         this.#statusMsgId && await this.finalizeStatusMessage(functionOutcome,this.#statusMsgId)
@@ -298,6 +349,8 @@ async backExecutingStatusMessage(statusMessageId){
     })
 }
 
+
+
 async initStatusMessage(msgId){
     const functionFriendlyName = this.#functionConfig.friendly_name;
     const msgText = `⏳ <b>${functionFriendlyName}</b> ...`
@@ -361,10 +414,24 @@ async finalizeStatusMessage(functionResult,statusMessageId){
     let msgText;
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
     if(functionDescription){
-     msgText = `${resultIcon} <b>${functionFriendlyName}</b>: ${functionDescription} ${func.toHHMMSS(functionResult?.supportive_data?.duration)}`
+     msgText = `${resultIcon} <b>${functionFriendlyName}</b>: ${functionDescription} ${this.#functionTimer.get_total_HHMMSS()}`
     } else {
-     msgText = `${resultIcon} <b>${functionFriendlyName}</b> ${func.toHHMMSS(functionResult?.supportive_data?.duration)}`
+     msgText = `${resultIcon} <b>${functionFriendlyName}</b> ${this.#functionTimer.get_total_HHMMSS()}`
     }
+    
+      const reply_markup =  this.#user.showDetails ? await this.craftReplyMarkupForFunctionCall(functionResult,msgText) : null;
+
+      console.log(`finalizeStatusMessage msgID: ${statusMessageId}`)
+      const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
+        chat_id:this.#replyMsg.chatId,
+        message_id:statusMessageId,
+        reply_markup:reply_markup,
+        parse_mode: "html"
+    })
+}
+
+async craftReplyMarkupForFunctionCall(functionResult,msgText){
+
     const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
     const infoForUserEncoded = await func.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msgText})
     const callback_data = {e:"un_f_up",d:infoForUserEncoded}
@@ -374,17 +441,10 @@ async finalizeStatusMessage(functionResult,statusMessageId){
         callback_data: JSON.stringify(callback_data),
       };
 
-      const reply_markup = {
+return {
         one_time_keyboard: true,
         inline_keyboard: [[fold_button],],
       };
-
-      const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:statusMessageId,
-        reply_markup:reply_markup,
-        parse_mode: "html"
-    })
 }
 
 modifyStringify(key,value){
@@ -407,7 +467,7 @@ buildFunctionResultHtml(functionResult){
     
     const reply = `<pre><code class="json">${func.wireHtml(stringifiedFunctionResult)}</code></pre>`
 
-    const htmlToSend = `<b>name: ${functionResult.function_name}</b>\nid: ${functionResult.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${functionResult?.supportive_data?.duration} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
+    const htmlToSend = `<b>name: ${functionResult.function_name}</b>\nid: ${functionResult.tool_call_id}\ntype: ${this.#functionConfig?.type}\nduration: ${this.#functionTimer.get_total_seconds()} sec.\nsuccess: ${functionResult.success}\n\n<b>request arguments:</b>\n${request}\n\n<b>reply:</b>\n${reply}`
 
     return htmlToSend
 }
@@ -480,15 +540,9 @@ async functionHandler(){
             
             try {
                 this.#inProgress = true;
-                 const toolExecutionStart = new Date();
                 
                  let result = await Promise.race([this.selectAndExecuteFunction(), timeoutPromise]);
                  
-                 if(result?.supportive_data){
-                    result.supportive_data.duration = ((new Date() - toolExecutionStart) / 1000).toFixed(2);
-                 } else {
-                    result.supportive_data = {duration: ((new Date() - toolExecutionStart) / 1000).toFixed(2)};
-                 }
                  return result
             } finally {
                 this.clearFunctionTimeout(); // Ensure timeout is cleared in all cases

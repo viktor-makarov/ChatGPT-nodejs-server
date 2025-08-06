@@ -27,6 +27,7 @@ class User{
     #settings
     #openAIToken
     #pinnedHeaderAllowed
+    #showDetails
 
     constructor(userInfo) {
         this.#userid = userInfo.id;
@@ -59,6 +60,8 @@ class User{
         this.#prefered_name = this.#settings[this.#currentRegime]?.prefered_name;
         this.#response_style = this.#settings[this.#currentRegime]?.response_style ?? "neutral";
         this.#image_choice = this.#settings[this.#currentRegime]?.image_choice ?? "auto";
+        this.#showDetails = this.#settings?.showDetails ?? false;
+
     } else {
         this.#active = false;
         this.#isRegistered = false;
@@ -131,7 +134,11 @@ class User{
     get image_choice(){
         return this.#image_choice
     }
-    
+
+    get showDetails(){
+        return this.#showDetails
+    }
+
     get openAIToken(){
 
         return this.#openAIToken

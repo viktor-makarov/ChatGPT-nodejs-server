@@ -993,7 +993,16 @@ const getDialogueFromDB = async (userid, regime) => {
           mcp_call_user_response_reason:1,
           mcp_call_id:1,
           mcp_call_error:1,
-          mcp_call_output:1
+          mcp_call_output:1,
+          image_id:1,
+          image_result_base64: 1,
+          reasoning_id:1,
+          reasoning_encrypted_content:1,
+          reasoning_summary: 1,
+          code_id: 1,
+          code_container_id: 1,
+          code: 1,
+          outputs: 1,
         }
       )
       .lean()

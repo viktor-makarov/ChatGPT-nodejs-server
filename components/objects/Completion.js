@@ -12,6 +12,7 @@ const { url } = require('inspector');
 const { format } = require('path');
 const awsApi = require("../apis/AWS_API.js")
 const AvailableTools = require("./AvailableTools.js");
+const { type } = require('os');
 
 
 class Completion extends EventEmitter {
@@ -31,7 +32,7 @@ class Completion extends EventEmitter {
     #user;
     #functionCalls = {};
     #completionObjectDefault = {};
-    #telegramMsgIds;
+
     #output_items;
     #message_items;
     #requestMsg;
@@ -68,7 +69,17 @@ class Completion extends EventEmitter {
     #hostedMCPCall;
     #tokenFetchLimitPcs = (appsettings?.functions_options?.fetch_text_limit_pcs ? appsettings?.functions_options?.fetch_text_limit_pcs : 80)/100;
     #overalTokenLimit;
-    
+
+    #reasoningTimer;
+    #imageGenTimer;
+    #codeIntTimer;
+    #mcpToolsTimer;
+    #mcpCallTimer;
+    #statusMsg;
+
+    #tgmMessagesQueue;
+    #commitToDBQueue;
+
     constructor(obj) {
         super({ readableObjectMode: true });
         this.#chunkBuffer =[];
@@ -96,7 +107,7 @@ class Completion extends EventEmitter {
       };
 
 
-      async registerNewEvent(event,evensOccured){
+    async registerNewEvent(event,evensOccured){
 
         const {type} = event;
         if(!evensOccured.includes(type)){
@@ -105,311 +116,359 @@ class Completion extends EventEmitter {
         }
       }
 
-      async responseEventsHandler(responseStream,statusMsg){
+    timer(){
+        const timeLaps = [];
+        let isrunning = false;
+        let lapStartTime;
 
-        let evensOccured = await mongo.getEventsList()
-
-        for await (const event of responseStream) {
-            const {sequence_number, response,output_index,item,content_index } = event;
-            const response_type = event.type;
-            await this.registerNewEvent(event,evensOccured)
-            console.log(sequence_number,new Date(),response_type,output_index,content_index)
-
-            switch (response_type) {
-                case 'response.created':
-                    const {id,created_at} = response;
-
-                    this.clearLongWaitNotes()
-                    
-                    this.#responseId = id;
-                    this.#completionCreatedTS= created_at;
-                    this.#completionCreatedDT_UTC = new Date(created_at * 1000).toISOString();
-                    this.#output_items ={};
-                    this.#message_items = {};
-                    
-                    break;
-
-                case 'response.output_item.added':
-                    const {status,role} = item;
-                    const item_type = item.type;
-                    this.#output_items[output_index] = {type:item_type,status}
-                    if(!statusMsg){
-                      statusMsg = await this.#replyMsg.sendStatusMsg()
-                    }
-                    this.#telegramMsgIds = [statusMsg.message_id];
-      
-                    switch (item_type) {
-                      case 'message':
-                        this.#message_items[output_index] =  this.#completionObjectDefault
-                        this.#message_items[output_index].sourceid = `${this.#responseId}_output_index_${output_index}`;
-                        this.#message_items[output_index].responseId = this.#responseId;
-                        this.#message_items[output_index].output_item_index = output_index;
-                        this.#message_items[output_index].createdAtSourceTS = this.#completionCreatedTS;
-                        this.#message_items[output_index].createdAtSourceDT_UTC = this.#completionCreatedDT_UTC;
-                        this.#message_items[output_index].type = item_type;
-                        this.#message_items[output_index].status = status;
-                        this.#message_items[output_index].role = role;
-                        this.#message_items[output_index].completion_ended = false;
-                        this.#message_items[output_index].text = "";
-                        this.#message_items[output_index].deliverResponseToTgm = this.deliverResponseToTgmHandler(statusMsg.message_id,statusMsg.text.length,output_index);
-                        this.#message_items[output_index].completion_version = this.#completionCurrentVersionNumber;
-                        statusMsg =null;
-                        this.#message_items[output_index].throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#message_items[output_index].deliverResponseToTgm.run,appsettings.telegram_options.send_throttle_ms)        
-                        
-                        if(this.#hostedCodeInterpreterCall){
-                          this.#hostedCodeInterpreterCall.finalyze()
-                        }
-                        break;
-                      case 'function_call':
-                        await this.createFunctionCall(event,statusMsg)
-                        statusMsg =null;
-                        break;
-                      case 'web_search_call':
-                        this.#hostedSearchWebToolCall = this.searchWebToolCall(event,statusMsg)
-                        statusMsg =null;
-                        this.#hostedSearchWebToolCall.initialCommitToTGM() //intentionally async
-                        break;
-
-                      case 'code_interpreter_call':
-                        if(!this.#hostedCodeInterpreterCall){
-                          this.#hostedCodeInterpreterCall = this.codeInterpreterCall(event,statusMsg)
-                          this.#codeInterpreterAsyncQueue = new AsyncQueue({delayMs: 0, ttl: 20 * 60 * 1000});
-                          statusMsg = null;
-                          this.#hostedCodeInterpreterCall.initialCommit() //intentionally async
-                        } else {
-                          this.#hostedCodeInterpreterCall.resumeCommit() //intentionally async
-                        }
-                        break;
-                      case 'reasoning':
-
-                        if(!this.#hostedReasoningCall){
-                          this.#hostedReasoningCall = this.reasoningCall(event,statusMsg)
-                          this.#reasoningAsyncQueue = new AsyncQueue({delayMs: 0, ttl: 20 * 60 * 1000});
-                          statusMsg = null;
-
-                          this.#hostedReasoningCall.initialCommit() //intentionally async
-                        } else {
-                          this.#hostedReasoningCall.resumeCommit() //intentionally async
-                        }
-                        break;
-                      case 'image_generation_call':
-                          this.#hostedImageGenerationCall = this.imageGenerationCall(event,statusMsg)
-                          this.#imageGenerationAsyncQueue = new AsyncQueue({delayMs: 100, ttl: 20 * 60 * 1000});
-                          statusMsg = null;
-                          this.#imageGenerationAsyncQueue.add(() => this.#hostedImageGenerationCall.initialCommit()) //intentionally async
-                      break;
-
-                      case 'mcp_list_tools':
-                        this.#hostedMCPToolRequest = this.MCPToolsRequest(event,statusMsg)
-                        statusMsg = null;
-                        this.#hostedMCPToolRequest.initialCommit() //intentionally async
-                        break;
-                      case 'mcp_call':
-                        this.#hostedMCPCall = this.MCPCall(event,statusMsg)
-                        statusMsg = null;
-                        this.#hostedMCPCall.initialCommit(event) //intentionally async
-                        break;
-                      case 'mcp_approval_request':
-                        this.#hostedMCPApprovalRequest = this.MCPApprovalRequest(event,statusMsg)
-                        statusMsg = null;
-                      break;
-                    }
-
-                    break;
-                case 'response.output_text.delta':
-                    switch (this.#output_items[output_index].type) {
-                      case 'message':
-                        this.#message_items[output_index].text += event?.delta || "";
-                        this.#message_items[output_index].throttledDeliverResponseToTgm()
-                      break;
-                    }
-                    break;
-                case 'response.output_text.done':
-                    switch (this.#output_items[output_index].type) {
-                      case 'message':
-                        this.#message_items[output_index].text = event?.text || "";
-                        this.#message_items[output_index].completion_ended = true;
-                        this.#message_items[output_index].throttledDeliverResponseToTgm()
-                      break;
-                    };
-                    break;
-                case 'response.output_item.done':
-                    switch (this.#output_items[output_index].type) {
-                      case 'message':
-                        console.log(new Date(),`message done triggered`)
-                        if(this.#message_items[output_index].text !=""){
-                          this.#message_items[output_index].status = item?.status;
-                          this.#message_items[output_index].content = [item?.content[0]];
-                          const completionObj = this.#message_items[output_index];
-                          await this.#dialogue.commitCompletionDialogue(completionObj)
-                        } else {
-                          this.#replyMsg.deleteMsgByID(this.#message_items[output_index].deliverResponseToTgm.statusMsgId);
-                        }
-                        this.completedOutputItem(output_index)
-                      break;
-                      case 'function_call':
-                        this.triggerFunctionCall(event)
-                        .then(index=> this.completedOutputItem(index))
-                        .catch(index => this.failedOutputItem(index))
-                        break;
-                      case 'web_search_call':
-                        this.#hostedSearchWebToolCall.finalCommitToTGM(event)
-                        this.completedOutputItem(output_index)
-                        break;
-                      case 'code_interpreter_call':
-                        this.#hostedCodeInterpreterCall.endCommit(event)
-                        this.completedOutputItem(output_index)
-                        break;
-                      case 'reasoning':
-                        this.#hostedReasoningCall.endCommit()
-                        this.completedOutputItem(output_index)
-                        break;
-                      case 'image_generation_call':
-                        this.#imageGenerationAsyncQueue.add(() => this.#hostedImageGenerationCall.endCommit(event))
-                        this.completedOutputItem(output_index)
-                      break;
-                      case 'mcp_list_tools':
-                        this.#hostedMCPToolRequest.endCommit(event)
-                        this.completedOutputItem(output_index)
-                      break;
-
-                      case 'mcp_call':
-                        this.#hostedMCPCall.endCommit(event)
-                        this.completedOutputItem(output_index)
-                      break;
-
-                      case 'mcp_approval_request':
-                        this.#hostedMCPApprovalRequest.approvalRequest(event)
-                        this.completedOutputItem(output_index)
-                      break;
-                    }
-                    break;
-
-                case 'response.image_generation_call.partial_image':
-
-                    this.#imageGenerationAsyncQueue.add(() => this.#hostedImageGenerationCall.partialCommit(event))
-                break
-
-                case 'response.completed':
-                    
-                    await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,response.usage)
-                    break;
-
-                case 'response.incomplete':
-      
-                    await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,response.usage)
-                    break;
-
-                case 'response.failed':
-
-                    const {error} = response;
-                    const {code,message} = error;
-                    const err = new Error(`${code}: ${message}`);
-                    err.code = "OAI_ERR99"
-                    err.user_message = message
-                    err.place_in_code = "responseEventsHandler.failed";
-                    throw err;
+        return {
+          start_lap: () => {
+            if (!isrunning) {
+              lapStartTime = Date.now();
+              isrunning = true;
+            } else {
+              console.log("Timer is already running. Please stop the current lap before starting a new one.");
             }
+          },
+          stop_lap: () => {
+            if (isrunning) {
+              const lapDuration = Date.now() - lapStartTime;
+              timeLaps.push(lapDuration);
+              isrunning = false;
+            } else {
+              console.log("Timer is not running. Please start a lap before stopping it.");
+            }
+          },
+         get_laps: function() {
+            if (isrunning) {
+              const currentLapDuration = Date.now() - lapStartTime;
+              return [...timeLaps, currentLapDuration];
+            } else {
+              return timeLaps;
+            }
+         },
+        get_total_seconds: function() {
+          const laps = this.get_laps();
+          return laps.reduce((total, lap) => total + lap, 0) / 1000;
+        },
+        get_total_HHMMSS: function() {
+          const totalSeconds = this.get_total_seconds();
+          return otherFunctions.toHHMMSS(totalSeconds);
         }
       }
+    }
 
-      reasoningCall(initialEvent,statusMsg){
+    async responseEventsHandler(responseStream) {
+    // Create a dedicated queue for event processing
+    const eventProcessingQueue = new AsyncQueue({delayMs: 0,ttl: 60 * 60 * 1000,name: 'responseEventProcessing',replyInstance: this.#replyMsg});
+    this.#tgmMessagesQueue = new AsyncQueue({delayMs: 0,ttl: 60 * 60 * 1000,name: 'tgmMessagesQueue',replyInstance: this.#replyMsg});
+    this.#commitToDBQueue = new AsyncQueue({delayMs: 0,ttl: 60 * 60 * 1000,name: 'commitToDBQueue',replyInstance: this.#replyMsg});
 
-        const statusMsgId = statusMsg?.message_id
-        const {output_index,item} = initialEvent;
-        const {type,status,id} = item;
-        let functionDescription = "Рассуждение";
-        let totalDurationSec = 0;
-        let itemStartTime;
-        let itemEndTime;
+    let evensOccured = await mongo.getEventsList();
+
+    this.#output_items ={};
+    this.#message_items = {};
+    
+    // Process events asynchronously but sequentially
+    for await (const event of responseStream) {
+        this.registerNewEvent(event,evensOccured) // temporaty. To study new events.
         
-        return {
-          "initialCommit":() => {
-            itemStartTime = Date.now();
-            let details = "думаю...";
-            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+       // console.log(event.sequence_number,new Date(),event.type,event.output_index,event.content_index)
+       // Add each event to the queue for sequential processing 
+       eventProcessingQueue.add(() => this.processEvent(event));
+        
+    }
+    console.log(new Date(), `Response stream finished`);
+}
 
-
-            this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
-              chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
-              reply_markup:null,
-              parse_mode: "html"
-            }))
-          },
-          "resumeCommit": async () => {
-            itemStartTime = Date.now();
-            let details = "снова думаю ...";
-            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            console.log(`reasoning resumeCommit msgID: ${statusMsgId}`)
-            this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
-              chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
-              reply_markup:null,
-              parse_mode: "html"
-            }))
-          },
-          "endCommit": async () => {
-            itemEndTime = Date.now();
-            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
-            totalDurationSec += itemDurationSec;
-            const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`
-            this.#reasoningAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
-                chat_id:this.#replyMsg.chatId,
-                message_id:statusMsgId,
-                reply_markup:null,
-                parse_mode: "html"
-            }))
+  async processEvent(event){
+    try{
+      switch (event.type) {
+          case 'response.created':
+            await this.handleResponseCreated(event);
+            break;
+          case 'response.output_item.added':
+            this.#output_items[event.output_index] = {type:event.item.type,status:event.item.status}
+            await this.handleOutputItemAdded(event);
+            break;
+          case 'response.output_text.delta':
+            this.#message_items[event.output_index].text += event?.delta || "";
+            this.#message_items[event.output_index].throttledDeliverResponseToTgm()
+            break;
+          case 'response.image_generation_call.partial_image':
+            await this.#hostedImageGenerationCall.partialCommit(event)
+            break
+          case 'response.output_text.done':
+            this.#message_items[event.output_index].text = event?.text || "";
+            this.#message_items[event.output_index].completion_ended = true;
+            this.#message_items[event.output_index].throttledDeliverResponseToTgm()
+            break;
+          case 'response.output_item.done':
+              await this.handleOutputItemDone(event);
+              this.completedOutputItem(event.output_index);
+              break;
+          case 'response.completed':
+            console.log(new Date(),`Process event finished`);
+            await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,event.response.usage)
+            break;
+          case 'response.incomplete':
+            await this.#dialogue.finalizeTokenUsage(this.#user.currentModel,event.response.usage)
+            break;
+          case 'response.failed':
+              const {code,message} = event.response.error;
+              const err = new Error(`${code}: ${message}`);
+              err.code = "OAI_ERR99"
+              err.user_message = message
+              err.place_in_code = "responseEventsHandler.failed";
+              throw err;
+      }
+    } catch (err) {
+      err.place_in_code = err.place_in_code || `processEvent.${event.type}`;
+      telegramErrorHandler.main(
+          {
+              replyMsgInstance: this.#replyMsg,
+              error_object: err
           }
+      );
+    };
+};
+
+  async handleResponseCreated(event){
+
+      this.clearLongWaitNotes()
+      const {id,created_at} = event.response;
+      this.#responseId = id;
+      this.#completionCreatedTS= created_at;
+      this.#completionCreatedDT_UTC = new Date(created_at * 1000).toISOString();
+  };
+
+  async handleOutputItemAdded(event){
+    
+    if(!this.#statusMsg){
+      this.#statusMsg = await this.#replyMsg.sendStatusMsg()
+      console.log(`Status message created with ID: ${this.#statusMsg.message_id}`)
+    }
+
+    try{
+      switch (event.item.type) {
+        case 'message':
+          this.handleMessageAdded(event)
+          this.#statusMsg = null;
+          break;
+        case 'function_call':
+          await this.createFunctionCall(event)
+          this.#statusMsg = null;
+          break;
+        case 'web_search_call':
+          this.#hostedSearchWebToolCall = this.searchWebToolCall(event)
+          await this.#hostedSearchWebToolCall.initialCommitToTGM()
+          this.#statusMsg = null;
+          break;
+        case 'code_interpreter_call':
+          if(!this.#hostedCodeInterpreterCall){
+            this.#hostedCodeInterpreterCall = this.codeInterpreterCall()
+            await this.#hostedCodeInterpreterCall.initialCommit()
+            this.#statusMsg = null;
+          } else {
+            await this.#hostedCodeInterpreterCall.resumeCommit()
+          }
+          break;
+        case 'reasoning':
+          if(!this.#hostedReasoningCall){
+            this.#hostedReasoningCall = this.reasoningCall(event)
+            await this.#hostedReasoningCall.initialCommit()
+            this.#statusMsg = null;
+          } else {
+            await this.#hostedReasoningCall.resumeCommit()
+          }
+          break;
+        case 'image_generation_call':
+          this.#hostedImageGenerationCall = this.imageGenerationCall(event)
+          await this.#hostedImageGenerationCall.initialCommit()
+          this.#statusMsg = null;
+          break;
+        case 'mcp_list_tools':
+          this.#hostedMCPToolRequest = this.MCPToolsRequest(event)
+          await this.#hostedMCPToolRequest.initialCommit()
+          this.#statusMsg = null;
+          break;
+        case 'mcp_call':
+          this.#hostedMCPCall = this.MCPCall(event)
+          await this.#hostedMCPCall.initialCommit(event)
+          this.#statusMsg = null;
+          break;
+        case 'mcp_approval_request':
+          this.#hostedMCPApprovalRequest = this.MCPApprovalRequest()
+          this.#statusMsg = null;
+          break;
+      }
+      
+    } catch (err) {
+      err.place_in_code = err.place_in_code || `handleOutputItemAdded.${event.item.type}`;
+      throw err;
+    }
+  }
+
+  async handleMessageAdded(event){
+        const {output_index,item} = event;
+        const {role,status} = item;
+
+        this.#message_items[output_index] =  this.#completionObjectDefault
+        this.#message_items[output_index].sourceid = `${this.#responseId}_output_index_${output_index}`;
+        this.#message_items[output_index].responseId = this.#responseId;
+        this.#message_items[output_index].output_item_index = output_index;
+        this.#message_items[output_index].createdAtSourceTS = this.#completionCreatedTS;
+        this.#message_items[output_index].createdAtSourceDT_UTC = this.#completionCreatedDT_UTC;
+        this.#message_items[output_index].type = event.item.type;
+        this.#message_items[output_index].status = status;
+        this.#message_items[output_index].role = role;
+        this.#message_items[output_index].completion_ended = false;
+        this.#message_items[output_index].text = "";
+        this.#message_items[output_index].deliverResponseToTgm = this.deliverResponseToTgmHandler(this.#statusMsg.message_id,this.#statusMsg.text.length,output_index);
+        this.#message_items[output_index].throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#message_items[output_index].deliverResponseToTgm.run,appsettings.telegram_options.send_throttle_ms);
+        this.#message_items[output_index].completion_version = this.#completionCurrentVersionNumber;
+  }
+
+  async handleOutputItemDone(event){
+    const {output_index} = event;
+    try{
+    switch (this.#output_items[output_index].type){
+      case 'message':
+        await this.handleMessageDone(event)
+        break;
+      case 'function_call':
+        await this.triggerFunctionCall(event)
+        break;
+      case 'web_search_call':
+        await this.#hostedSearchWebToolCall.finalCommitToTGM(event)
+        break;
+      case 'code_interpreter_call':
+        await this.#hostedCodeInterpreterCall.endCommit(event)
+        break;
+      case 'reasoning':
+        await this.#hostedReasoningCall.endCommit(event)
+        break;
+      case 'image_generation_call':
+        await this.#hostedImageGenerationCall.endCommit(event)
+      break;
+      case 'mcp_list_tools':
+        await this.#hostedMCPToolRequest.endCommit(event)
+      break;
+      case 'mcp_call':
+        await this.#hostedMCPCall.endCommit(event)
+      break;
+      case 'mcp_approval_request':
+        await this.#hostedMCPApprovalRequest.approvalRequest(event)
+      break;
+    }
+  } catch (err) {
+      err.place_in_code = err.place_in_code || `handleOutputItemDone.${this.#output_items[output_index].type}`;
+      throw err;
+  }
+  }
+
+  async handleMessageDone(event){
+    const {output_index,item} = event;
+    if(this.#message_items[output_index].text !=""){
+      this.#message_items[output_index].status = item?.status;
+      this.#message_items[output_index].content = [item?.content[0]];
+      const completionObj = this.#message_items[output_index];
+      this.#commitToDBQueue.add(() => this.#dialogue.commitCompletionDialogue(completionObj));
+    } else {
+      this.#tgmMessagesQueue.add(() => this.#replyMsg.deleteMsgByID(this.#message_items[output_index].deliverResponseToTgm.statusMsgId));
+    }
+  }
+
+    reasoningCall(initialEvent){
+
+      const statusMsgId = this.#statusMsg?.message_id
+      const {output_index,item} = initialEvent;
+      const {type,status,id} = item;
+      let functionDescription = "Рассуждение";
+      this.#reasoningTimer = this.timer();
+      
+      return {
+        "initialCommit":() => {
+          this.#reasoningTimer.start_lap();
+          let details = "думаю...";
+          const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+
+          console.log(`reasoning initialCommit msgID: ${statusMsgId}`)
+          this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
+            chat_id:this.#replyMsg.chatId,
+            message_id:statusMsgId,
+            reply_markup:null,
+            parse_mode: "html"
+          }))
+        },
+        "resumeCommit": async () => {
+          
+          this.#reasoningTimer.start_lap();
+          let details = "снова думаю ...";
+          const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+          console.log(`reasoning resumeCommit msgID: ${statusMsgId}`)
+          this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
+            chat_id:this.#replyMsg.chatId,
+            message_id:statusMsgId,
+            reply_markup:null,
+            parse_mode: "html"
+          }))
+        },
+        "endCommit": async (reasoning_event) => {
+          this.#reasoningTimer.stop_lap();
+          const msgText = `✅ <b>${functionDescription}</b> ${this.#reasoningTimer.get_total_HHMMSS()}`
+          console.log(`reasoning endCommit msgID: ${statusMsgId}`)
+          this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+          }))
+          this.#commitToDBQueue.add(() => this.#dialogue.commitReasoningToDialogue(this.#responseId,output_index,reasoning_event.item));
+        }
+    }
+  }
+
+    MCPToolsRequest(initialEvent){
+
+      const statusMsgId = this.#statusMsg?.message_id
+      const {output_index,item} = initialEvent;
+      const {server_label} = item;
+      let functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
+      this.#mcpToolsTimer = this.timer();
+      
+      return {
+        "initialCommit":() => {
+          this.#mcpToolsTimer.start_lap();
+          let details = "получаю список инструментов ...";
+          const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+          this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
+            chat_id:this.#replyMsg.chatId,
+            message_id:statusMsgId,
+            reply_markup:null,
+            parse_mode: "html"
+          }))
+        },
+        "endCommit": async (mcp_tool_event) => {
+          this.#mcpToolsTimer.stop_lap();
+
+          let details = "список инструментов";
+          const msgText = `✅ <b>${functionDescription}</b>: ${details} ${this.#mcpToolsTimer.get_total_HHMMSS()}`
+
+          this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(msgText,{
+              chat_id:this.#replyMsg.chatId,
+              message_id:statusMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+          }));
+          this.#commitToDBQueue.add(() => this.#dialogue.commitMCPToolsToDialogue(this.#responseId,output_index,mcp_tool_event.item));
+        }
       }
     }
 
-      MCPToolsRequest(initialEvent,statusMsg){
+    MCPApprovalRequest(){
 
-        const statusMsgId = statusMsg?.message_id
-        const {output_index,item} = initialEvent;
-        const {server_label} = item;
-        let functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
-        let totalDurationSec = 0;
-        let itemStartTime;
-        let itemEndTime;
-        
-        return {
-          "initialCommit":() => {
-            itemStartTime = Date.now();
-            let details = "получаю список инструментов ...";
-            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            this.#replyMsg.simpleMessageUpdate(MsgText,{
-              chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
-              reply_markup:null,
-              parse_mode: "html"
-            })
-          },
-          "endCommit": async (mcp_tool_event) => {
-
-            itemEndTime = Date.now();
-            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
-            totalDurationSec += itemDurationSec;
-
-            let details = "список инструментов";
-            const msgText = `✅ <b>${functionDescription}</b>: ${details} ${otherFunctions.toHHMMSS(totalDurationSec)}`
-            await Promise.all([
-            this.#replyMsg.simpleMessageUpdate(msgText,{
-                chat_id:this.#replyMsg.chatId,
-                message_id:statusMsgId,
-                reply_markup:null,
-                parse_mode: "html"
-            }),
-            this.#dialogue.commitMCPToolsToDialogue(this.#responseId,output_index,mcp_tool_event.item)
-            ]);
-          }
-      }
-    }
-
-    MCPApprovalRequest(initialEvent,statusMsg){
-
-        const statusMsgId = statusMsg?.message_id
+        const statusMsgId = this.#statusMsg?.message_id
         
         return {
           "approvalRequest": async (event) => {
@@ -422,122 +481,113 @@ class Completion extends EventEmitter {
             const MsgText = `<b>${functionDescription}</b> запрашивает подтверждение. \nПодтвердите выполнение запроса <code>${name}</code> со следующими агрументами: <code>${call_arguments}</code>.`
 
             const reply_markup = await this.craftReplyMarkupForMCPApprovalRequest(this.#responseId,output_index,item,statusMsgId,MsgText);
-            
-            await Promise.all([
-            this.#replyMsg.simpleMessageUpdate(MsgText,{
+
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
                 chat_id:this.#replyMsg.chatId,
                 message_id:statusMsgId,
                 reply_markup:reply_markup,
                 parse_mode: "html"
-            }),
-            this.#dialogue.commitMCPApprovalRequestToDialogue(this.#responseId,output_index,item,statusMsgId)
-          ])
+            }));
+            this.#commitToDBQueue.add(() => this.#dialogue.commitMCPApprovalRequestToDialogue(this.#responseId,output_index,item,statusMsgId));
           }
         }
       }
 
-      async craftReplyMarkupForMCPApprovalRequest(responseId,output_index,item,tgm_msg_id,msg_text){
+    async craftReplyMarkupForMCPApprovalRequest(responseId,output_index,item,tgm_msg_id,msg_text){
 
-        const {server_label,id} = item;
+      const {server_label,id} = item;
 
-        const approval_text = `${msg_text} \n\n✅ Подтвержден`
-        const cancel_text = `${msg_text} \n\n❌ Отменен`
+      const approval_text = `${msg_text} \n\n✅ Подтвержден`
+      const cancel_text = `${msg_text} \n\n❌ Отменен`
 
-        const approve_object = {
-          request_id: id,
-          server_label,
-          approve: true,
-          reason: null,
-          responseId,
-          output_index,
-          tgm_msg_id,
-          msg_text: approval_text
-        };
-
-        const cancel_object = {
-          request_id: id,
-          server_label,
-          approve: false,
-          reason: null,
-          responseId,
-          output_index,
-          tgm_msg_id,
-          msg_text: cancel_text
-        };
-
-        const approve_hash = await otherFunctions.encodeJson(approve_object)
-        const cancel_hash = await otherFunctions.encodeJson(cancel_object)
-
-        const approve_callback_data = {e:"mcp_req",d:approve_hash}
-        const cancel_callback_data = {e:"mcp_req",d:cancel_hash}
-
-        const approve_button = {
-          text: "Подтвердить",
-          callback_data: JSON.stringify(approve_callback_data),
-        };
-
-        const cancel_button = {
-          text: "Отменить",
-          callback_data: JSON.stringify(cancel_callback_data),
-        };
-
-      return {
-        one_time_keyboard: true,
-        inline_keyboard: [[approve_button, cancel_button]],
+      const approve_object = {
+        request_id: id,
+        server_label,
+        approve: true,
+        reason: null,
+        responseId,
+        output_index,
+        tgm_msg_id,
+        msg_text: approval_text
       };
-      }
-    
-    MCPCall(initialEvent,statusMsg){
 
-        const statusMsgId = statusMsg?.message_id
+      const cancel_object = {
+        request_id: id,
+        server_label,
+        approve: false,
+        reason: null,
+        responseId,
+        output_index,
+        tgm_msg_id,
+        msg_text: cancel_text
+      };
+
+      const approve_hash = await otherFunctions.encodeJson(approve_object)
+      const cancel_hash = await otherFunctions.encodeJson(cancel_object)
+
+      const approve_callback_data = {e:"mcp_req",d:approve_hash}
+      const cancel_callback_data = {e:"mcp_req",d:cancel_hash}
+
+      const approve_button = {
+        text: "Подтвердить",
+        callback_data: JSON.stringify(approve_callback_data),
+      };
+
+      const cancel_button = {
+        text: "Отменить",
+        callback_data: JSON.stringify(cancel_callback_data),
+      };
+
+    return {
+      one_time_keyboard: true,
+      inline_keyboard: [[approve_button, cancel_button]],
+    };
+    }
+    
+    MCPCall(initialEvent){
+
+        const statusMsgId = this.#statusMsg?.message_id
         const {output_index,item} = initialEvent;
         const {type,server_label,id,name,approval_request_id,} = item;
         let functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
-        let totalDurationSec = 0;
-        let itemStartTime;
-        let itemEndTime;
+        this.#mcpCallTimer = this.timer();
         
         return {
           "initialCommit":(event) => {
-            itemStartTime = Date.now();
+            this.#mcpCallTimer.start_lap();
             const {item} = event;
             const {name} = item;
             let details = `запрос '${name}'  ...`;
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            this.#replyMsg.simpleMessageUpdate(MsgText,{
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
               reply_markup:null,
               parse_mode: "html"
-            })
+            }))
           },
           "endCommit": async (event) => {
             const {output_index,item} = event;
             const {type,server_label,id,name,output,error} = item;
             const call_arguments = item.arguments;
-            itemEndTime = Date.now();
-            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
-            totalDurationSec += itemDurationSec;
+            this.#mcpCallTimer.stop_lap();
+            const itemDurationSec = this.#mcpCallTimer.get_total_seconds();
             const requestName = `запрос '${name}'`;
             let msgText;
             if (error) {
-              msgText = `❌ <b>${functionDescription}</b>: ${requestName} ${otherFunctions.toHHMMSS(totalDurationSec)}`
+              msgText = `❌ <b>${functionDescription}</b>: ${requestName} ${this.#mcpCallTimer.get_total_HHMMSS()}`
             } else {
-              msgText = `✅ <b>${functionDescription}</b>: ${requestName} ${otherFunctions.toHHMMSS(totalDurationSec)}`
+              msgText = `✅ <b>${functionDescription}</b>: ${requestName} ${this.#mcpCallTimer.get_total_HHMMSS()}`
             }
 
-            const reply_markup = await this.craftReplyMarkupForMCPCall(item,msgText);
-            
-            await Promise.all([
-            this.#replyMsg.simpleMessageUpdate(msgText,{
+            const reply_markup = this.#user.showDetails ? await this.craftReplyMarkupForMCPCall(item,msgText) : null ;
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(msgText,{
                 chat_id:this.#replyMsg.chatId,
                 message_id:statusMsgId,
                 reply_markup:reply_markup,
                 parse_mode: "html"
-            }),
-              this.#dialogue.commitMCPCallToDialogue(this.#responseId,output_index,item,statusMsgId)
-            ])
-
+            })),
+            this.#commitToDBQueue.add(() => this.#dialogue.commitMCPCallToDialogue(this.#responseId,output_index,item,statusMsgId))
           }
       }
     }
@@ -576,32 +626,26 @@ class Completion extends EventEmitter {
           return htmlToSend;
         }
 
-      imageGenerationCall(initialEvent,statusMsg){
+      imageGenerationCall(initialEvent){
 
-        const statusMsgId = statusMsg?.message_id
+        const statusMsgId = this.#statusMsg?.message_id
         let imageMsgId = new Set([]);
         const {output_index,item} = initialEvent;
         const {type,status,id} = item;
         let functionDescription = "Изображение OpenAI";
-        let totalDurationSec = 0;
-        let itemStartTime;
-        let itemEndTime;
-        const reply_markup = {
-                one_time_keyboard: true,
-                inline_keyboard: []
-              }
+        this.#imageGenTimer = this.timer();
 
         return {
           "initialCommit":async () => {
+            this.#imageGenTimer.start_lap();
             let details = "генерирую ...";
-            itemStartTime = Date.now();
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            this.#replyMsg.simpleMessageUpdate(MsgText,{
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
               reply_markup:null,
               parse_mode: "html"
-            })
+            }))
           },
           "partialCommit": async (event) => {
 
@@ -612,37 +656,29 @@ class Completion extends EventEmitter {
             let details = "это еще не все. Продолжаю ..."
             const caption = `⏳ <b>${functionDescription}</b>: ${details}`;
 
-
-            if(Array.from(imageMsgId).length===0){
-            const [{message_id},deleteResult] = await Promise.all([
-              this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html"),
-              this.#replyMsg.deleteMsgByID(statusMsgId)
-            ]);
-            imageMsgId.add(message_id);
-            } else {
-              const lastImageMsgId = Array.from(imageMsgId).at(-1);
-              const [{message_id},deleteResult] = await Promise.all([
-                this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html"),
-                this.#replyMsg.deleteMsgByID(lastImageMsgId)
-              ]);
-            imageMsgId.add(message_id);
-            }
             
-     
+            
+            this.#tgmMessagesQueue.add(() => Promise.all([
+              (async () => { 
+                const {message_id} = await this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html")
+                imageMsgId.add(message_id);
+              })(),
+              (async () => {
+                const msgToDeleteID = Array.from(imageMsgId).length===0 ? statusMsgId : Array.from(imageMsgId).at(-1);
+                this.#replyMsg.deleteMsgByID(msgToDeleteID)
+              })()
+            ]));
+    
           },
           "endCommit": async (completedEvent) => {
-    
-            itemEndTime = Date.now();
-            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
-            totalDurationSec += itemDurationSec;
+            this.#imageGenTimer.stop_lap();
             const {item,output_index} = completedEvent;
             const {status,background,output_format,quality,type,id,result,revised_prompt,size} = item;
 
-            
             const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
             const imageBuffer = Buffer.from(result, 'base64');
-            const filename = otherFunctions.valueToMD5(String(this.#user))+ "_" + this.#user.currentRegime + "_" + otherFunctions.valueToMD5(String(imageMsgId)) + "." + output_format;
-            const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`;
+            const filename = otherFunctions.valueToMD5(String(this.#user.userid))+ "_" + this.#user.currentRegime + "_" + otherFunctions.valueToMD5(String(imageMsgId)) + "." + output_format;
+            const msgText = `✅ <b>${functionDescription}</b> ${this.#imageGenTimer.get_total_HHMMSS()}`;
             
             let caption;
 
@@ -651,30 +687,29 @@ class Completion extends EventEmitter {
             } else {
              caption = `${msgText}\n\n${revised_prompt.slice(0, appsettings.telegram_options.big_outgoing_caption_threshold)}... --size ${size} --quality ${quality} --background ${background}`;
             }
+                      
+            this.#tgmMessagesQueue.add(() => Promise.all([
+              (async () => {
+                const lastImageMsgId = Array.from(imageMsgId).at(-1);
+                this.#replyMsg.deleteMsgByID(lastImageMsgId)
+              })(),
+             (async () => {
+              const {Location} = await  awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
+              const reply_markup = this.craftReplyMarkupForImageGeneration(Location);
+              const {message_id} = await this.#replyMsg.sendOAIImage(imageBuffer,caption,id,output_format,mime_type,"html",reply_markup);
+              imageMsgId.add(message_id);
+             })()
+            ]))
             
             const fileComment = {
               image_id: id,
               format: output_format,
               revised_prompt: revised_prompt,
-              content: "User used OpenAI image generation tool",
+              content: "Image generated with image generation tool",
             }
-            
-   
-            const lastImageMsgId = Array.from(imageMsgId).at(-1);
-            const [deleteResult,{message_id}  ,ImageCommitResult,{Location}] = await Promise.all([
-             this.#replyMsg.deleteMsgByID(lastImageMsgId),
-             this.#replyMsg.sendOAIImage(imageBuffer,caption,id,output_format,mime_type,"html"),
-             this.#dialogue.commitImageToDialogue(fileComment,{url:null,base64:result,sizeBytes:imageBuffer.length,mimetype:mime_type}),
-             awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
-            ])
-            imageMsgId.add(message_id);
 
+            this.#commitToDBQueue.add(() => this.#dialogue.commitImageToDialogue(fileComment,{url:null,base64:result,sizeBytes:imageBuffer.length,mimetype:mime_type},0,null));
             
-            if(Location){
-              const btnText = otherFunctions.getLocalizedPhrase(`full_size_image`,this.#user.language);
-              reply_markup.inline_keyboard.push([{text: btnText, url:Location}])
-              this.#replyMsg.updateMessageReplyMarkup(Array.from(imageMsgId).at(-1),reply_markup)
-            }
 
             mongo.insertCreditUsage({
                     userInstance: this.#user,
@@ -688,101 +723,149 @@ class Completion extends EventEmitter {
       }
     }
 
-      codeInterpreterCall(initialEvent,statusMsg){
+    craftReplyMarkupForImageGeneration(url){
+        if(url){
+              const btnText = otherFunctions.getLocalizedPhrase(`full_size_image`,this.#user.language);
+              const reply_markup = {
+                one_time_keyboard: true,
+                inline_keyboard: [[{text: btnText, url:url}]]
+              }
+              return reply_markup;
+            } else {
+              return null
+            }
+    }
 
-        const statusMsgId = statusMsg?.message_id
-        const {output_index,item} = initialEvent;
-        const {type,code,status,container_id,id} = item;
+      codeInterpreterCall(){
+
+        const statusMsgId = this.#statusMsg?.message_id
         let functionDescription = "Код на Python";
         
-        let codeInterpreterOutputText = "";
+        const codeInterpreterOutput = [];
+        let finalMsgText;
+        this.#codeIntTimer = this.timer();
         let reply_markup = null;
-        let totalDurationSec = 0;
-        let itemStartTime;
-        let itemEndTime;
 
         return {
           "initialCommit":() => {
-            itemStartTime = Date.now();
+            this.#codeIntTimer.start_lap();
             let details = "в работе ...";
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
             console.log(`codeInterpreter initialCommit msgID: ${statusMsgId}`)
-            this.#codeInterpreterAsyncQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
-              reply_markup:null,
+              reply_markup:reply_markup,
               parse_mode: "html"
             }))
           },
           "resumeCommit": async () => {
-            itemStartTime = Date.now();
+            this.#codeIntTimer.start_lap();
             let details = "снова в работе ...";
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            console.log(`codeInterpreter resumeCommit msgID: ${statusMsgId}`)
-            this.#codeInterpreterAsyncQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
+            console.log(`codeInterpreter resumeCommit  msgID: ${statusMsgId}`)
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
-              reply_markup:null,
+              reply_markup:reply_markup,
               parse_mode: "html"
             }))
           },
           "endCommit": async (completedEvent) => {
-            itemEndTime = Date.now();
-            const itemDurationSec = (itemEndTime - itemStartTime) / 1000;
-            totalDurationSec += itemDurationSec;
+            this.#codeIntTimer.stop_lap();
             const {item,output_index} = completedEvent;
-            const {action,type,code,outputs} = item;
-            if(code){
-              codeInterpreterOutputText += `\n${code}`;
-            }
-            if(outputs[0]){
-              const {type,logs} = outputs[0];
-              if(type === "logs" && logs && logs.length > 0){
-                codeInterpreterOutputText += `\n--------------\nOutput: ${logs}\n--------------`;
-              } else {
-                console.log("Unknown output format from 'code interpreter'", outputs[0]);
-              }
-            }
+            const {code,outputs=[]} = item;
 
-            const msgText = `✅ <b>${functionDescription}</b> ${otherFunctions.toHHMMSS(totalDurationSec)}`
-            console.log(`codeInterpreter endCommit msgID: ${statusMsgId}`)
-            this.#codeInterpreterAsyncQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
+            const outputsImages = [];
+            const outputsLogs = [];
+
+            outputs.forEach((output) => {
+              if(output.type === "image" && output.url){
+                outputsImages.push(output.url);
+                outputsLogs.push({type: "image",url: "base64 data"});
+              }
+              if(output.type === "logs" && output.logs){
+                outputsLogs.push(output);
+              }
+            });
+
+            codeInterpreterOutput.push({code, outputs: outputsLogs,output_index});
+
+            this.#commitToDBQueue.add(() => this.#dialogue.commitCodeInterpreterOutputToDialogue(this.#responseId,output_index,item,statusMsgId));
+
+            finalMsgText = `✅ <b>${functionDescription}</b> ${this.#codeIntTimer.get_total_HHMMSS()}`;
+
+            console.log(`codeInterpreter endCommit  msgID: ${statusMsgId}`)
+            reply_markup = this.#user.showDetails ? await this.craftReplyMarkupForDetails(codeInterpreterOutput,finalMsgText) : null
+            this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(finalMsgText,{
                 chat_id:this.#replyMsg.chatId,
                 message_id:statusMsgId,
-                reply_markup:null,
+                reply_markup:reply_markup,
                 parse_mode: "html"
             }))
 
-            reply_markup = await this.craftReplyMarkupForDetails(item,codeInterpreterOutputText,msgText)
-          },
-          "finalyze": async () => {
-            await Promise.all([
-             this.#replyMsg.updateMessageReplyMarkup(statusMsgId,reply_markup),
-             this.#dialogue.commitCodeInterpreterOutputToDialogue(id,codeInterpreterOutputText)
-           ])
+            outputsImages.forEach((image, index) => {
+              const {mimeType,encoding,data} = this.parseImageStringData(image);
+              const imageBuffer = Buffer.from(data, encoding);
+              const sizeBytes = imageBuffer.length;
+              const fileExtention = mimeType.split('/')[1];
+              const filename = otherFunctions.valueToMD5(String(this.#user.userid))+ "_" + this.#user.currentRegime + "_" + otherFunctions.valueToMD5(String(new Date())) + "_" + index + "." + fileExtention;
 
-           mongo.insertCreditUsage({
+              this.#tgmMessagesQueue.add(() =>  (async () =>{
+                const {Location} = await  awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
+                const reply_markup = {
+                  one_time_keyboard: true,
+                  inline_keyboard: [[{text: "Полный размер", url: Location}]]
+                };
+                const fileComment = {
+                context: "This image was genarated by Code Interpreter tool",
+                public_url: Location
+                };
+                const {message_id} = await this.#replyMsg.sendCodeInterpreterImage(imageBuffer,null,filename,mimeType,"html",reply_markup);
+                this.#commitToDBQueue.add(() => this.#dialogue.commitImageToDialogue(fileComment,{base64:data,mimetype:mimeType,sizeBytes},index,message_id));
+              })())
+            })
+
+
+            mongo.insertCreditUsage({
                     userInstance: this.#user,
                     creditType: "code_interpreter",
-                    creditSubType: "create",
+                    creditSubType: item.container_id,
                     usage: 1,
                     details: {place_in_code:"codeInterpreterCall"}
                 })
-        }
+
+          }
       }
     }
 
-      async craftReplyMarkupForDetails(item,output_text,msgText){
+    parseImageStringData(imageString) {
 
-        const {id,type,} = item;
+      const [header, data] = imageString.split(',');
+    const [mimeType, encoding] = header.replace('data:', '').split(';');
+    
+    return {
+        mimeType,
+        encoding: encoding || null,
+        data
+    };
 
-        const result = {
-          code_and_results: "\n" + output_text
-        };
+    }
 
-        const stringifiedResult = otherFunctions.unWireText(JSON.stringify(result, null, 2));
+      async craftReplyMarkupForDetails(output_result,msgText){
 
-        const unfoldedTextHtml = `<b>function:</b> ${type}\n<b>id:</b> ${id}\n<pre><code class="json">${otherFunctions.wireHtml(stringifiedResult)}</code></pre>`
+        let unfoldedTextHtml = `<b>function:</b> code_interpreter_call`;
+
+        output_result.forEach((output) => {
+
+          const snipet = `-------------------------
+<b>output_index:</b> ${output.output_index}
+<b>code:</b><pre><code class="python">${otherFunctions.wireHtml(otherFunctions.unWireText(output.code))}</code></pre>
+<b>outputs:</b><pre><code class="json">${otherFunctions.wireHtml(otherFunctions.unWireText(JSON.stringify(output.outputs, null, 4)))}</code></pre>
+`;
+          unfoldedTextHtml += snipet;
+        })
+
         const infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msgText})
         const callback_data = {e:"un_f_up",d:infoForUserEncoded}
 
@@ -797,9 +880,9 @@ class Completion extends EventEmitter {
       };
       }
 
-      searchWebToolCall(initialEvent,statusMsg){
+      searchWebToolCall(initialEvent){
 
-        const statusMsgId = statusMsg?.message_id
+        const statusMsgId = this.#statusMsg?.message_id
         const {output_index,item} = initialEvent; 
         const {type,action} = item;
         let functionDescription;
@@ -835,12 +918,12 @@ class Completion extends EventEmitter {
                 toolType = "web_search_preview";
             };
             const MsgText = `⏳ <b>${functionDescription}</b> `
-            await this.#replyMsg.simpleMessageUpdate(MsgText,{
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
               reply_markup:null,
               parse_mode: "html"
-            })
+            }));
 
           },
           "finalCommitToTGM": async (completedEvent) => {
@@ -862,12 +945,12 @@ class Completion extends EventEmitter {
 
             const msgText = `✅ <b>${functionDescription}</b>: ${details}`
 
-            await this.#replyMsg.simpleMessageUpdate(msgText,{
+            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(msgText,{
                 chat_id:this.#replyMsg.chatId,
                 message_id:statusMsgId,
                 reply_markup:null,
                 parse_mode: "html"
-            })
+            }));
           }
         }
       }
@@ -892,11 +975,7 @@ class Completion extends EventEmitter {
         this.#output_items[output_index].status = "completed";
       }
 
-      failedOutputItem(output_index){
-        this.#output_items[output_index].status = "failed";
-      }
-
-      async createFunctionCall(event,statusMsg){
+      async createFunctionCall(event){
 
         const {item,output_index} = event;
         const {id,call_id,name,status} = item;
@@ -917,16 +996,17 @@ class Completion extends EventEmitter {
             replyMsgInstance:this.#replyMsg,
             dialogueInstance:this.#dialogue,
             requestMsgInstance:this.#requestMsg,
-              statusMsg:statusMsg
+            statusMsg:this.#statusMsg
         };
         this.#functionCalls[output_index] = new FunctionCall(options)
-        this.#functionCalls[output_index].initStatusMessage(statusMsg?.message_id)
+        console.log(`FunctionCall init message`,this.#statusMsg?.message_id)
+        this.#functionCalls[output_index].startFunctionTimer()
+        this.#tgmMessagesQueue.add(() => this.#functionCalls[output_index].initStatusMessage(this.#statusMsg?.message_id))
       }
 
       async triggerFunctionCall(event){
         const {output_index,item} = event;
 
-        try{
         const {status,call_id,name} = item
         const item_type = item.type;
         this.#functionCalls[output_index].function_arguments = item?.arguments;
@@ -941,7 +1021,7 @@ class Completion extends EventEmitter {
           this.#functionCalls[index].tokensLimitPerCall = tokensLimitPerCall;
         })
 
-        await this.#dialogue.commitFunctionCallToDialogue({
+        this.#commitToDBQueue.add(() => this.#dialogue.commitFunctionCallToDialogue({
           tool_call_id:call_id,
           function_name:name,
           tool_config:this.#functionCalls[output_index].tool_config,
@@ -951,9 +1031,9 @@ class Completion extends EventEmitter {
           function_arguments:item?.arguments,
           status:status,
           type:item_type
-        })
+        }))
 
-        await this.#dialogue.preCommitFunctionReply({
+        this.#commitToDBQueue.add(() => this.#dialogue.preCommitFunctionReply({
           tool_call_id:call_id,
           function_name:name,
           output_item_index:output_index,
@@ -961,8 +1041,7 @@ class Completion extends EventEmitter {
           sourceid:`${this.#functionCalls[output_index].responseId}_output_index_${output_index}_function_output`,
           status:"in_progress",
           type:"function_call_output"
-        })
-
+        }))
 
         const outcome = await this.#functionCalls[output_index].router();
 
@@ -975,24 +1054,11 @@ class Completion extends EventEmitter {
           status:"completed",
           content:JSON.stringify(outcome,this.modifyStringify,2)
         }
-       
-        await Promise.all([
-          this.#dialogue.updateCommitToolReply(toolExecutionResult),
-          this.commitImages(supportive_data,function_name,tool_call_id)
-        ]);
+          this.#commitToDBQueue.add(() => this.#dialogue.updateCommitToolReply(toolExecutionResult))
+          this.#tgmMessagesQueue.add(() => this.commitImages(supportive_data,function_name,tool_call_id))
 
-        } catch(err){
-          err.place_in_code = error.place_in_code || "triggerFunctionCall";
-          telegramErrorHandler.main(
-                          {
-                          replyMsgInstance:this.#replyMsg,
-                          error_object:err
-                          }
-                      );
-          throw err;
-        } finally {
-          return output_index
-        }
+        return output_index
+        
         }
 
         modifyStringify(key,value){
@@ -1025,7 +1091,7 @@ class Completion extends EventEmitter {
               url:mdj_public_url,
               base64:mdj_image_base64,
               sizeBytes:size_bites,
-              mimetype:mimetype});
+              mimetype:mimetype},0,null);
 
           } else if(function_name==="fetch_url_content" && page_screenshots && page_screenshots.length > 0){
 
@@ -1035,7 +1101,7 @@ class Completion extends EventEmitter {
                     page_url:screenshot.page_url,
                     call_id: tool_call_id,
                 }
-                return this.#dialogue.commitImageToDialogue(fileComment,screenshot,index);
+                return this.#dialogue.commitImageToDialogue(fileComment,screenshot,index,null);
               });
               await Promise.all(commitFunctions);
             }
@@ -1055,9 +1121,9 @@ class Completion extends EventEmitter {
           this.#updateCompletionVariables()
           
           await this.#replyMsg.sendTypingStatus()
-          const statusMsg = await this.#replyMsg.sendStatusMsg()
+          this.#statusMsg = await this.#replyMsg.sendStatusMsg()
 
-          this.#long_wait_notes = this.triggerLongWaitNotes(statusMsg)
+          this.#long_wait_notes = this.triggerLongWaitNotes(this.#statusMsg)
           
 
           let responseStream;
@@ -1086,7 +1152,7 @@ class Completion extends EventEmitter {
             }
           }
 
-          await this.responseEventsHandler(responseStream,statusMsg);
+          await this.responseEventsHandler(responseStream);
           await this.waitForFinalization()
 
           const functionCallsWereMade = Object.values(this.#output_items).some(item => item.type === "function_call");
@@ -1508,10 +1574,11 @@ class Completion extends EventEmitter {
             inline_keyboard: [],
           };
 
+          /*
       const regenerateButtons = {
             text: "🔄",
             callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
-      };
+      };*/
 
       const callbackData = await otherFunctions.encodeJson({text})
       
@@ -1536,9 +1603,9 @@ class Completion extends EventEmitter {
 
       const downRow = [redaloudButtons,HTMLButtons,PDFButtons]
 
-      if(this.#completionCurrentVersionNumber<10){
+      /*if(this.#completionCurrentVersionNumber<10){
         downRow.unshift(regenerateButtons)
-      }
+      }*/
 
       reply_markup.inline_keyboard.push(downRow)
 
