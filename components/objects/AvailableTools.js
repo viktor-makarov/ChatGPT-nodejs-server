@@ -113,6 +113,49 @@ class AvailableTools {
             },
             {
                 type: "function",
+                name: "web_browser",
+                description: "Uses computer call tool to open a web browser and click on the specified site in real time.",
+                strict: true,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        function_description: {
+                            type: "string",
+                            description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                        },
+                        site_name: {
+                            type: "string",
+                            description: `Name of the website to browse.`
+                        },
+                        url: {
+                            type: "string",
+                            description: "Url to browse around. Must be a valid URL."
+                        },
+                        task: {
+                            type: "string",
+                            description: "Task to perform in the browser. Must be a clear and concise description of what to do with the page."
+                        }
+                    },
+                    required: ["function_description", "url", "task", "site_name"],
+                    additionalProperties: false
+                },
+                friendly_name: "Обзор сайта",
+                timeout_ms: 180000,
+                long_wait_notes: [
+                    { time_ms: 60000, comment: "Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️" },
+                    { time_ms: 1200000, comment: "На этот раз долго ... Однако, пока нет причин для беспокойства! 👌" },
+                    { time_ms: 150000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..." }
+                ],
+                try_limit: 3,
+                model: "computer-use-preview",
+                availableInRegimes: ["chat"],
+                availableForGroups: ["admin", "basic"],
+                availableForToolCalls: false,
+                deprecated: false,
+                category: "custom"
+            },
+            {
+                type: "function",
                 name: "create_mermaid_diagram",
                 description: "Creates mermaid diagram based on provided description and details.",
                 strict: true,
@@ -125,7 +168,7 @@ class AvailableTools {
                         },
                         type: {
                             type: "string",
-                            enum: ["flowchart", "sequenceDiagram", "classDiagram", "stateDiagram-v2", "erDiagram", "gantt", "journey", "pie", "mindmap", "quadrantChart"],
+                            enum: ["flowchart", "sequenceDiagram", "classDiagram", "stateDiagram-v2", "erDiagram", "gantt", "journey", "mindmap", "quadrantChart"],
                             description: "Specifies the required Mermaid diagram type."
                         },
                         title: {

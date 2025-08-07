@@ -31,6 +31,11 @@ class AsyncQueue {
       try   { resolve(await task()); }
       catch (err){
         err.place_in_code = `AsyncQueue.${this._name}`;
+        err.details = {
+            task: task.toString(),
+            tasksInQueue: this._tasks.length,
+            originalStack: err.stack
+        };
         ErrorHandler.main({
             replyMsgInstance: this._replyInstance,
             error_object: err

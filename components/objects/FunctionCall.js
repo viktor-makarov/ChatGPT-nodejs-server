@@ -11,6 +11,7 @@ const openAIApi = require("../apis/openAI_API.js");
 const devPrompts = require("../../config/developerPrompts.js");
 const { error } = require("pdf-lib");
 const AvailableTools = require("./AvailableTools.js");
+const WebBrowser = require("./WebBrowser.js");
 
 class FunctionCall {
     #replyMsg;
@@ -354,6 +355,7 @@ async backExecutingStatusMessage(statusMessageId){
 async initStatusMessage(msgId){
     const functionFriendlyName = this.#functionConfig.friendly_name;
     const msgText = `⏳ <b>${functionFriendlyName}</b> ...`
+    console.log(new Date(),`initStatusMessage msgID: ${msgId}`)
     await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
         message_id:msgId,
@@ -497,6 +499,7 @@ async selectAndExecuteFunction() {
         "get_currency_rates": () => this.getCurrencyRates(),
         "web_search": () => this.webSearch(),
         "create_mermaid_diagram": () => this.createMermaidDiagrams(),
+        "web_browser": () => this.webBrowser(),
     };
     
     const targetFunction = functionMap[this.#functionName];
@@ -664,6 +667,28 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
 
             return {success:1,result:`The file ${filename} ({sizeString}) has been generated and successfully sent to the user.`}
+        }
+
+        async webBrowser(){
+
+            this.validateRequiredFieldsFor_webBrowser()
+
+            const {site_name,url,task} = this.#argumentsJson
+            const {model} = this.#functionConfig;
+
+            console.log({site_name,url,task,model})
+            const webBrowser = new WebBrowser();
+            await webBrowser.createPage(url, {width: 1024, height: 768});
+            await webBrowser.navigateToUrl();
+
+            const pageContent = await webBrowser.takeScreenshot();
+            func.saveBufferToTempFile(pageContent, "web_browser_initial_screenshot.png");
+            
+            return  {success:0, result: "Function is not implemented yet."}
+        }
+
+        async getInitalScreenForWebBrowser(url){
+
         }
 
         async webSearch(){
@@ -1207,6 +1232,31 @@ const {conversion_queries} = this.#argumentsJson
             throw error
         }
     }
+}
+
+
+validateRequiredFieldsFor_webBrowser(){
+
+const {site_name,url,task} = this.#argumentsJson
+
+let error = new Error();
+error.assistant_instructions = "Fix the error and retry the function."
+
+if(!site_name || site_name === ""){
+    error.message = `'site_name' parameter is missing. Provide the value for the argument.`
+    throw error
+}
+
+if(!url || url === ""){
+    error.message = `'url' parameter is missing. Provide the value for the argument.`
+    throw error
+}
+
+if(!task || task === ""){
+    error.message = `'task' parameter is missing. Provide the value for the argument.`
+    throw error
+}
+
 }
 
 

@@ -284,6 +284,7 @@ async function chatCompletionStreamAxiosRequest(
 async function OpenAIErrorHandle(error,dialogueClass) {
 
         let newErr = error;
+        console.log("OpenAIErrorHandle",error)
         newErr.place_in_code = newErr.place_in_code || "openAi_API.OpenAIErrorHandle";
 
         if (error.status === 400 || error.message.includes("400")) {

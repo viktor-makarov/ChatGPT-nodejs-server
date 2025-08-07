@@ -871,6 +871,27 @@ function wireHtml(text){
 
   }
 
+  async function getPageScreenshotForBrowser(url, options = {}){
+    const { timeout = 30_000, delay_ms = 5_000} = options;
+
+    const page = await global.chromeBrowserHeadless.newPage();
+    try {
+      await page.setViewportSize({ width: 1024, height: 768 });
+      await page.goto(url);
+      await delay(delay_ms);
+
+      const screenshotBuffer = await page.screenshot({ fullPage: true,type: 'png'});
+
+      return screenshotBuffer;
+
+    } catch (error) {
+      console.error('Error in getPageHtml:', error.message);
+      throw error;
+    } finally {
+      await page.close();
+    }
+  } 
+
   async function getPageHtml(url, options = {}) {
     const { timeout = 30_000, delay_ms = 5_000} = options;
     
@@ -2667,5 +2688,6 @@ module.exports = {
   getPageHtml,
   getMimeTypeFromUrl,
   toHHMMSS,
-  getMimeTypeFromPath
+  getMimeTypeFromPath,
+  getPageScreenshotForBrowser
 };

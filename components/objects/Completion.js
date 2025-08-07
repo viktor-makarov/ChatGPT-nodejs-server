@@ -13,6 +13,7 @@ const { format } = require('path');
 const awsApi = require("../apis/AWS_API.js")
 const AvailableTools = require("./AvailableTools.js");
 const { type } = require('os');
+const OpenAI = require("openai");
 
 
 class Completion extends EventEmitter {
@@ -170,14 +171,12 @@ class Completion extends EventEmitter {
     this.#message_items = {};
     
     // Process events asynchronously but sequentially
-    for await (const event of responseStream) {
-        this.registerNewEvent(event,evensOccured) // temporaty. To study new events.
-        
-       // console.log(event.sequence_number,new Date(),event.type,event.output_index,event.content_index)
-       // Add each event to the queue for sequential processing 
-       eventProcessingQueue.add(() => this.processEvent(event));
-        
-    }
+      for await (const event of responseStream) {
+          this.registerNewEvent(event,evensOccured) // temporaty. To study new events.
+        // console.log(event.sequence_number,new Date(),event.type,event.output_index,event.content_index)
+        // Add each event to the queue for sequential processing 
+        eventProcessingQueue.add(() => this.processEvent(event));
+      }
     console.log(new Date(), `Response stream finished`);
 }
 
@@ -246,7 +245,6 @@ class Completion extends EventEmitter {
     
     if(!this.#statusMsg){
       this.#statusMsg = await this.#replyMsg.sendStatusMsg()
-      console.log(`Status message created with ID: ${this.#statusMsg.message_id}`)
     }
 
     try{
@@ -392,8 +390,6 @@ class Completion extends EventEmitter {
           this.#reasoningTimer.start_lap();
           let details = "думаю...";
           const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-
-          console.log(`reasoning initialCommit msgID: ${statusMsgId}`)
           this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
             chat_id:this.#replyMsg.chatId,
             message_id:statusMsgId,
@@ -406,7 +402,6 @@ class Completion extends EventEmitter {
           this.#reasoningTimer.start_lap();
           let details = "снова думаю ...";
           const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-          console.log(`reasoning resumeCommit msgID: ${statusMsgId}`)
           this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
             chat_id:this.#replyMsg.chatId,
             message_id:statusMsgId,
@@ -417,7 +412,6 @@ class Completion extends EventEmitter {
         "endCommit": async (reasoning_event) => {
           this.#reasoningTimer.stop_lap();
           const msgText = `✅ <b>${functionDescription}</b> ${this.#reasoningTimer.get_total_HHMMSS()}`
-          console.log(`reasoning endCommit msgID: ${statusMsgId}`)
           this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
@@ -739,8 +733,8 @@ class Completion extends EventEmitter {
       codeInterpreterCall(){
 
         const statusMsgId = this.#statusMsg?.message_id
-        let functionDescription = "Код на Python";
-        
+        let functionDescription = "Анализ данных";
+
         const codeInterpreterOutput = [];
         let finalMsgText;
         this.#codeIntTimer = this.timer();
@@ -751,7 +745,6 @@ class Completion extends EventEmitter {
             this.#codeIntTimer.start_lap();
             let details = "в работе ...";
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            console.log(`codeInterpreter initialCommit msgID: ${statusMsgId}`)
             this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
@@ -763,7 +756,6 @@ class Completion extends EventEmitter {
             this.#codeIntTimer.start_lap();
             let details = "снова в работе ...";
             const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            console.log(`codeInterpreter resumeCommit  msgID: ${statusMsgId}`)
             this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
               message_id:statusMsgId,
@@ -795,7 +787,6 @@ class Completion extends EventEmitter {
 
             finalMsgText = `✅ <b>${functionDescription}</b> ${this.#codeIntTimer.get_total_HHMMSS()}`;
 
-            console.log(`codeInterpreter endCommit  msgID: ${statusMsgId}`)
             reply_markup = this.#user.showDetails ? await this.craftReplyMarkupForDetails(codeInterpreterOutput,finalMsgText) : null
             this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(finalMsgText,{
                 chat_id:this.#replyMsg.chatId,
@@ -980,6 +971,7 @@ class Completion extends EventEmitter {
         const {item,output_index} = event;
         const {id,call_id,name,status} = item;
         const item_type = item.type;
+        const statusMsgId = this.#statusMsg?.message_id;
 
         const availableTools = new AvailableTools(this.#user);
         const toolConfig = await availableTools.toolConfigByFunctionName(name);
@@ -999,9 +991,10 @@ class Completion extends EventEmitter {
             statusMsg:this.#statusMsg
         };
         this.#functionCalls[output_index] = new FunctionCall(options)
-        console.log(`FunctionCall init message`,this.#statusMsg?.message_id)
+        
         this.#functionCalls[output_index].startFunctionTimer()
-        this.#tgmMessagesQueue.add(() => this.#functionCalls[output_index].initStatusMessage(this.#statusMsg?.message_id))
+        console.log(`FunctionCall init message`,statusMsgId)
+        this.#tgmMessagesQueue.add(() => this.#functionCalls[output_index].initStatusMessage(statusMsgId))
       }
 
       async triggerFunctionCall(event){

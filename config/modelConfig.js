@@ -9,6 +9,12 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
+    "includeUsage":[
+        "code_interpreter_call.outputs",
+        "message.input_image.image_url",
+        "reasoning.encrypted_content",
+        "computer_call_output.output.image_url"
+    ],
     "timeout_ms":120000,
     "long_wait_notes": [
         {time_ms:15000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
@@ -28,7 +34,12 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
-    "includeUsage":["code_interpreter_call.outputs"],
+    "includeUsage":[
+        "code_interpreter_call.outputs",
+        "message.input_image.image_url",
+        "reasoning.encrypted_content",
+        "computer_call_output.output.image_url"
+    ],
     "long_wait_notes": [
         {time_ms:20000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:30000,comment:"Этот запрос не так прост, как казалось! Придется еще немного подождать!"},
@@ -47,6 +58,12 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
+    "includeUsage":[
+        "code_interpreter_call.outputs",
+        "message.input_image.image_url",
+        "reasoning.encrypted_content",
+        "computer_call_output.output.image_url"
+    ],
     "long_wait_notes": [
         {time_ms:30000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:45000,comment:"Кажется, наш сервер пошел пить кофе... Может и Вам выпить чашечку, пока ждете?☕️"},
@@ -64,7 +81,12 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
-    "includeUsage":["code_interpreter_call.outputs","message.input_image.image_url","reasoning.encrypted_content"],
+    "includeUsage":[
+        "code_interpreter_call.outputs",
+        "message.input_image.image_url",
+        "reasoning.encrypted_content",
+        "computer_call_output.output.image_url"
+    ],
     "long_wait_notes": [
         {time_ms:30000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:45000,comment:"Этот запрос не так прост, как казалось! Придется еще немного подождать!"},
@@ -83,6 +105,12 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
+    "includeUsage":[
+        "code_interpreter_call.outputs",
+        "message.input_image.image_url",
+        "reasoning.encrypted_content",
+        "computer_call_output.output.image_url"
+    ],
     "long_wait_notes": [
         {time_ms:15000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:30000,comment:"Этот запрос не так прост, как казалось! Придется еще немного подождать!"},
@@ -101,6 +129,12 @@ module.exports = {
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
     "canUseTemperature":true,
+    "includeUsage":[
+        "code_interpreter_call.outputs",
+        "message.input_image.image_url",
+        "reasoning.encrypted_content",
+        "computer_call_output.output.image_url"
+    ],
     "long_wait_notes": [
         {time_ms:15000,comment:"Это интересный случай! Заслуживает, чтобы над ним поразмыслить по-долше!🤔"},
         {time_ms:30000,comment:"Этот запрос не так прост, как казалось! Придется еще немного подождать!"},
