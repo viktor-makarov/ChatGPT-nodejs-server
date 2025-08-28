@@ -292,13 +292,26 @@ async getChatMember(){
 async getFileLinkFromTgm(){
     
     try{
+    
     this.#fileLink = await this.#botInstance.getFileLink(this.#fileId)
     } catch(err){
-        this.#uploadFileError = err.message
-        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
-        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[uploadFileError]",filler:this.#uploadFileError}]
-        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",this.#user.language_code,placeholders)
-        return null
+
+        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[uploadFileError]",filler:err.message}]
+        err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",this.#user.language_code,placeholders)
+
+        if(err.message && err.message.includes("file is too big")){
+            err.user_message = `Размер файла превышает 20 MB. Сократите размер и повторите попытку.`
+            err.sendToUser = true;
+            err.mongodblog = false
+            err.adminlog = false
+        } else {
+            err.user_message = `При обработке файла возникла неизвестная ошибка.`
+            err.sendToUser = true;
+            err.mongodblog = true
+            err.details = {error_message: err.message}
+        }
+
+        throw err;
     }
     this.#fileName = this.#fileName ? this.#fileName : otherFunctions.extractFileNameFromURL(this.#fileLink)
     this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
@@ -307,17 +320,18 @@ async getFileLinkFromTgm(){
     return this.#fileLink
 };
 
-isAllowedFileType(){
+validateFileType(){
     const prohibitedMimeTypes = appsettings.file_options.prohibited_mime_types
 
     if(prohibitedMimeTypes.includes(this.#fileMimeType)){
-        this.#uploadFileError = `Files with mime types ${prohibitedMimeTypes.join(", ")} are not allowed to upload to the dialogue}`
-        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы <code>${prohibitedMimeTypes.join(", ")}</code> не обрабатываются.`
+        let err = new Error(`Files with mime types ${prohibitedMimeTypes.join(", ")} are not allowed to upload to the dialogue}`)
+        err.user_message = `К сожалению, файлы <code>${prohibitedMimeTypes.join(", ")}</code> не обрабатываются.`
         const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[prohibitedMimeTypes]",filler:prohibitedMimeTypes.join(", ")}]
-        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_unsupported_format",this.#user.language_code,placeholders)
-        return false
-    } else {
-        return true
+        err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_unsupported_format",this.#user.language_code,placeholders)
+        err.sendToUser = true;
+        err.mongodblog = false;
+        err.adminlog = false;
+        throw err;
     }
 }
 

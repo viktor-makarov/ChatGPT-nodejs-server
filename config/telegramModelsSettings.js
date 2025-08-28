@@ -18,14 +18,11 @@ module.exports = {
                     "gpt-4.1":{
                         "name":"GPT-4.1",
                     },
-                    "o1":{
-                        "name":"O1",
+                    "gpt-5":{
+                        "name":"GPT-5",
                     },
                     "o3":{
                         "name":"O3",
-                    },
-                    "o3-mini":{
-                        "name":"O3 Мини",
                     },
                     "o4-mini":{
                         "name":"O4 Мини",
@@ -113,11 +110,8 @@ module.exports = {
                     "gpt-4.1":{
                         "name":"GPT-4.1",
                     },
-                    "o1":{
-                        "name":"O1",
-                    },
-                    "o3-mini":{
-                        "name":"O3 Мини",
+                    "gpt-5":{
+                        "name":"GPT-5",
                     },
                     "back":{
                         "name":"<< Назад"
@@ -146,11 +140,8 @@ module.exports = {
                     "gpt-4.1":{
                         "name":"GPT-4.1",
                     },
-                    "o1":{
-                        "name":"O1",
-                    },
-                    "o3-mini":{
-                        "name":"O3 Мини",
+                    "gpt-5":{
+                        "name":"GPT-5",
                     },
                     "back":{
                         "name":"<< Назад"

@@ -1,7 +1,7 @@
 
 const mongo = require("../apis/mongo.js");
 const func = require("../common_functions.js");
-const telegramErrorHandler = require("../errorHandler.js");
+const ErrorHandler = require("./ErrorHandler.js");
 const awsApi = require("../apis/AWS_API.js")
 const PIAPI = require("../apis/piapi.js");
 const ExRateAPI = require("../apis/exchangerate_API.js");
@@ -33,6 +33,8 @@ class FunctionCall {
     #statusMsg
     #statusMsgId
     #functionTimer
+    #availableToolsInstance
+    #errorHandlerInstance
     
 constructor(obj) {
     this.#functionCall = obj.functionCall;
@@ -47,6 +49,9 @@ constructor(obj) {
     this.#statusMsg = obj?.statusMsg;
     this.#statusMsgId = this.#statusMsg.message_id;
     this.#functionTimer = this.timer();
+    this.#availableToolsInstance = new AvailableTools(this.#user);
+    this.#errorHandlerInstance = new ErrorHandler({replyMsgInstance: this.#replyMsg, dialogueInstance: this.#dialogue});
+
 };
 
 async removeFunctionFromQueue(){
@@ -100,6 +105,10 @@ timer(){
         this.#functionTimer.start_lap();
     }
 
+    endFunctionTimer(){
+        this.#functionTimer.stop_lap();
+    }
+
 get functionName(){
     return this.#functionName;
 }
@@ -142,8 +151,7 @@ async addFunctionToQueue(statusMessageId){
 
     await func.delay(500*this.#functionCall.tool_call_index)
 
-    const availableTools = new AvailableTools(this.#user);
-    const queueConfig = availableTools.queueConfig(queue_name);
+    const queueConfig = this.#availableToolsInstance.queueConfig(queue_name);
     const {max_concurrent, timeout_ms, interval_ms} = queueConfig
     const startTime = Date.now();
 
@@ -176,16 +184,15 @@ async addFunctionToQueue(statusMessageId){
     throw error;
 }
 
-async handleFailedFunctionsStatus(success,functionName,queue_timeout){
+async handleFunctionsStatus(success,functionName,queue_timeout){
     
     if(!success && !queue_timeout){
         
         const failedRuns = await this.#dialogue.metaIncrementFailedFunctionRuns(functionName)
         if(failedRuns === this.#functionConfig.try_limit){
-            return {success:0,error:`Limit of unsuccessful calls is reached. Stop sending toll calls on this function, report the problem to the user and try to find another solution. To clean the limit the dialog should be reset.`}
+            return {success:0,error:`Limit of unsuccessful calls is reached. Stop sending tool calls on this function, report the problem to the user and try to find another solution. To clean the limit the dialog should be reset.`}
         }
     } else {
-        
         await this.#dialogue.metaResetFailedFunctionRuns(functionName)
     }
 }
@@ -194,9 +201,9 @@ async router(){
 
        let functionOutcome = {success:0,error:"No outcome from the function returned"}
        let err;
+
     try{
 
-        
         this.validateFunctionCallObject(this.#functionCall)
         this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
         
@@ -205,8 +212,7 @@ async router(){
 
         this.#long_wait_notes = this.triggerLongWaitNotes(this.#statusMsgId,this.#functionConfig.long_wait_notes)
        
-     
-        functionOutcome = await this.functionHandler();
+        functionOutcome = await this.functionHandler(this.#argumentsJson);
         functionOutcome.tool_call_id = this.#tool_call_id;
         functionOutcome.function_name = this.#functionName
         
@@ -218,14 +224,7 @@ async router(){
         err.place_in_code = error.place_in_code || "FunctionCall.router";
         err.sendToUser = false //Functions have their own pattern to communicate errors to the user
         err.adminlog = false //Functions should not log errors to the admin log, since they are already logged in the dialogue log.
-        telegramErrorHandler.main(
-                {
-                replyMsgInstance:this.#replyMsg,
-                error_object:err
-                }
-            );
-        
-        const devPrompt = await this.functionErrorPrompt({
+        err.systemMsg = await this.functionErrorPrompt({
             tool_call_id: this.#functionCall.tool_call_id,
             functionName: this.#functionName,
             errorMessage: error.message,
@@ -234,13 +233,12 @@ async router(){
             user_instructions: err.user_instructions
         })
 
-        await this.#dialogue.commitDevPromptToDialogue(devPrompt)
+        this.#errorHandlerInstance.handleError(err)
         functionOutcome =  {success:0,error:err.message + (err.stack ? "\n" + err.stack : ""),tool_call_id:this.#tool_call_id,function_name:this.#functionName}
     } finally {
         this.clearLongWaitNotes()
-        this.#functionTimer.stop_lap();
         await this.removeFunctionFromQueue()
-        await this.handleFailedFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
+        await this.handleFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
         this.#statusMsgId && await this.finalizeStatusMessage(functionOutcome,this.#statusMsgId)
 
         this.#replyMsg.insertFunctionUsage({ //intentionally async
@@ -258,9 +256,8 @@ async functionErrorPrompt(errorObject){
 
     const {tool_call_id, functionName, errorMessage, errorStack, assistant_instructions,user_instructions} = errorObject;
 
-    const availableToolsInstance = new AvailableTools(this.#dialogue.userInstance);
 
-    const availableFunctions = await availableToolsInstance.getAvailableToolsForCompletion()
+    const availableFunctions = await this.#availableToolsInstance.getAvailableToolsForCompletion()
     const otherAvailableFunctions = availableFunctions.map(func => func.name).filter(funcName => funcName !== functionName);
 
     let prompt = `
@@ -355,7 +352,6 @@ async backExecutingStatusMessage(statusMessageId){
 async initStatusMessage(msgId){
     const functionFriendlyName = this.#functionConfig.friendly_name;
     const msgText = `⏳ <b>${functionFriendlyName}</b> ...`
-    console.log(new Date(),`initStatusMessage msgID: ${msgId}`)
     await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
         message_id:msgId,
@@ -366,15 +362,18 @@ async initStatusMessage(msgId){
 
 async executionStatusMessage(msgId){
 
-    const functionFriendlyName = this.#functionConfig.friendly_name;
-    const functionDescription = this.#argumentsJson.function_description
+    const {friendly_name} = this.#functionConfig;
+    const {function_description,site_name} = this.#argumentsJson;
     let msgText;
-    if(functionDescription){
-    msgText = `⏳ <b>${functionFriendlyName}</b>: ${functionDescription} ...`
-    } else {
-    msgText = `⏳ <b>${functionFriendlyName}</b>: ...`
-    }
 
+    if (site_name && function_description) {
+        msgText = `⏳ <b>${friendly_name} ${site_name}</b>: ${function_description} ...`
+    } else if (function_description) {
+        msgText = `⏳ <b>${friendly_name}</b>: ${function_description} ...`
+    } else {
+        msgText = `⏳ <b>${friendly_name}</b>: ...`
+    }
+    
     await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
         message_id:msgId,
@@ -385,8 +384,8 @@ async executionStatusMessage(msgId){
 
 async progressStatusChange(progressText){
 
-const functionFriendlyName = this.#functionConfig.friendly_name;
-const functionDescription = this.#argumentsJson.function_description;
+    const {friendly_name} = this.#functionConfig;
+    const {function_description,site_name} = this.#argumentsJson;
 const statusMessageId = this.#statusMsgId;
 
 if(!statusMessageId || !progressText){
@@ -394,11 +393,12 @@ if(!statusMessageId || !progressText){
 }
 
 let msgText;
-const waitIcon = "⏳"
-if(functionDescription){
- msgText = `${waitIcon} <b>${functionFriendlyName}</b>: ${functionDescription} - ${progressText} ...`
+if (site_name && function_description) {
+    msgText = `⏳ <b>${friendly_name} ${site_name}</b>: ${function_description} - ${progressText} ...`
+} else if (function_description) {
+    msgText = `⏳ <b>${friendly_name}</b>: ${function_description} - ${progressText} ...`
 } else {
- msgText = `${waitIcon} <b>${functionFriendlyName}</b> - ${progressText} ...`
+    msgText = `⏳ <b>${friendly_name}</b> - ${progressText} ...`
 }
 
 await this.#replyMsg.simpleMessageUpdate(msgText,{
@@ -411,19 +411,20 @@ await this.#replyMsg.simpleMessageUpdate(msgText,{
 
 
 async finalizeStatusMessage(functionResult,statusMessageId){
-    const functionFriendlyName = this.#functionConfig.friendly_name;
-    const functionDescription = this.#argumentsJson.function_description
+    const {friendly_name} = this.#functionConfig;
+    const {function_description,site_name} = this.#argumentsJson;
     let msgText;
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
-    if(functionDescription){
-     msgText = `${resultIcon} <b>${functionFriendlyName}</b>: ${functionDescription} ${this.#functionTimer.get_total_HHMMSS()}`
+    if (site_name && function_description) {
+        msgText = `${resultIcon} <b>${friendly_name} ${site_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
+    } else if (function_description) {
+        msgText = `${resultIcon} <b>${friendly_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
     } else {
-     msgText = `${resultIcon} <b>${functionFriendlyName}</b> ${this.#functionTimer.get_total_HHMMSS()}`
+        msgText = `${resultIcon} <b>${friendly_name}</b> ${this.#functionTimer.get_total_HHMMSS()}`
     }
     
       const reply_markup =  this.#user.showDetails ? await this.craftReplyMarkupForFunctionCall(functionResult,msgText) : null;
 
-      console.log(`finalizeStatusMessage msgID: ${statusMessageId}`)
       const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
         message_id:statusMessageId,
@@ -474,32 +475,32 @@ buildFunctionResultHtml(functionResult){
     return htmlToSend
 }
 
-async selectAndExecuteFunction() {
-    
+async selectAndExecuteFunction(argumentsJson) {
+
     // Function map for cleaner dispatch
     const functionMap = {
-        "create_midjourney_image": () => this.CreateMdjImageRouter(),
-        "imagine_midjourney": () => this.ImagineMdjRouter(),
-        "custom_midjourney": () => this.CustomQueryMdjRouter(),
-        "extract_text_from_file": () => this.extract_text_from_file_router(),
-        "speech_to_text": () => this.speechToText(),
-        "fetch_url_content": () => this.fetchUrlContentRouter(),
-        "create_pdf_file": () => this.createPDFFile(),
-        "create_excel_file": () => this.createExcelFile(),
-        "create_text_file": () => this.createTextFile(),
-        "get_chatbot_errors": () => this.get_data_from_mongoDB_by_pipepine("errors_log"),
-        "get_functions_usage": () => this.get_data_from_mongoDB_by_pipepine("functions_log"),
-        "get_knowledge_base_item": () => this.get_knowledge_base_item(),
-        "get_user_guide": () => this.get_user_guide(),
-        "get_users_activity": () => this.get_data_from_mongoDB_by_pipepine("tokens_logs"),
-        "run_javasctipt_code": () => this.runJavascriptCode(),
-        "run_python_code": () => this.runPythonCode(),
-        "text_to_speech": () => this.textToSpeech(),
-        "currency_converter": () => this.currencyConverter(),
-        "get_currency_rates": () => this.getCurrencyRates(),
-        "web_search": () => this.webSearch(),
-        "create_mermaid_diagram": () => this.createMermaidDiagrams(),
-        "web_browser": () => this.webBrowser(),
+        "create_midjourney_image": () => this.CreateMdjImageRouter(argumentsJson),
+        "imagine_midjourney": () => this.ImagineMdjRouter(argumentsJson),
+        "custom_midjourney": () => this.CustomQueryMdjRouter(argumentsJson),
+        "extract_text_from_file": () => this.extract_text_from_file_router(argumentsJson),
+        "speech_to_text": () => this.speechToText(argumentsJson),
+        "fetch_url_content": () => this.fetchUrlContentRouter(argumentsJson),
+        "create_pdf_file": () => this.createPDFFile(argumentsJson),
+        "create_excel_file": () => this.createExcelFile(argumentsJson),
+        "create_text_file": () => this.createTextFile(argumentsJson),
+        "get_chatbot_errors": () => this.get_data_from_mongoDB_by_pipepine("errors_log",argumentsJson),
+        "get_functions_usage": () => this.get_data_from_mongoDB_by_pipepine("functions_log",argumentsJson),
+        "get_knowledge_base_item": () => this.get_knowledge_base_item(argumentsJson),
+        "get_user_guide": () => this.get_user_guide(argumentsJson),
+        "get_users_activity": () => this.get_data_from_mongoDB_by_pipepine("tokens_logs",argumentsJson),
+        "run_javascript_code": () => this.runJavascriptCode(argumentsJson),
+        "run_python_code": () => this.runPythonCode(argumentsJson),
+        "text_to_speech": () => this.textToSpeech(argumentsJson),
+        "currency_converter": () => this.currencyConverter(argumentsJson),
+        "get_currency_rates": () => this.getCurrencyRates(argumentsJson),
+        "web_search": () => this.webSearch(argumentsJson),
+        "create_mermaid_diagram": () => this.createMermaidDiagrams(argumentsJson),
+        "web_browser": () => this.webBrowser(argumentsJson),
     };
     
     const targetFunction = functionMap[this.#functionName];
@@ -527,30 +528,28 @@ clearFunctionTimeout() {
     this.#timeoutId && clearTimeout(this.#timeoutId)
 }
 
-async functionHandler(){
+async functionHandler(argumentsJson){
     //This function in any case should return a JSON object with success field.
            
-            const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
-   
-            if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
-                let err = new Error(`Function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`);
-                err.assistant_instructions = "Try to find another solution.";
-                err.user_instructions = "Reset the dialog to clear the limit of unsuccessful calls.";
-                throw err;
-            };
+        const failedRunsBeforeFunctionRun = this.#dialogue.metaGetNumberOfFailedFunctionRuns(this.#functionName)
 
-            const timeoutPromise = this.triggerFunctionTimeout();
-            
-            try {
-                this.#inProgress = true;
-                
-                 let result = await Promise.race([this.selectAndExecuteFunction(), timeoutPromise]);
-                 
-                 return result
-            } finally {
-                this.clearFunctionTimeout(); // Ensure timeout is cleared in all cases
-                this.#inProgress = false;
-            }
+        if(this.#functionConfig.try_limit <= failedRunsBeforeFunctionRun){
+            let err = new Error(`Function call was blocked since the limit of unsuccessful calls for the function ${this.#functionName} is exceeded.`);
+            err.assistant_instructions = "Try to find another solution.";
+            err.user_instructions = "Reset the dialog to clear the limit of unsuccessful calls.";
+            throw err;
+        };
+
+        const timeoutPromise = this.triggerFunctionTimeout();
+        
+        try {
+            this.#inProgress = true;
+                let result = await Promise.race([this.selectAndExecuteFunction(argumentsJson), timeoutPromise]);
+                return result
+        } finally {
+            this.clearFunctionTimeout(); // Ensure timeout is cleared in all cases
+            this.#inProgress = false;
+        }
     }
 
 validateFunctionCallObject(callObject){
@@ -574,17 +573,17 @@ validateFunctionCallObject(callObject){
     }
 }
 
-async get_user_guide(){
+async get_user_guide(argumentsJson){
         const formatedHtml = func.getManualHTML(this.#user.language)
         return {success:1,text:formatedHtml}
 }
     
-async get_data_from_mongoDB_by_pipepine(table_name){
+async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
 
     let pipeline = [];
 
     try{
-        pipeline =  func.replaceNewDate(this.#argumentsJson.aggregate_pipeline) 
+        pipeline =  func.replaceNewDate(argumentsJson.aggregate_pipeline) 
     } catch(err){
         return {success:0,error: err.message + "" + err.stack}
     }
@@ -622,14 +621,14 @@ async get_data_from_mongoDB_by_pipepine(table_name){
     }
 
     };
-    async runJavascriptCode(){
+    async runJavascriptCode(argumentsJson){
 
         try{
             
         let result;
-       
-        const codeToExecute = this.#argumentsJson.javascript_code
-    
+
+        const codeToExecute = argumentsJson.javascript_code
+
         try{
         result = this.runJavaScriptCodeAndCaptureLogAndErrors(codeToExecute)
 
@@ -649,12 +648,12 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             }
         };
 
-        async createExcelFile(){
+        async createExcelFile(argumentsJson){
 
-            this.validateRequiredFieldsFor_createExcelFile()
+            this.validateRequiredFieldsFor_createExcelFile(argumentsJson)
 
-            const {data,filename} = this.#argumentsJson
-            
+            const {data,filename} = argumentsJson
+
             const filebuffer = await func.createExcelWorkbookToBuffer(data)
             const mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             
@@ -669,33 +668,415 @@ async get_data_from_mongoDB_by_pipepine(table_name){
             return {success:1,result:`The file ${filename} ({sizeString}) has been generated and successfully sent to the user.`}
         }
 
-        async webBrowser(){
+        async webBrowser(argumentsJson){
 
-            this.validateRequiredFieldsFor_webBrowser()
+            this.validateRequiredFieldsFor_webBrowser(argumentsJson)
 
-            const {site_name,url,task} = this.#argumentsJson
-            const {model} = this.#functionConfig;
+            const screenDimentions = { width: 1024, height: 768 }
+            const imageType = "png"; // or "jpeg"
 
-            console.log({site_name,url,task,model})
-            const webBrowser = new WebBrowser();
-            await webBrowser.createPage(url, {width: 1024, height: 768});
-            await webBrowser.navigateToUrl();
+            const {site_name,url,task,users_language,result_criteria} = argumentsJson
+            const {model,name} = this.#functionConfig;
 
-            const pageContent = await webBrowser.takeScreenshot();
-            func.saveBufferToTempFile(pageContent, "web_browser_initial_screenshot.png");
+            console.log({site_name,url,task,model,users_language,result_criteria})
+            const webBrowserInstance = new WebBrowser({browserInstance:global.chromeBrowserHeadless});
             
-            return  {success:0, result: "Function is not implemented yet."}
+            await webBrowserInstance.createPage(`tab_${Date.now()}`);
+            await webBrowserInstance.setViewport(screenDimentions);
+            await webBrowserInstance.navigateToUrl(url);
+
+            const result = await this.computerBrowsePipeline(webBrowserInstance, task,result_criteria, model,imageType,users_language,name);
+
+            const caption = `Последний скриншот сайта ${site_name}.`;
+            const filename = `web_browser_screenshot_${Date.now()}.${imageType}`;
+            const mime_type = `image/${imageType}`;
+
+            this.#replyMsg.sendScreenShot(
+                result.supportive_data.last_screenshot, 
+                caption,
+                filename,
+                mime_type,
+                "html",
+                null
+            );
+            
+            return  result
         }
 
-        async getInitalScreenForWebBrowser(url){
+        async computerBrowsePipeline(webBrowserInstance, task, result_criteria, model, imageType, users_language, functionName) {
 
+            let screenShotBuffer;
+            const actionRepeatThresh = 5;
+            const urlLog = [];
+            let reasoningMessage = "открываю сайт";
+            screenShotBuffer = await webBrowserInstance.takeCurrentPageScreenshot({ type: imageType });
+            func.saveBufferToTempFile(screenShotBuffer, "web_browser_initial_screenshot.png");
+            func.saveBufferToTempFile(screenShotBuffer, `web_browser_tv.png`);
+
+            const temperature = 1;
+            const instructions = null;
+            const truncation = "auto";
+            const input = [
+                {role:"developer",
+                    content:`You are an autonomous browser agent. Your mission is to fulfill the user’s request accurately and safely by issuing computer.use commands.
+1. Top priority: deliver the correct end result for the user.  
+2. Secondary priority: use the fewest possible actions.  
+3. Before every computer.use call, think briefly (internally) to confirm the action moves you toward the goal.  
+4. DO not cease the action to get additional info from user. Try to finish the task with available data.
+5. Accept all cookies if proposed by site
+6. Reasoning summary MUST BE in ${users_language}
+`
+                },
+            {
+                role:"user",
+                content:[
+                    {
+                        type: "input_text",
+                        text: `Perform the following task: ${task}.\n\nThe result MUST align with the following criteria: \n${result_criteria.join("\n- ")}.`,
+                    },
+                    {
+                         type: "input_image",
+                         image_url: `data:image/${imageType};base64,${screenShotBuffer.toString('base64')}`
+                    }
+                ]
+            },
+            {
+                role: "developer",
+                content: `Current tabs has ID: '${webBrowserInstance.currentPageId}'.`
+            }
+            ];
+          
+          const tools = await this.#availableToolsInstance.getToolsAvailableForAgent(functionName)
+          
+          const tool_choice = "required"
+          const output_format = { "type": "text" };
+
+          const actionsLog = [];
+          let iterationCount = 0;
+
+          webBrowserInstance.on('newTab', (tabId) => {
+              console.log(`New tab opened: ${tabId}`);
+              // Automatically switch to the new tab
+              this.commitNewTab(input, webBrowserInstance, tabId);
+          });
+
+          while(true){
+            if(this.#isCanceled){return}
+            console.time("Computer call");
+            const response = await openAIApi.responseSync(model,instructions,input,temperature,tools,tool_choice,output_format,truncation)
+            console.timeEnd("Computer call");
+            iterationCount++;
+            func.saveTextToTempFile(JSON.stringify(response),"computer_browse_response.json")
+
+            this.commitUsage(response)
+            this.commitComputerUse()
+
+
+            const reasoning = this.getReasoning(response);
+
+            if(reasoning){
+                const {summary} = reasoning;
+                console.log("Action Reasoning", summary[0].text);
+                reasoningMessage = summary[0].text;
+            }
+
+            this.progressStatusChange(`${reasoningMessage} (шаг №${iterationCount})`);
+
+            const functionCalls = this.getFunctionCalls(response);
+            console.log("Function calls length:", functionCalls.length);
+
+            if(functionCalls){
+                for(const functionCall of functionCalls) {
+
+                        const {type, call_id,name} = functionCall;
+                        const call_arguments = functionCall.arguments;
+
+                        input.push({
+                                    type: type,
+                                    call_id: call_id,
+                                    name: name,
+                                    arguments: call_arguments
+                                });
+                        try{
+                            const argumentsJson = JSON.parse(call_arguments);
+
+                            console.log("Function",name,argumentsJson);
+
+                            let result;
+                            switch (name)
+                            {
+                                case "manage_browser_tabs":
+                                    result = await this.manageBrowserTabs(argumentsJson,webBrowserInstance);
+                                    break;;
+                                case "currency_converter":
+                                    result = await this.currencyConverter(argumentsJson);
+                                    break;
+                            }
+
+                            console.log("Result",result);
+                            input.push({
+                                        type: "function_call_output",
+                                        call_id: call_id,
+                                        output: JSON.stringify(result)
+                                    });
+
+                        } catch (error) {
+                            console.log("Error occurred while processing function call:", error);
+
+                            input.push({
+                               type: "function_call_output",
+                                call_id: call_id,
+                                output: JSON.stringify({success:0,error:error.message})
+                            });
+
+                            input.push({
+                                role: "developer",
+                                content: error.message
+                            });
+                        }
+                    }
+            }
+
+            const computerCall = this.getComputerCall(response);
+            if(computerCall){
+
+                const {action, pending_safety_checks} = computerCall;
+                actionsLog.push(action);
+
+                if(pending_safety_checks && pending_safety_checks.length > 0){
+                    console.log("Safety checks detected. Waiting for them to complete...");
+                    console.log(pending_safety_checks);
+                }
+
+                if (this.isActionRepeating(actionsLog, action, actionRepeatThresh)){
+                    return {
+                        success: 0,
+                        iteration_count: iterationCount,
+                        actions_log: actionsLog,
+                        url_log: urlLog,
+                        supportive_data: {
+                            last_screenshot: screenShotBuffer
+                        }, 
+                        error: "Detected repeating action. Breaking the loop to prevent infinite repetition.",
+                        instructions:`Inform the user about the problem and try to resolve it by retrying the action.`
+                    }
+                }
+
+                if(["click","scroll","double_click","drag"].includes(action.type)){
+
+                    if(action.type === "click" || action.type === "double_click"){
+                        screenShotBuffer = await func.drawCrossOnImage(screenShotBuffer, action.x, action.y, 15, 'red', 3);
+                    } else if (action.type === "scroll") {
+                    const {x,y,scroll_x,scroll_y} = action
+                        screenShotBuffer = await func.drawCrossOnImage(screenShotBuffer, x, y, 15, 'red', 3);
+                        screenShotBuffer = await func.drawCrossOnImage(screenShotBuffer, x + scroll_x, y + scroll_y, 15, 'blue', 3);
+                    } else if (action.type === "drag") {
+                        const path = action.path;
+                        const startPoint = path[0]
+                        screenShotBuffer = await func.drawCrossOnImage(screenShotBuffer, startPoint.x, startPoint.y, 15, 'red', 3);
+                        const endPoint = path[1]
+                        screenShotBuffer = await func.drawCrossOnImage(screenShotBuffer, endPoint.x, endPoint.y, 15, 'blue', 3);
+                    }
+                }
+
+                func.saveBufferToTempFile(screenShotBuffer, `web_browser_iter_${iterationCount}.png`);
+                func.saveBufferToTempFile(screenShotBuffer, `web_browser_tv.png`);
+
+                const usedbefore = process.memoryUsage().rss / 1024 / 1024;
+                console.log('RSS:', usedbefore.toFixed(1), 'MB');
+
+                const {action_desc} = await webBrowserInstance.performAction(action);
+
+                const usedafter = process.memoryUsage().rss / 1024 / 1024;
+                console.log('RSS:', usedafter.toFixed(1), 'MB');
+
+                const current_url = await webBrowserInstance.currentURL;
+                urlLog.push(current_url);
+                console.log(new Date(), action_desc,"|", current_url);
+
+                screenShotBuffer = await webBrowserInstance.takeCurrentPageScreenshot({ type: imageType });
+
+                this.commitComputerCall(input,response.output,screenShotBuffer,imageType,computerCall,current_url) 
+          }
+
+          const message = this.getMessage(response);
+
+          if (message) {
+            //Result message found, process it
+            const text = message.content.filter(item => item.type === "output_text").map(item => item.text).join("\n");
+            return {
+                success: 1,
+                message: text,
+                iteration_count: iterationCount,
+                actions_log: actionsLog,
+                url_log: urlLog,
+                supportive_data: {
+                    last_screenshot: screenShotBuffer
+                },
+                instructions:`Evaluate if results align with expectations. If yes inform the user. If not undertake other possible actions.`
+            }
+          } 
+
+
+          if(!message && !functionCalls.length && !computerCall)
+            return {
+                success:0, 
+                iteration_count: iterationCount, 
+                actions_log: actionsLog,
+                url_log: urlLog,
+                supportive_data: {
+                    last_screenshot: screenShotBuffer
+                }, 
+                error: `Neither computer call, nor function call, nor message found: ${JSON.stringify(response.output)}`,
+                instructions:`Retry the action.`
+            }
+        }
+      
+    }
+
+    async manageBrowserTabs(argumentsJson, webBrowser) {
+
+        this.validateRequiredFieldsFor_manageBrowserTabs(argumentsJson);
+        const { action, tab_id } = argumentsJson;
+
+        let msg;
+        switch (action) {
+            case "switch_to_tab":
+                console.log(`Switching to tab: ${tab_id}`);
+                webBrowser.switchToPage(tab_id);
+                msg = { result: `Switched to tab: ${tab_id}` };
+                break;
+            case "close_tab":
+                webBrowser.closePageById(tab_id);
+                msg = { result: `Closed tab: ${tab_id}` };
+                break;
+            case "go_back":
+                await webBrowser.goBack();
+                msg = { result: `Went back to state in history` };
+                break;
         }
 
-        async webSearch(){
+        return {success:1, message: msg}
+    }
 
-          this.validateRequiredFieldsFor_webSearch()
+    isActionRepeating(actionsLog, currentAction, maxRepeats = 3) {
+        if (actionsLog.length < maxRepeats) {
+            return false;
+        }
 
-          const {query_in_english,additional_query,user_location} = this.#argumentsJson
+        const lastActions = actionsLog.slice(-maxRepeats);
+        return lastActions.every(loggedAction =>
+            JSON.stringify(loggedAction) === JSON.stringify(currentAction)
+        );
+    };
+
+    commitNewTab(input, webBrowser, tabId) {
+
+        input.push({
+            role: "developer",
+            content: `New tab created with ID: ${tabId} and url: ${webBrowser.getURLByID(tabId)}`
+        });
+
+        const tabsInfo = webBrowser.getAllPagesInfo();
+        console.log("All tabs info:", tabsInfo);
+
+        input.push({
+            role: "developer",
+            content: `Current tabs info: ${JSON.stringify(tabsInfo)} \n Use 'manage_browser_tabs' function to manage these tabs.`
+        });
+        return input;
+    }
+
+        commitSafetyChecks(input, pending_safety_checks) {
+
+                input.push({
+                    role: "developer",
+                    content: `Pending safety checks: ${JSON.stringify(pending_safety_checks)}`
+                },
+                {
+                    
+                });
+            
+            return input;
+        }
+
+        commitComputerCall(input, output, screenShotBuffer,imageType,computerCall,current_url) {
+
+            if(output && Array.isArray(output) && output.length > 0) {
+              output.forEach(item => input.push(item))
+            }
+
+            const {pending_safety_checks = []} = computerCall;
+
+            input.push({
+                call_id: computerCall.call_id,
+                type:"computer_call_output",
+                acknowledged_safety_checks: pending_safety_checks,
+                output: {
+                    type: "input_image",
+                    image_url: `data:image/${imageType};base64,${screenShotBuffer.toString('base64')}`,
+                },
+                current_url: current_url
+            });
+
+            func.saveTextToTempFile(JSON.stringify(input),"updated_input.json")
+            return input;
+        }
+
+        getFunctionCalls(response) {
+          const functionCalls = response.output.filter(tool => tool.type === "function_call");
+          return functionCalls.length > 0 ? functionCalls : [];
+        }
+
+        getComputerCall(response) {
+          const computerCall = response.output.find(tool => tool.type === "computer_call");
+          return computerCall || null;
+        }
+
+        getReasoning(response) {
+          const reasoning = response.output.find(tool => tool.type === "reasoning");
+          return reasoning || null;
+        }
+
+        getMessage(response) {
+          const message = response.output.find(tool => tool.type === "message");
+          return message || null;
+        }
+
+        commitComputerUse(){
+            mongo.insertCreditUsage({
+                userInstance: this.#user,
+                creditType: "computer_use",
+                creditSubType: "computer_use",
+                usage: 1,
+                details: {place_in_code:"computerBrowsePipeline"}
+            })
+        }
+
+        commitUsage(response) {
+          const {usage} = response;
+          mongo.insertCreditUsage({
+            userInstance: this.#user,
+            creditType: "text_tokens",
+            creditSubType: "input",
+            usage: usage.input_tokens,
+            details: {place_in_code:"computerBrowsePipeline"}
+          })
+
+          mongo.insertCreditUsage({
+            userInstance: this.#user,
+            creditType: "text_tokens",
+            creditSubType: "output",
+            usage: usage.output_tokens,
+            details: {place_in_code:"computerBrowsePipeline"}
+          })
+        }
+
+        async webSearch(argumentsJson){
+
+          this.validateRequiredFieldsFor_webSearch(argumentsJson)
+
+          const {query_in_english,additional_query,user_location} = argumentsJson
           const {model} = this.#functionConfig;
 
           const urlCitationsList = [];
@@ -808,9 +1189,9 @@ async get_data_from_mongoDB_by_pipepine(table_name){
           return {search_calls,text_list,url_citations_list}
         }
 
-        async createMermaidDiagrams(){
-            this.validateRequiredFieldsFor_createMermaidDiagrams()
-            const {type,data,orientation,styles,title} = this.#argumentsJson;
+        async createMermaidDiagrams(argumentsJson){
+            this.validateRequiredFieldsFor_createMermaidDiagrams(argumentsJson)
+            const {type,data,orientation,styles,title} = argumentsJson;
             const {model,parallel_runs,attempts_limit} = this.#functionConfig;
 
             const versions = [];
@@ -1107,10 +1488,10 @@ ${diagram_body}`;
             return `\`\`\`${language}\n${text}\n\`\`\``;
         }
 
-        async getCurrencyRates(){
+        async getCurrencyRates(argumentsJson){
 
-            this.validateRequiredFieldsFor_getCurrencyRates()
-            const {exchange_rates} = this.#argumentsJson
+            this.validateRequiredFieldsFor_getCurrencyRates(argumentsJson)
+            const {exchange_rates} = argumentsJson
             const queryPromises = exchange_rates.map(query => this.handleExchangeRateQuery(query))
             const promiseResult = await Promise.all(queryPromises)
             
@@ -1128,11 +1509,11 @@ ${diagram_body}`;
         }
 
 
-        async currencyConverter(){
+        async currencyConverter(argumentsJson){
 
-            this.validateRequiredFieldsFor_currencyConverter()
+            this.validateRequiredFieldsFor_currencyConverter(argumentsJson)
 
-            const {conversion_queries} = this.#argumentsJson
+            const {conversion_queries} = argumentsJson
 
             const queryPromises = conversion_queries.map(query => this.handleConversionQuery(query))
             const promiseResult = await Promise.all(queryPromises)
@@ -1167,10 +1548,28 @@ ${diagram_body}`;
         }
 
 
-        validateRequiredFieldsFor_fetchUrlContent(){
+        validateRequiredFieldsFor_manageBrowserTabs(argumentsJson){
+
+            const { action, tab_id } = argumentsJson;
+
+            if (!action || typeof action !== "string") {
+                throw new Error(`'action' parameter is missing or not a string. Provide the value for the argument.`);
+            }
+
+            if (!tab_id || typeof tab_id !== "string") {
+                throw new Error(`'tab_id' parameter is missing or not a string. Provide the value for the argument.`);
+            }
+
+            if((action === "switch_to_tab" || action === "close_tab") && !tab_id){
+                throw new Error(`'tab_id' parameter is required for '${action}' action. Provide the value for the argument.`);
+            }
+        }
 
 
-        const {urls} = this.#argumentsJson
+        validateRequiredFieldsFor_fetchUrlContent(argumentsJson){
+
+
+        const {urls} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -1198,12 +1597,10 @@ ${diagram_body}`;
 
     }
 
-validateRequiredFieldsFor_currencyConverter(){
+validateRequiredFieldsFor_currencyConverter(argumentsJson){
 
 
-const {conversion_queries} = this.#argumentsJson
-
-
+const {conversion_queries} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -1235,9 +1632,9 @@ const {conversion_queries} = this.#argumentsJson
 }
 
 
-validateRequiredFieldsFor_webBrowser(){
+validateRequiredFieldsFor_webBrowser(argumentsJson){
 
-const {site_name,url,task} = this.#argumentsJson
+const {site_name,url,task,users_language,result_criteria} = argumentsJson
 
 let error = new Error();
 error.assistant_instructions = "Fix the error and retry the function."
@@ -1257,12 +1654,30 @@ if(!task || task === ""){
     throw error
 }
 
+if(!users_language || users_language === ""){
+    error.message = `'users_language' parameter is missing. Provide the value for the argument.`
+    throw error
+}
+
+if(!result_criteria || !Array.isArray(result_criteria) || result_criteria.length === 0){
+        error.message = `'result_criteria' parameter is missing or not an array.`
+        throw error
+    }
+    
+    // Validate each row and its cells in the table
+    for(let m = 0; m < result_criteria.length; m++){
+        const criterion = result_criteria[m];
+        if(!criterion || typeof criterion !== "string" || criterion.trim() === ""){
+            error.message = `'result_criteria[${m}]' parameter is missing or not a string. Provide the value for the argument.`
+            throw error
+        }
+    }
 }
 
 
-validateRequiredFieldsFor_webSearch(){
+validateRequiredFieldsFor_webSearch(argumentsJson){
 
-    const {query_in_english,user_location} = this.#argumentsJson
+    const {query_in_english,user_location} = argumentsJson
 
     let error = new Error();
     error.assistant_instructions = "Fix the error and retry the function."
@@ -1325,9 +1740,9 @@ if(!diagram_body || typeof diagram_body !== "string" || diagram_body.trim() === 
 
 }
 
-validateRequiredFieldsFor_createMermaidDiagrams(){
+validateRequiredFieldsFor_createMermaidDiagrams(argumentsJson){
 
-const {type,data,title,styles,orientation} = this.#argumentsJson
+const {type,data,title,styles,orientation} = argumentsJson
 const {parameters} = this.#functionConfig
 
 let error = new Error();
@@ -1367,9 +1782,9 @@ error.assistant_instructions = "Fix the error and retry the function."
     
 }
 
-validateRequiredFieldsFor_getCurrencyRates(){
+validateRequiredFieldsFor_getCurrencyRates(argumentsJson){
 
-    const {exchange_rates} = this.#argumentsJson
+    const {exchange_rates} = argumentsJson
 
     let error = new Error();
     error.assistant_instructions = "Fix the error and retry the function."
@@ -1407,8 +1822,8 @@ validateRequiredFieldsFor_getCurrencyRates(){
     }
 }
 
-validateRequiredFieldsFor_createExcelFile(){
-        const {data, filename} = this.#argumentsJson
+validateRequiredFieldsFor_createExcelFile(argumentsJson){
+        const {data, filename} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -1544,12 +1959,12 @@ validateRequiredFieldsFor_createExcelFile(){
         }
     }
 
-    async createPDFFile(){
+    async createPDFFile(argumentsJson){
 
-        this.validateRequiredFieldsFor_createPDFFile()
+        this.validateRequiredFieldsFor_createPDFFile(argumentsJson)
 
-        const {filename,html,content_reff} = this.#argumentsJson
-                    
+        const {filename,html,content_reff} = argumentsJson
+
         let formatedHtml;
         if(html){
             formatedHtml = func.formatHtml(html,filename)
@@ -1583,11 +1998,11 @@ validateRequiredFieldsFor_createExcelFile(){
         }
 
 
-        async textToSpeech(){
+        async textToSpeech(argumentsJson){
 
-                this.validateRequiredFieldsFor_textToSpeech()
+                this.validateRequiredFieldsFor_textToSpeech(argumentsJson)
 
-                const {filename,text,content_reff,voice} = this.#argumentsJson
+                const {filename,text,content_reff,voice} = argumentsJson
 
                 let textToConvert;
                 if(text){
@@ -1625,12 +2040,12 @@ validateRequiredFieldsFor_createExcelFile(){
                 return {success:1,result:`Audio file ${filenameWithExt} has been generated and successfully sent to the user.`}
             }
 
-        async createTextFile(){
+        async createTextFile(argumentsJson){
 
-            this.validateRequiredFieldsFor_createTextFile()
+            this.validateRequiredFieldsFor_createTextFile(argumentsJson)
 
-            const {filename,text,content_reff,mimetype} = this.#argumentsJson
-            
+            const {filename,text,content_reff,mimetype} = argumentsJson
+
             let textToSave;
             if(text){
                 textToSave = text
@@ -1662,12 +2077,12 @@ validateRequiredFieldsFor_createExcelFile(){
             return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
         }
 
-        async runPythonCode(){
+        async runPythonCode(argumentsJson){
 
             try{
              let result;               
-             const codeToExecute = this.#argumentsJson.python_code
-                
+             const codeToExecute = argumentsJson.python_code
+
             try{
             result = await func.executePythonCode(codeToExecute)
 
@@ -1688,14 +2103,14 @@ validateRequiredFieldsFor_createExcelFile(){
                 }
             };
     
-    async get_knowledge_base_item(){
+    async get_knowledge_base_item(argumentsJson){
 
             try{
-                
-            let result;           
-            
-            const kwg_base_id = this.#argumentsJson.id
-            
+
+            let result;
+
+            const kwg_base_id = argumentsJson.id
+
             try{
             result = await mongo.getKwgItemBy(kwg_base_id)
 
@@ -1804,12 +2219,12 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
  return {success:1}
 }
 
-    async speechToText(){
+    async speechToText(argumentsJson){
 
         try {
-        this.validateRequiredFieldsFor_speechToText()
+        this.validateRequiredFieldsFor_speechToText(argumentsJson)
 
-        const sourceid_list_array = this.#argumentsJson.resources
+        const sourceid_list_array = argumentsJson.resources
         const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
         resources.sort((a, b) => {
             return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
@@ -1836,7 +2251,7 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
 
         const fullContent = {
             reff:Date.now(), //Used as unique numeric identifier for the extracted content
-            fileids: this.#argumentsJson.resources,
+            fileids: sourceid_list_array,
             fileNames: resources.map(obj => obj.fileName),
             results
         }
@@ -1866,13 +2281,13 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             }
     }
 
-    async extract_text_from_file_router(){
+    async extract_text_from_file_router(argumentsJson){
 
             try{
-           
-                this.validateRequiredFieldsFor_extractTextFromFile()
 
-                const sourceid_list_array = this.#argumentsJson.resources
+                this.validateRequiredFieldsFor_extractTextFromFile(argumentsJson)
+
+                const sourceid_list_array = argumentsJson.resources
                 const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
                 resources.sort((a, b) => {
                     return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
@@ -1899,7 +2314,7 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
 
                 const fullContent = {
                     reff: Date.now(), //Used as unique numeric identifier for the extracted content
-                    fileids: this.#argumentsJson.resources,
+                    fileids: sourceid_list_array,
                     fileNames: resources.map(obj => obj.fileName),
                     results
                 }
@@ -1966,7 +2381,7 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
     async fetchUrlContent(url,tokenLimitPerUrl){
 
     try{
-        const {html,screenshot} = await func.getPageHtml(url,{delay_ms:5000,timeout_ms:this.#timeout_ms});
+        const {html,screenshot} = await func.getPageHtml(url,{delay_ms:3000,timeout_ms:15000});
         const textReply = func.convertHtmlToText(html);
         const numberOfTokens = await func.countTokensLambda(textReply,this.#user.currentModel);
        
@@ -1993,14 +2408,15 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
     }
     }
 
-    async fetchUrlContentRouter(){
- 
-        this.validateRequiredFieldsFor_fetchUrlContent()
-        const {urls} = this.#argumentsJson
+    async fetchUrlContentRouter(argumentsJson){
+
+        this.validateRequiredFieldsFor_fetchUrlContent(argumentsJson)
+        const {urls} = argumentsJson
 
    try{
        const tokenLimitPerUrl = this.#tokensLimitPerCall / urls.length;
        const urlHandlers = urls.map((url) => this.fetchUrlContent(url,tokenLimitPerUrl));
+
        const results = await Promise.all(urlHandlers);
 
        const successfullResults = results.filter(result => result.success === 1).length;
@@ -2018,7 +2434,6 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
                    }
                 };
        } else if(successfullResults === urls.length){
-
               return {success:1, 
                      results: resultWithoutScreenshot,
                      instructions:"Inform the user that all URLs were successfully fetched. Provide details about each URL and the respective content. Also, consider using page screenshots provided in the next user message.",
@@ -2026,13 +2441,12 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
                       screenshots: screenshots,
                      }
                  };
-
        } else {
 
             const failedResults = results.filter(result => result.success === 0);
             const successfulResults = results.filter(result => result.success === 1);
 
-            return {success:0, 
+            return {success:1, 
                     error:`Some URLs fetch attempts failed. Successful fetches: ${successfulResults.length}, failed fetches: ${failedResults.length}.`,
                     results: resultWithoutScreenshot,
                     instructions:"(1) Inform the user about the successful and failed URL fetch attempts. Provide details about each URL and the respective content. (2) Consider using page screenshots provided in the next user message.",
@@ -2050,9 +2464,9 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
         }
 
 
-    craftPromptFromArguments(){
+    craftPromptFromArguments(argumentsJson){
 
-        const {textprompt,seed,aspectratio,no,version,imageprompt,imageweight} = this.#argumentsJson
+        const {textprompt,seed,aspectratio,no,version,imageprompt,imageweight} = argumentsJson
         let prompt = "";
 
         let imageurls;
@@ -2113,11 +2527,11 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
         }
 
 
-    async CreateMdjImageRouter(){
-   
-            this.imageMdjFieldsValidation()
+    async CreateMdjImageRouter(argumentsJson){
 
-            const prompt = this.craftPromptFromArguments()
+            this.imageMdjFieldsValidation(argumentsJson)
+
+            const prompt = this.craftPromptFromArguments(argumentsJson)
 
             const piapi = new PIAPI()
             const generate_result = await piapi.generateImage(prompt,this.#timeout_ms)
@@ -2164,9 +2578,9 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
                 };
             };
 
-            async CustomQueryMdjRouter() {
+            async CustomQueryMdjRouter(argumentsJson) {
 
-                const {buttonPushed} = this.#argumentsJson
+                const {buttonPushed} = argumentsJson
 
                 const piapi = new PIAPI()
                 const generate_result = await piapi.executeButton(buttonPushed,this.#timeout_ms)
@@ -2209,9 +2623,9 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
                     };
             }
 
-            async ImagineMdjRouter(){
+            async ImagineMdjRouter(argumentsJson){
        
-                const {prompt} = this.#argumentsJson
+                const {prompt} = argumentsJson
                 
                 const piapi = new PIAPI()
                 const generate_result = await piapi.generateImage(prompt,this.#timeout_ms)
@@ -2279,9 +2693,9 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
     }
 
 
-    imageMdjFieldsValidation(){
+    imageMdjFieldsValidation(argumentsJson){
 
-        const {textprompt,seed,aspectratio,version,imageprompt,imageweight} = this.#argumentsJson
+        const {textprompt,seed,aspectratio,version,imageprompt,imageweight} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -2365,25 +2779,10 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
         });
       }
 
-   
 
-    convertResourcesParamToJSON(){
+    validateRequiredFieldsFor_createPDFFile(argumentsJson){    
 
-        let error = new Error();
-        error.assistant_instructions = "Fix the error and retry the function."
-
-        try{
-            this.#argumentsJson.resources = JSON.parse(this.#argumentsJson.resources)
-        } catch(err){
-            error.message = `Received 'resources' object poorly formed which caused the following error on conversion to JSON: ${err.message}. Correct the arguments.`
-            throw error;
-        }
-    }
-
-
-    validateRequiredFieldsFor_createPDFFile(){    
-
-        const {html,filename,content_reff} = this.#argumentsJson
+        const {html,filename,content_reff} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -2393,12 +2792,14 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             throw error;
         }
 
-        if(!html && !content_reff){
+        const contentReffIsPresent = content_reff && Array.isArray(content_reff) && content_reff.length > 0
+
+        if(!html && !contentReffIsPresent){
             error.message = `Either 'html' or 'content_reff' parameter must be present. Provide at least one of them.`
             throw error;
         }
 
-        if(html && content_reff){
+        if(html && contentReffIsPresent){
             error.message = `'html' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
             throw error;
         }
@@ -2413,16 +2814,11 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             throw error;
         }
 
-        if(content_reff && Array.isArray(content_reff) && content_reff.length === 0){
-            error.message = `'content_reff' array is empty.`
-            throw error;
-        }
-
     }
 
-    validateRequiredFieldsFor_textToSpeech(){
+    validateRequiredFieldsFor_textToSpeech(argumentsJson){
 
-        const {filename,text,content_reff,voice} = this.#argumentsJson
+        const {filename,text,content_reff,voice} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -2442,11 +2838,6 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             throw error;
         }
 
-        if(text && content_reff){
-            error.message = `'text' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
-            throw error;
-        }
-        
         if(text && text === ""){
             error.message = `'text' parameter must contain text.`
             throw error;
@@ -2461,11 +2852,16 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             error.message = `'content_reff' array is empty.`
             throw error;
         }
+
+        if(text && content_reff){
+            error.message = `'text' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
+            throw error;
+        }
     }
 
-    validateRequiredFieldsFor_createTextFile(){
+    validateRequiredFieldsFor_createTextFile(argumentsJson){
 
-        const {filename,text,content_reff,mimetype} = this.#argumentsJson
+        const {filename,text,content_reff,mimetype} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -2480,12 +2876,15 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             throw error;
         }
 
-        if(!text && !content_reff){
+        const contentReffIsPresent = content_reff && Array.isArray(content_reff) && content_reff.length > 0
+
+
+        if(!text && !contentReffIsPresent){
             error.message = `Either 'text' or 'content_reff' parameter must be present. Provide at least one of them.`
             throw error;
         }
 
-        if(text && content_reff){
+        if(text && contentReffIsPresent){
             error.message = `'text' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
             throw error;
         }
@@ -2500,16 +2899,12 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             throw error;
         }
 
-        if(content_reff && Array.isArray(content_reff) && content_reff.length === 0){
-            error.message = `'content_reff' array is empty.`
-            throw error;
-        }
     }
 
 
-    validateRequiredFieldsFor_speechToText(){
+    validateRequiredFieldsFor_speechToText(argumentsJson){
 
-        const resources = this.#argumentsJson.resources
+        const resources = argumentsJson.resources
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -2531,9 +2926,9 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
 
     }
 
-    validateRequiredFieldsFor_extractTextFromFile(){
+    validateRequiredFieldsFor_extractTextFromFile(argumentsJson){
 
-        const resources = this.#argumentsJson.resources
+        const resources = argumentsJson.resources
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."

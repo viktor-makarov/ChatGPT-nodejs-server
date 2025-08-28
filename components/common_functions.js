@@ -5,6 +5,7 @@ const cryptofy = require('crypto');
 const axios = require("axios");
 const awsApi = require("./apis/AWS_API.js")
 const mjAPI = require('mathjax-node');
+mjAPI.start();
 const mongo = require("./apis/mongo.js");
 const googleApi = require("./apis/google_API.js");
 const path = require('path');
@@ -17,6 +18,13 @@ const { execSync } = require("child_process");
 const pako = require('pako');
 const devPrompts = require("../config/developerPrompts.js");
 const { convert } = require('html-to-text');
+
+
+const sharp = require('sharp');
+const svgson = require('svgson');
+
+const { encode, decode } = require("gpt-3-encoder");
+const msqTemplates = require("../config/telegramMsgTemplates.js");
 
 //const { Tiktoken } = require("js-tiktoken/lite");
 //const o200k_base = require("js-tiktoken/ranks/o200k_base");
@@ -426,12 +434,7 @@ async function fileDownload(url){
 return Buffer.from(response.data)
 }
 
-mjAPI.start();
-const sharp = require('sharp');
-const svgson = require('svgson');
 
-const { encode, decode } = require("gpt-3-encoder");
-const msqTemplates = require("../config/telegramMsgTemplates.js");
 
 async function getSvgDimensions(svg) {
   const parsedSvg = await svgson.parse(svg);
@@ -843,7 +846,7 @@ function convertMarkdownToLimitedHtml(text,user_language_code="ru"){
 
 function wireHtml(text){
   
-  let wiredText = text ? text: "";
+  let wiredText = (text ?? "") || "";
   wiredText = wiredText
   .replace(/&/g,"&amp;")//this should be first
   .replace(/</g,"&lt;")
@@ -902,11 +905,14 @@ function wireHtml(text){
 
       await delay(delay_ms);
 
+      
       const screenshot = {page_url: url};
 
       try{
         for (const quality of [80,60,40,20,0]) {
+          console.log("Before taking screenshot",quality, url);
           screenshot.buffer = await page.screenshot({ fullPage: true,type: 'jpeg',quality: quality });
+          console.log("After taking screenshot",quality, url);
           screenshot.sizeBytes = screenshot.buffer.length;
           screenshot.quality = quality;
           if (screenshot.sizeBytes <= 10 * 1024 * 1024) {
@@ -2260,6 +2266,41 @@ function extractBodyContent(htmlString) {
   return $('body').html()?.trim() || '';
 }
 
+function htmlShorterner(html,limit){
+  const totalLength = html.length;
+
+  const endStr = '... (текст сокращен)'
+
+  if (totalLength <= limit) {
+        return html; // Если длина в пределах лимита, возвращаем исходный HTML
+    }
+
+  const $ = cheerio.load(html, null, false);
+
+  const excessLength = totalLength - limit;
+  let longestTextNode = null;
+  let longestTextNodeLength = 0;
+
+  $('*').contents().each(function() {
+        if (this.type === 'text') {
+            const textLength = $(this).text().length;
+            if (textLength > longestTextNodeLength) {
+                longestTextNode = this;
+                longestTextNodeLength = textLength;
+            }
+        }
+    });
+
+  if (longestTextNode) {
+      const currentText = $(longestTextNode).text();
+      // Укорачиваем текст на нужное количество символов и добавляем '...(текст сокращен)'
+      const shortenedText = currentText.slice(0, longestTextNodeLength - excessLength - endStr.length) + endStr;
+      $(longestTextNode).replaceWith(shortenedText);
+  }
+
+  return $.html();
+}
+
 function fileContentToHtml(fileContent,filename){
   
   const bodyCombined = fileContent.map(obj => {
@@ -2406,7 +2447,9 @@ function extractFileNameFromURL(fileLink){
 
 function unWireText(text =''){
 
-const newText = text.replace(/\\r\\n/g, '\n')
+const textVerified = typeof text === "object" ? JSON.stringify(text) : text || ''
+
+const newText = textVerified.replace(/\\r\\n/g, '\n')
 .replace(/\\n/g, '\n')
 .replace(/\\t/g, '\t')
 .replace(/\\'/g, "'")
@@ -2613,8 +2656,44 @@ function toHHMMSS(totalSeconds) {
   ].join(':');
 }
 
+async function drawCrossOnImage(imageBuffer, x, y, crossSize = 10, color = 'red', strokeWidth = 2) {
+    try {
+        const image = sharp(imageBuffer);
+        const { width, height } = await image.metadata();
+        
+        // Создаем SVG крестика
+        const crossSvg = `
+            <svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
+                <g>
+                    <line x1="${x - crossSize}" y1="${y}" x2="${x + crossSize}" y2="${y}" 
+                          stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>
+                    <line x1="${x}" y1="${y - crossSize}" x2="${x}" y2="${y + crossSize}" 
+                          stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>
+                    <circle cx="${x}" cy="${y}" r="2" fill="${color}" opacity="0.9"/>
+                </g>
+            </svg>
+        `;
+        
+        const result = await image
+            .composite([{ 
+                input: Buffer.from(crossSvg), 
+                top: 0, 
+                left: 0,
+                blend: 'over'
+            }])
+            .png()
+            .toBuffer();
+            
+        return result;
+    } catch (error) {
+        console.error('Error drawing cross on image:', error);
+        throw error;
+    }
+}
+
 module.exports = {
   convertHtmlToText,
+  drawCrossOnImage,
   formatObjectToText,
   countTokens,
   wireStingForMarkdown,
@@ -2689,5 +2768,6 @@ module.exports = {
   getMimeTypeFromUrl,
   toHHMMSS,
   getMimeTypeFromPath,
-  getPageScreenshotForBrowser
+  getPageScreenshotForBrowser,
+  htmlShorterner
 };

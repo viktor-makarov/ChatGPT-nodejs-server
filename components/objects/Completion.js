@@ -3,7 +3,7 @@ const EventEmitter = require('events');
 const otherFunctions = require("../common_functions.js");
 const mongo = require("../apis/mongo.js");
 const modelConfig = require("../../config/modelConfig");
-const telegramErrorHandler = require("../errorHandler.js");
+const ErrorHandler = require("./ErrorHandler.js");
 const openAIApi = require("../apis/openAI_API.js");
 const FunctionCall  = require("./FunctionCall.js");
 const { error } = require('console');
@@ -13,7 +13,6 @@ const { format } = require('path');
 const awsApi = require("../apis/AWS_API.js")
 const AvailableTools = require("./AvailableTools.js");
 const { type } = require('os');
-const OpenAI = require("openai");
 
 
 class Completion extends EventEmitter {
@@ -80,6 +79,7 @@ class Completion extends EventEmitter {
 
     #tgmMessagesQueue;
     #commitToDBQueue;
+    #errorHandlerInstance;
 
     constructor(obj) {
         super({ readableObjectMode: true });
@@ -105,8 +105,8 @@ class Completion extends EventEmitter {
           regime: this.#user.currentRegime,
           includeInSearch: true
         }
+        this.#errorHandlerInstance = new ErrorHandler({replyMsgInstance: this.#replyMsg, dialogueInstance: this.#dialogue});
       };
-
 
     async registerNewEvent(event,evensOccured){
 
@@ -115,7 +115,7 @@ class Completion extends EventEmitter {
           await mongo.saveNewEvent(event)
           evensOccured.push(type);
         }
-      }
+    }
 
     timer(){
         const timeLaps = [];
@@ -165,20 +165,16 @@ class Completion extends EventEmitter {
     this.#tgmMessagesQueue = new AsyncQueue({delayMs: 0,ttl: 60 * 60 * 1000,name: 'tgmMessagesQueue',replyInstance: this.#replyMsg});
     this.#commitToDBQueue = new AsyncQueue({delayMs: 0,ttl: 60 * 60 * 1000,name: 'commitToDBQueue',replyInstance: this.#replyMsg});
 
-    let evensOccured = await mongo.getEventsList();
-
     this.#output_items ={};
     this.#message_items = {};
     
     // Process events asynchronously but sequentially
-      for await (const event of responseStream) {
-          this.registerNewEvent(event,evensOccured) // temporaty. To study new events.
-        // console.log(event.sequence_number,new Date(),event.type,event.output_index,event.content_index)
-        // Add each event to the queue for sequential processing 
-        eventProcessingQueue.add(() => this.processEvent(event));
-      }
-    console.log(new Date(), `Response stream finished`);
-}
+    for await (const event of responseStream) {
+      // console.log(event.sequence_number,new Date(),event.type,event.output_index,event.content_index)
+      // Add each event to the queue for sequential processing 
+      eventProcessingQueue.add(() => this.processEvent(event));
+    }
+  }
 
   async processEvent(event){
     try{
@@ -223,18 +219,11 @@ class Completion extends EventEmitter {
       }
     } catch (err) {
       err.place_in_code = err.place_in_code || `processEvent.${event.type}`;
-      telegramErrorHandler.main(
-          {
-              replyMsgInstance: this.#replyMsg,
-              error_object: err
-          }
-      );
+      this.#errorHandlerInstance.handleError(err);
     };
 };
 
   async handleResponseCreated(event){
-
-      this.clearLongWaitNotes()
       const {id,created_at} = event.response;
       this.#responseId = id;
       this.#completionCreatedTS= created_at;
@@ -644,14 +633,13 @@ class Completion extends EventEmitter {
           "partialCommit": async (event) => {
 
             const {partial_image_index,partial_image_b64,output_format,item_id} = event;
+            if(partial_image_index ===0) return;
             const partialImageBuffer = Buffer.from(partial_image_b64, 'base64');
             const filename = `partial_image_${item_id.slice(0, 10)}_${partial_image_index}.${output_format}`;
             const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
             let details = "это еще не все. Продолжаю ..."
             const caption = `⏳ <b>${functionDescription}</b>: ${details}`;
 
-            
-            
             this.#tgmMessagesQueue.add(() => Promise.all([
               (async () => { 
                 const {message_id} = await this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html")
@@ -666,6 +654,7 @@ class Completion extends EventEmitter {
           },
           "endCommit": async (completedEvent) => {
             this.#imageGenTimer.stop_lap();
+ 
             const {item,output_index} = completedEvent;
             const {status,background,output_format,quality,type,id,result,revised_prompt,size} = item;
 
@@ -682,10 +671,11 @@ class Completion extends EventEmitter {
              caption = `${msgText}\n\n${revised_prompt.slice(0, appsettings.telegram_options.big_outgoing_caption_threshold)}... --size ${size} --quality ${quality} --background ${background}`;
             }
                       
+            console.log(3)
             this.#tgmMessagesQueue.add(() => Promise.all([
               (async () => {
-                const lastImageMsgId = Array.from(imageMsgId).at(-1);
-                this.#replyMsg.deleteMsgByID(lastImageMsgId)
+                const msgToDeleteID = Array.from(imageMsgId).length===0 ? statusMsgId : Array.from(imageMsgId).at(-1);
+                this.#replyMsg.deleteMsgByID(msgToDeleteID)
               })(),
              (async () => {
               const {Location} = await  awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
@@ -771,7 +761,8 @@ class Completion extends EventEmitter {
             const outputsImages = [];
             const outputsLogs = [];
 
-            outputs.forEach((output) => {
+            const safeOutputs = outputs || [];
+            safeOutputs.forEach(output => {
               if(output.type === "image" && output.url){
                 outputsImages.push(output.url);
                 outputsLogs.push({type: "image",url: "base64 data"});
@@ -993,7 +984,6 @@ class Completion extends EventEmitter {
         this.#functionCalls[output_index] = new FunctionCall(options)
         
         this.#functionCalls[output_index].startFunctionTimer()
-        console.log(`FunctionCall init message`,statusMsgId)
         this.#tgmMessagesQueue.add(() => this.#functionCalls[output_index].initStatusMessage(statusMsgId))
       }
 
@@ -1047,9 +1037,11 @@ class Completion extends EventEmitter {
           status:"completed",
           content:JSON.stringify(outcome,this.modifyStringify,2)
         }
-          this.#commitToDBQueue.add(() => this.#dialogue.updateCommitToolReply(toolExecutionResult))
-          this.#tgmMessagesQueue.add(() => this.commitImages(supportive_data,function_name,tool_call_id))
+        this.#commitToDBQueue.add(() => this.#dialogue.updateCommitToolReply(toolExecutionResult))
+        this.#tgmMessagesQueue.add(() => this.commitImages(supportive_data,function_name,tool_call_id))
 
+        this.#functionCalls[output_index].endFunctionTimer()
+        
         return output_index
         
         }
@@ -1117,33 +1109,10 @@ class Completion extends EventEmitter {
           this.#statusMsg = await this.#replyMsg.sendStatusMsg()
 
           this.#long_wait_notes = this.triggerLongWaitNotes(this.#statusMsg)
-          
 
-          let responseStream;
-          try{
-            responseStream = await openAIApi.responseStream(this.#dialogue)
-          } catch(err){
+          const responseStream = await openAIApi.responseStream(this.#dialogue)
 
-            this.clearLongWaitNotes()
-            if(err.resetDialogue){
-              const response = await this.#dialogue.resetDialogue()
-              await this.#replyMsg.simpleMessageUpdate(response.text,{
-                chat_id:this.#replyMsg.chatId,
-                message_id:this.#replyMsg.lastMsgSentId
-              })
-              await this.#replyMsg.sendToNewMessage(err.resetDialogue?.message_to_user,null,null)
-              return
-            } else if(err.userResponseRequired){
-              
-              await this.#replyMsg.simpleMessageUpdate(err.user_message,{
-                chat_id:this.#replyMsg.chatId,
-                message_id:this.#replyMsg.lastMsgSentId
-              })
-              return
-            } else {
-              throw err
-            }
-          }
+          this.clearLongWaitNotes();
 
           await this.responseEventsHandler(responseStream);
           await this.waitForFinalization()
@@ -1155,21 +1124,12 @@ class Completion extends EventEmitter {
           }
           
         } catch(err){
-
-          await this.#replyMsg.simpleMessageUpdate("Ой-ой! :-(",{
-            chat_id:this.#replyMsg.chatId,
-            message_id:this.#replyMsg.lastMsgSentId
-            })
-          
+          this.clearLongWaitNotes();
           err.place_in_code = err.place_in_code || "completion.router";
-          telegramErrorHandler.main(
-            {
-              replyMsgInstance:this.#replyMsg,
-              error_object:err
-            }
-          );
-        
+          this.#errorHandlerInstance.handleError(err);
+          
         } finally{
+          
           this.#decoder.end()
           this.#dialogue.regenerateCompletionFlag = false
         } 
@@ -1389,11 +1349,7 @@ class Completion extends EventEmitter {
            return {success:1,completion_delivered}
           
           } catch(err){
-            telegramErrorHandler.main(
-            {
-              replyMsgInstance:this.#replyMsg,
-              error_object:err
-            })
+            this.#errorHandlerInstance.handleError(err);
             return {success:0,error:err.message}
           }
           }

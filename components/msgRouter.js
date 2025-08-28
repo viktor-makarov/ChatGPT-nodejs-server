@@ -8,8 +8,9 @@ const openAIApi = require("./apis/openAI_API.js");
 const elevenLabsApi = require("./apis/elevenlabs_API.js");
 const awsApi = require("./apis/AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
-const telegramErrorHandler = require("./errorHandler.js");
+const ErrorHandler = require("./objects/ErrorHandler.js");
 const AvailableTools = require("./objects/AvailableTools.js");
+
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -25,7 +26,9 @@ async function callbackBlock(){
 
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   let responses = [];
-  
+
+  const errorHandlerInstance = new ErrorHandler({replyMsgInstance: replyMsgInstance, dialogueInstance: dialogueInstance});
+  console.log("requestMsgInstance.fileType",requestMsgInstance.fileType)
   const current_regime = requestMsgInstance.user.currentRegime
   const userInstance = requestMsgInstance.user;
   const fileCaption =  requestMsgInstance.fileCaption
@@ -48,7 +51,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
         await resetNonDialogueHandler(requestMsgInstance)
         await dialogueInstance.commitInitialSystemPromptToDialogue(current_regime)
   }
-
+ 
   await requestMsgInstance.getFileLinkFromTgm()
 
   if (requestMsgInstance.fileType === "voice" && !requestMsgInstance.isForwarded){
@@ -69,15 +72,12 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
           })
 
       } catch(err){
+
         err.mongodblog = err.mongodblog || true
         err.sendToUser=false
         err.adminlog=false
         err.code=="ELEVENLABS_ERR"
-        telegramErrorHandler.main(
-        {
-          replyMsgInstance:replyMsgInstance,
-          error_object:err
-        })
+        errorHandlerInstance.handleError(err)
         const checkResult = otherFunctions.voiceToTextConstraintsCheck(requestMsgInstance.fileMimeType,requestMsgInstance.fileSize)
         if(checkResult.success===0){
           responses.push(checkResult.responce)
@@ -99,15 +99,8 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       dialogueInstance.triggerCallCompletion()
 
   } else if(requestMsgInstance.fileType === "voice" || requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note" || requestMsgInstance.fileType === "video"){
-    
-    const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
 
-    if(s3UploadResult.success === 0){
-      //Add info to the dialogue and notify user about problems with the file upload
-      await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-      await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-      return responses;
-    }
+    const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
 
     const url = s3UploadResult.Location
     await dialogueInstance.commitFileToDialogue(url)
@@ -129,7 +122,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
   } else if(requestMsgInstance.fileType === "document"){
 
-    const isAllowedFileType = requestMsgInstance.isAllowedFileType()
+    requestMsgInstance.validateFileType()
 
     const fileMimeType = requestMsgInstance.fileMimeType;
 
@@ -138,12 +131,6 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       downloadFileBufferFromTgm(requestMsgInstance)
     ])
 
-    if(s3UploadResult.success === 0 || downloadBufferResult.success === 0 || !isAllowedFileType){
-      //Add info to the dialogue and notify user about problems with the file upload
-      await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-      await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-      return responses;
-    }
     const url = s3UploadResult.Location
 
     if(fileMimeType === "application/pdf"){
@@ -175,14 +162,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       downloadFileBufferFromTgm(requestMsgInstance)
     ])
     
-    const isAllowedFileType = requestMsgInstance.isAllowedFileType()
-
-    if(s3UploadResult.success === 0 || downloadBufferResult.success === 0 || !isAllowedFileType){
-      //Add info to the dialogue and notify user about problems with the file upload
-      await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-      await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-      return responses;
-    }
+      requestMsgInstance.validateFileType()
 
       const url = s3UploadResult.Location
       const {sizeBytes} = otherFunctions.calculateFileSize(downloadBufferResult.buffer)
@@ -602,8 +582,8 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
   } else if(callback_event === "un_f_up") {
 
     const contentObject = await otherFunctions.decodeJson(callback_data_input)
-    const unfoldedFileSysMsg = msgShortener(contentObject.unfolded_text)
-    
+    const unfoldedFileSysMsg = otherFunctions.htmlShorterner(contentObject.unfolded_text,appsettings.telegram_options.big_outgoing_message_threshold)
+
     const new_callback_data = {e:"f_f_up",d:callback_data_input}
     
     const fold_button = {
@@ -776,6 +756,9 @@ function msgShortener(html){
   return new_msg_html
 }
 
+
+
+
 function closeUnclosedTags(htmlString) {
   const tags = [];
   const tagPattern = /<([a-zA-Z]+)(\s+[^>]*?)?>|<\/([a-zA-Z]+)>/gi;
@@ -885,15 +868,20 @@ async function downloadFileBufferFromTgm(requestMsgInstance){
     const mimeType = otherFunctions.getMimeTypeFromUrl(requestMsgInstance.fileLink)
     const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
 
-  return {...{buffer},...{success:1},...{mimeType}}
+  return {...{buffer},...{mimeType}}
 
   } catch(err){
-    requestMsgInstance.uploadFileError = err.message
-    requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. при обработке файла возникла ошибка.`
-    const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
-    requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
-    console.log("downloadFileBufferFromTgm. File upload failed:", requestMsgInstance.uploadFileError)
-    return {success:0}
+
+    err.user_message = `При обработке файла возникла ошибка.`
+    const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:err.message}]
+    err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
+    
+    err.sendToUser = true;
+    err.details = err.message;
+    err.mongodblog = true;
+    err.adminlog = false;
+
+    throw err;
   }
 }
 
@@ -905,16 +893,19 @@ const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid
 
 const uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
 
-return {...{filename},...uploadResult,...{success:1}}
+return {...{filename},...uploadResult}
 
 } catch(err){
 
-  requestMsgInstance.uploadFileError = err.message
-  requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. при обработке файла возникла ошибка.`
-  const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
-  requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
-  console.log("uploadFileToS3Handler. File upload failed:", requestMsgInstance.uploadFileError)
-  return {success:0}
+  err.user_message = `При обработке файла возникла ошибка.`
+  const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:err.message}]
+  err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
+  
+  err.sendToUser = true;
+  err.details = err.message;
+  err.mongodblog = true;
+  err.adminlog = false;
+  throw err;
 }
 }
 

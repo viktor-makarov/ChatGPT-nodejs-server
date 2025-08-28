@@ -76,12 +76,12 @@ class Dialogue {
     };
 
     async getDialogueForRequest(model){
-
         const image_size_limit = modelConfig[model]?.image_input_limit_bites ?? 1024 * 1024
         const image_count_limit = modelConfig[model]?.image_input_limit_count ?? 5
+        const canUseReasoning = modelConfig[model]?.canUseReasoning ?? false
         const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid,this.#user.currentRegime) || []
-        const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFromDB,image_size_limit,image_count_limit)
-        
+        const dialogueFilteredByReasoning =  this.reasoningInputFileter(dialogueFromDB,canUseReasoning)
+        const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFilteredByReasoning,image_size_limit,image_count_limit)
         return this.mapValuesToDialogue(dialogueFilteredByImageLimit);
     }
 
@@ -200,6 +200,15 @@ class Dialogue {
                 return null
             }
         }).filter(doc => doc !== null);
+    }
+
+    reasoningInputFileter(dialogue,canUseReasoning){
+
+        if(canUseReasoning){
+            return dialogue
+        } else {
+            return  dialogue.filter(item => item.type !="reasoning")
+        }
     }
 
 

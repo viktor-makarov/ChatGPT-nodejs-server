@@ -1,4 +1,4 @@
-const ErrorHandler = require("../errorHandler");
+const ErrorHandler = require("./ErrorHandler");
 
 
 class AsyncQueue {
@@ -19,7 +19,8 @@ class AsyncQueue {
     this._ttlTimer = null;
     this._name = name || 'default';
     this._replyInstance = replyInstance;
-    
+    this._errorHandlerInstance = new ErrorHandler({replyMsgInstance: this._replyInstance});
+
     // Запускаем таймер TTL
     this._startTTLTimer();
   }
@@ -36,11 +37,7 @@ class AsyncQueue {
             tasksInQueue: this._tasks.length,
             originalStack: err.stack
         };
-        ErrorHandler.main({
-            replyMsgInstance: this._replyInstance,
-            error_object: err
-            });
-        //reject(err); 
+        this._errorHandlerInstance.handleError(err);
       }
     });
       this._start();          // запускаем обработчик, если он остановлен

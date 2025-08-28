@@ -34,6 +34,11 @@ if (includeUsage) {
     options.include = includeUsage
 }
 
+const reasoningConfig = modelConfig[model].reasoning;
+if (reasoningConfig) {
+    options.reasoning = reasoningConfig;
+}
+
 if (instructions){
     options.instructions = instructions;
 }
@@ -52,18 +57,12 @@ if(available_tools && available_tools.length>0 && modelCanUseTools){
       options.tool_choice = "auto"
   }
 
-let responseStream;
-try {
-    responseStream = await openai.responses.create(options);
-} catch (error) {
-      const errorAugmented = await OpenAIErrorHandle(error,dialogueClass);
-      throw errorAugmented
-}
+const   responseStream = await openai.responses.create(options);
 
 return responseStream;
 }
 
-async function responseSync(model,instructions, input,temperature = 0,tools = [],tool_choice = "auto",output_format = { "type": "text" }) {
+async function responseSync(model,instructions, input,temperature = 0,tools = [],tool_choice = "auto",output_format = { "type": "text" },truncation = null) {
 
 const options = {
     model: model,
@@ -74,8 +73,19 @@ const options = {
     background: false,
     tools: tools,
     tool_choice: tool_choice,
-    text:{format:output_format}
+    text:{format:output_format},
+    truncation: truncation
 };
+
+const includeUsage = modelConfig[model]?.includeUsage
+if (includeUsage) {
+    options.include = includeUsage
+}
+
+const reasoningConfig = modelConfig[model]?.reasoning;
+if (reasoningConfig) {
+    options.reasoning = reasoningConfig;
+}
 
 const response = await openai.responses.create(options);
 return response;

@@ -1,7 +1,7 @@
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../common_functions");
-const ErrorHandler = require("../errorHandler");
+const ErrorHandler = require("./ErrorHandler.js");
 const FormData = require("form-data");
 const axios = require("axios");
 const mongo = require("../apis/mongo.js");
@@ -27,6 +27,7 @@ class ReplyMsg extends EventEmitter {
 #versionBtnsAllias = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 
 #msgThreshold = appsettings.telegram_options.big_outgoing_message_threshold;
+#errorHandlerInstance;
 
 constructor(obj) {
     super();
@@ -39,6 +40,8 @@ constructor(obj) {
         text: "🔄",
         callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
       };
+
+      this.#errorHandlerInstance = new ErrorHandler({replyMsgInstance: this});
 };
 
 set text(value){
@@ -122,11 +125,7 @@ async insertFunctionUsage(object){
   try{
   await mongo.insertFunctionUsagePromise(object)
   } catch(err){
-        ErrorHandler.main(
-            {
-              replyMsgInstance:this,
-              error_object:err
-            })
+    this.#errorHandlerInstance.handleError(err);
   }
 }
 
@@ -254,7 +253,7 @@ async sendMessageWithErrorHandling(text, reply_markup, parse_mode, add_options) 
         const result = await this.simpleSendNewMessage(text, reply_markup, null, add_options);
         err.sendToUser = false
         err.place_in_code = "sendMessageWithErrorHandling_can't_parse_entities";
-        ErrorHandler.main({replyMsgInstance:this,error_object:err})
+        this.#errorHandlerInstance.handleError(err)
         return {success:1, message_id: result.message_id};
       } catch (retryErr) {
         // Enhance the retry error with details before throwing
@@ -293,7 +292,7 @@ async updateMessageWithErrorHandling(text, options) {
         const result = this.#botInstance.editMessageText(text, updatedOptions);
         err.sendToUser = false
         err.place_in_code = "updateMessageWithErrorHandling_can't_parse_entities"
-        ErrorHandler.main({replyMsgInstance:this,error_object:err})
+        this.#errorHandlerInstance.handleError(err)
         return {success:1, message_id: result.message_id};
       } catch (retryErr) {
         // Enhance the retry error with details before throwing
@@ -304,7 +303,7 @@ async updateMessageWithErrorHandling(text, options) {
       }
     } else if (err.message.includes("message is not modified")) {
       err.sendToUser = false
-      ErrorHandler.main({replyMsgInstance:this,error_object:err})
+      this.#errorHandlerInstance.handleError(err)
       return {success:0, error:err.message};
     }  else if (err.message.includes("ETELEGRAM: 429 Too Many Requests")) {
       const millisecondsToWait = this.extractWaitTimeFromErrorMs(err);
@@ -617,6 +616,20 @@ async sendOAIImage(imageBuffer,prompt,imageId,format,mime_type,parse_mode="html"
 }
 
 async sendCodeInterpreterImage(imageBuffer,caption,filename,mime_type,parse_mode="html",reply_markup){
+
+  let sent_result = await this.simpleSendNewImage({
+    caption:caption,
+    reply_markup:reply_markup,
+    contentType:mime_type,
+    fileName:filename,
+    imageBuffer:imageBuffer,
+    parse_mode:parse_mode
+  });
+
+  return sent_result
+}
+
+async sendScreenShot(imageBuffer,caption,filename,mime_type,parse_mode="html",reply_markup){
 
   let sent_result = await this.simpleSendNewImage({
     caption:caption,

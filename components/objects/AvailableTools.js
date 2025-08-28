@@ -13,13 +13,64 @@ class AvailableTools {
     constructor(userClass) {
         this.#userClass = userClass;
         this.#toolsList = [
+                        {
+                type: "function",
+                name: "manage_browser_tabs",
+                description: "Manages between tabs.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        action: {
+                            type: "string",
+                            enum: ["switch_to_tab", "close_tab","go_back"],
+                            description: `Action to perform on the browser tab. 'switch_to_tab' will switch to the tab with the specified tab_id, 'close_tab' will close the tab with the specified tab_id. go_back will return to previous state in history if it exists`
+                        },
+                        tab_id: {
+                            type: ["string","null"],
+                            description: "ID of the browser tab to manage."
+                        }
+                    },
+                    required: ["tab_id", "action"]
+                },
+                friendly_name: "Вкладки браузера",
+                timeout_ms: 30000,
+                try_limit: 3,
+                availableInRegimes: [],
+                availableForUserGroups: ["all"],
+                availableForAgents: ["web_browser"],
+                availableForToolCalls: true,
+                deprecated: false,
+                category: "custom"
+            },
+            {
+                type: "computer_use_preview",
+                display_width: 1024,
+                display_height: 768,
+                environment: "browser", // other possible values: "mac", "windows", "ubuntu"
+                availableInRegimes: [],
+                availableForUserGroups: ["all"],
+                availableForAgents: ["web_browser"],
+                availableForToolCalls: true,
+                category: "hosted",
+                deprecated: false
+            },
+            {
+                type: "web_search_preview",
+                availableInRegimes: [],
+                availableForUserGroups: ["all"],
+                availableForAgents: ["web_search"],
+                availableForToolCalls: true,
+                category: "hosted",
+                deprecated: false
+            },
             {
                 type: "mcp",
                 server_label: "deepwiki",
                 server_url: "https://mcp.deepwiki.com/mcp",
                 require_approval: "never",
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 category: "hosted",
                 deprecated: false,
@@ -34,7 +85,8 @@ class AvailableTools {
                 quality: "auto",
                 size: "auto",
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 category: "hosted",
                 deprecated: false,
@@ -50,7 +102,8 @@ class AvailableTools {
                     type: "auto"
                 },
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 category: "hosted",
                 deprecated: false,
@@ -105,7 +158,8 @@ class AvailableTools {
                 ],
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 model: "gpt-4.1",
                 availableForToolCalls: true,
                 deprecated: false,
@@ -129,28 +183,36 @@ class AvailableTools {
                         },
                         url: {
                             type: "string",
-                            description: "Url to browse around. Must be a valid URL."
+                            description: "Url to browse around. Must be a valid URL. DO NOT include any query parameters as it leads to CAPTCHA"
                         },
                         task: {
                             type: "string",
                             description: "Task to perform in the browser. Must be a clear and concise description of what to do with the page."
+                        },
+                        result_criteria: {
+                            type: "array",
+                            description: `List of criteria against which the result must be evaluated.`,
+                            items: {
+                                type: "string",
+                                description: "Criteria for evaluating the result"
+                            }
+                        },
+                        users_language: {
+                            type: "string",
+                            description: "Language of the user in which he/she is communicating. E.g. Russian, English, etc."
                         }
                     },
-                    required: ["function_description", "url", "task", "site_name"],
+                    required: ["function_description", "url", "task", "site_name", "result_criteria", "users_language"],
                     additionalProperties: false
                 },
                 friendly_name: "Обзор сайта",
-                timeout_ms: 180000,
-                long_wait_notes: [
-                    { time_ms: 60000, comment: "Иногда нужно больше времени. Подождите, пожалуйста, ... ☕️" },
-                    { time_ms: 1200000, comment: "На этот раз долго ... Однако, пока нет причин для беспокойства! 👌" },
-                    { time_ms: 150000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..." }
-                ],
+                timeout_ms: 600_000,
                 try_limit: 3,
                 model: "computer-use-preview",
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
-                availableForToolCalls: false,
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
+                availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
             },
@@ -204,7 +266,8 @@ class AvailableTools {
                 parallel_runs: 4,
                 attempts_limit: 4,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -231,7 +294,8 @@ class AvailableTools {
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin"],
+                availableForUserGroups: ["admin"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 addProperties: async function (){
@@ -264,7 +328,8 @@ class AvailableTools {
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin"],
+                availableForUserGroups: ["admin"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 addProperties: async function(){
@@ -297,7 +362,7 @@ class AvailableTools {
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin"],
+                availableForUserGroups: ["admin"],
                 availableForToolCalls: true,
                 deprecated: false,
                 addProperties: async function(){
@@ -332,7 +397,8 @@ class AvailableTools {
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 addUserID: function(userid){
@@ -363,7 +429,8 @@ class AvailableTools {
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin"],
+                availableForUserGroups: ["admin"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -396,7 +463,8 @@ class AvailableTools {
                 timeout_ms: 180000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -429,7 +497,8 @@ class AvailableTools {
                 timeout_ms: 180000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -482,7 +551,8 @@ class AvailableTools {
                 ],
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 queue_name: "midjourney",
@@ -521,7 +591,8 @@ class AvailableTools {
                 ],
                 try_limit: 3,
                 availableInRegimes: ["chat", "translator", "texteditor"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: false,
                 deprecated: false,
                 queue_name: "midjourney",
@@ -571,7 +642,8 @@ class AvailableTools {
                 ],
                 try_limit: 3,
                 availableInRegimes: ["chat", "translator", "texteditor"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: false,
                 deprecated: false,
                 queue_name: "midjourney",
@@ -608,7 +680,8 @@ class AvailableTools {
                 ],
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -635,14 +708,15 @@ class AvailableTools {
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: false,
                 deprecated: true,
                 category: "custom"
             },
             {
                 type: "function",
-                name: "run_javasctipt_code",
+                name: "run_javascript_code",
                 description: "You can use this function to execute a javascript code. Use this every time you need to do calculations to ensure their accuraсy.",
                 parameters: {
                     type: "object",
@@ -662,7 +736,8 @@ class AvailableTools {
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: true,
                 category: "custom"
@@ -689,7 +764,7 @@ class AvailableTools {
                                 "If you are tasked by the user to create diagrams, use Mermaid syntax within <div class=\"mermaid\"> ... </div>."
                         },
                         content_reff: {
-                            type: "number",
+                            type: "array",
                             description: "List of content reffs to be included into a file. Order does matter. Ensures original content is saved. Should not be used together with 'html'.",
                             items: {
                                 type: "number",
@@ -711,7 +786,8 @@ class AvailableTools {
                     { time_ms: 60000, comment: "Похоже, файл действительно болшой. Подождем еще немного ... Но если через 30 секунд не закончит, то придется отменить." },
                 ],
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -879,7 +955,8 @@ class AvailableTools {
                 timeout_ms: 60000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -901,7 +978,7 @@ class AvailableTools {
                         },
                         content_reff: {
                             type: "array",
-                            description: "List of content reffs to be included into a file. Order does matter. This parameter should not be used together with 'text'.",
+                            description: "List of content reffs to be included into a file. Order does matter. This parameter should not be used together with 'text'. Blank array is not allowed",
                             items: {
                                 type: "number",
                                 description: "Represents previousely extracted original content that should be saved to the file."
@@ -922,7 +999,8 @@ class AvailableTools {
                 timeout_ms: 15000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -970,7 +1048,8 @@ class AvailableTools {
                 timeout_ms: 360000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -1020,7 +1099,8 @@ class AvailableTools {
                 timeout_ms: 15000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main","web_browser"],
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
@@ -1070,7 +1150,8 @@ class AvailableTools {
                 timeout_ms: 15000,
                 try_limit: 30,
                 availableInRegimes: ["chat"],
-                availableForGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
                 addProperties: async function(){
@@ -1176,7 +1257,7 @@ class AvailableTools {
     }
 
     // Главный метод для получения доступных инструментов
-    async getAvailableTools() {
+    async getToolsAvailableForUser() {
         // Применяем все методы к инструментам
         for (const tool of this.#toolsList) {
             tool.addUserID  &&  tool.addUserID(this.#userClass.userid)
@@ -1186,25 +1267,62 @@ class AvailableTools {
 
         // Фильтруем инструменты по группам и режимам пользователя
         const availableForToolCalls = this.#toolsList.filter((tool) => {
-            const availableForGroups = tool.availableForGroups || [];
-            const userGroups = this.#userClass.groups || [];
-            const isInGroup = userGroups.some(group => availableForGroups.includes(group));
+            const availableForUserGroups = tool.availableForUserGroups || [];
+            const userGroups = [...(this.#userClass.groups || []), 'all'];
+            const isInGroup = userGroups.some(group => availableForUserGroups.includes(group));
 
-            return tool.availableInRegimes.includes(this.#userClass.currentRegime)
-                && !tool.deprecated
+            return !tool.deprecated
                 && isInGroup;
         });
 
         return availableForToolCalls;
     }
 
-    // Метод для получения инструментов для completion (аналог getAvailableToolsForCompletion)
-    async getAvailableToolsForCompletion() {
-        const availableForToolCalls = await this.getAvailableTools();
-        return availableForToolCalls.filter((tool) => tool.availableForToolCalls).map((tool) => ({
+    async getToolsAvailableForAgent(agent) {
+        const toolsAvailableForUser = await this.getToolsAvailableForUser();
+        const toolsAvailableForAgent = toolsAvailableForUser.filter(tool => tool.availableForAgents && tool.availableForAgents.includes(agent))
+        return toolsAvailableForAgent.map((tool) => ({
             type: tool.type,
             name: tool.name,
             description: tool.description,
+            display_width: tool.display_width,
+            display_height: tool.display_height,
+            environment: tool.environment,
+            parameters: tool.parameters,
+            strict: tool.strict,
+            container: tool.container,
+            output_format: tool.output_format,
+            partial_images: tool.partial_images,
+            output_compression: tool.output_compression,
+            quality: tool.quality,
+            size: tool.size,
+            server_label: tool.server_label,
+            server_url: tool.server_url,
+            require_approval: tool.require_approval
+        }));
+    };
+
+    async getAvailableToolsForCompletion() {
+        const toolsAvailableForUser = await this.getToolsAvailableForUser();
+
+        const availableForToolCallsForCompletion = toolsAvailableForUser.filter((tool) => {
+            const availableForUserGroups = tool.availableForUserGroups || [];
+            const userGroups = this.#userClass.groups || [];
+            const userGroupsWithAll = [...userGroups, 'all'];
+            const isInGroup = userGroupsWithAll.some(group => availableForUserGroups.includes(group));
+
+            return tool.availableInRegimes.includes(this.#userClass.currentRegime)
+                && isInGroup
+                && tool.availableForToolCalls
+        });
+        
+        return availableForToolCallsForCompletion.map((tool) => ({
+            type: tool.type,
+            name: tool.name,
+            description: tool.description,
+            display_width: tool.display_width,
+            display_height: tool.display_height,
+            environment: tool.environment,
             parameters: tool.parameters,
             strict: tool.strict,
             container: tool.container,
@@ -1221,8 +1339,8 @@ class AvailableTools {
 
     // Метод для получения конфигурации инструмента по имени функции
     async toolConfigByFunctionName(functionName) {
-        const availableForToolCalls = await this.getAvailableTools();
-        return availableForToolCalls.find(doc => doc?.name === functionName && doc?.category === "custom");
+        const toolsAvailableForUser = await this.getToolsAvailableForUser();
+        return toolsAvailableForUser.find(doc => doc?.name === functionName);
     }
 }
 

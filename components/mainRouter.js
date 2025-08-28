@@ -1,7 +1,7 @@
 const telegramCmdHandler = require("./msgRouter.js");
 const openAIApi = require("./apis/openAI_API.js");
 const elevenLabsApi = require("./apis/elevenlabs_API.js");
-const telegramErrorHandler = require("./errorHandler.js");
+const ErrorHandler = require("./objects/ErrorHandler.js");
 const mongo = require("./apis/mongo.js");
 const msqTemplates = require("../config/telegramMsgTemplates.js");
 const ReplyMsg = require("./objects/ReplyMsg.js");
@@ -102,6 +102,7 @@ async function eventRouter(event,botInstance){
   let user,requestMsg,replyMsg;
   
   //Слушаем сообщения пользователей
+  let ErrorHandlerInstance;
   try {
     
     user = new User(event.from)
@@ -133,7 +134,9 @@ async function eventRouter(event,botInstance){
       requestMsgInstance:requestMsg,
       userInstance:user
     })
-    
+
+    ErrorHandlerInstance = new ErrorHandler({replyMsgInstance:replyMsg, dialogueInstance:dialogue});
+
     await dialogue.getMetaFromDB()
 
     if (process.env.PROD_RUN != "true") {
@@ -167,7 +170,7 @@ async function eventRouter(event,botInstance){
   for (const response of responses){
 
     if(response.operation === "updatePinnedMsg" ){
-      user.pinnedHeaderAllowed === true && await updatePinnedMsg(requestMsg,replyMsg)
+      user.pinnedHeaderAllowed === true && await updatePinnedMsg(requestMsg,replyMsg,ErrorHandlerInstance)
     } else if (response.operation === "removePinnedMsg"){
       await unpinAllChatMessages(replyMsg)
     } else if(response.operation === "updateSettings") {
@@ -185,13 +188,7 @@ async function eventRouter(event,botInstance){
 
   } catch (err) {
     err.place_in_code = err.place_in_code || "routerTelegram.eventRouter";
-
-    telegramErrorHandler.main(
-      {
-        replyMsgInstance:replyMsg,
-        error_object:err
-      }
-    );
+    if(ErrorHandlerInstance) ErrorHandlerInstance.handleError(err);
   }
 }
 
@@ -216,7 +213,7 @@ async function unpinAllChatMessages(replyMsg){
       }
 }
 
-async function updatePinnedMsg(requestMsg,replyMsg) {
+async function updatePinnedMsg(requestMsg,replyMsg,ErrorHandlerInstance) {
 
       const pinnedMsgText = pinnedMsg(requestMsg.user)
 
@@ -237,7 +234,7 @@ async function updatePinnedMsg(requestMsg,replyMsg) {
           if(!err.message.includes("message is not modified")){
             err.sendToUser = false
             err.place_in_code = err.place_in_code || "updatePinnedMsg.updatePinnedMsg";
-            telegramErrorHandler.main({replyMsgInstance:replyMsg,error_object:err})
+            ErrorHandlerInstance.handleError(err);
           }
         }
       }
