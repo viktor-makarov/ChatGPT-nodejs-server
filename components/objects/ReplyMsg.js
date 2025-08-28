@@ -276,6 +276,23 @@ async simpleMessageUpdate(text,options){
   return await this.#botInstance.editMessageText(text, options)
 }
 
+async sendTranscript(transcript,msgid,msglimit){
+
+  const chunks = otherFunctions.chunkByWords(transcript,msglimit)
+
+  await this.simpleMessageUpdate(chunks[0],
+          {chat_id:this.#chatId,
+            message_id:msgid
+          })
+
+  if(chunks.length>1){
+    for (let i = 1; i < chunks.length; i++) {
+      await this.sendToNewMessage(chunks[i],null,null,null)
+    }
+  }
+  
+}
+
 async updateMessageWithErrorHandling(text, options) {
 
   // The options variable is already passed as a parameter, no need to redeclare it.

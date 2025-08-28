@@ -28,7 +28,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   let responses = [];
 
   const errorHandlerInstance = new ErrorHandler({replyMsgInstance: replyMsgInstance, dialogueInstance: dialogueInstance});
-  console.log("requestMsgInstance.fileType",requestMsgInstance.fileType)
+  
   const current_regime = requestMsgInstance.user.currentRegime
   const userInstance = requestMsgInstance.user;
   const fileCaption =  requestMsgInstance.fileCaption
@@ -54,7 +54,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
  
   await requestMsgInstance.getFileLinkFromTgm()
 
-  if (requestMsgInstance.fileType === "voice" && !requestMsgInstance.isForwarded){
+  if (requestMsgInstance.fileType === "voice" && !requestMsgInstance.isForwarded && requestMsgInstance.duration_seconds < 300){
       const waitMsgResult = await replyMsgInstance.sendAudioListenMsg()
       const audioReadStream = await requestMsgInstance.audioReadableStreamFromTelegram()
 
@@ -88,10 +88,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
       replyMsgInstance.text = transcript;
       await Promise.all([
-        replyMsgInstance.simpleMessageUpdate(transcript,
-          {chat_id:replyMsgInstance.chatId,
-            message_id:waitMsgResult.message_id
-          }),
+        replyMsgInstance.sendTranscript(transcript,waitMsgResult.message_id,global.appsettings.telegram_options.big_outgoing_message_threshold),
         dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance),
         dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
       ])
@@ -99,7 +96,7 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
       dialogueInstance.triggerCallCompletion()
 
   } else if(requestMsgInstance.fileType === "voice" || requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note" || requestMsgInstance.fileType === "video"){
-
+    
     const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
 
     const url = s3UploadResult.Location
@@ -111,8 +108,6 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
       ])
     }
-
-    console.log("fileCaption",fileCaption)
 
     if(fileCaption){
       dialogueInstance.triggerCallCompletion()

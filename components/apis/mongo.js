@@ -638,11 +638,11 @@ async function addMsgIdToToolCall(obj){
 async function getExtractedTextByReff(content_reff){
   try {
 
-    const filter = { "tool_reply.fullContent.reff": { $in: content_reff}}
+    const filter = { "fullContent.reff": { $in: content_reff}}
     
     return await dialog_collection.find(
       filter
-      ,{"tool_reply.fullContent": 1}
+      ,{"fullContent": 1}
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";

@@ -2051,7 +2051,6 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                 textToSave = text
             } else {
                 const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
-                
                 previuslyExtractedContent.sort((a, b) => {
                     return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
                 });
@@ -2061,7 +2060,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                 }
                 
                 textToSave = previuslyExtractedContent.map(obj => {
-                    return obj.tool_reply.fullContent.results.map(obj =>obj.text)
+                    return obj.fullContent.results.map(obj =>obj.text)
                 }).flat().join('\n')
             }
 
@@ -2106,11 +2105,8 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
     async get_knowledge_base_item(argumentsJson){
 
             try{
-
             let result;
-
             const kwg_base_id = argumentsJson.id
-
             try{
             result = await mongo.getKwgItemBy(kwg_base_id)
 
@@ -2123,7 +2119,6 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
             } else {
                 return {success:0,error:"Nothing found in the knowledge based by your reguest. Review your request and retry."}
             }
-            
                 } catch(err){
                     err.place_in_code = err.place_in_code || "get_knowledge_base_item";
                     throw err;

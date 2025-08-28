@@ -895,6 +895,24 @@ function wireHtml(text){
     }
   } 
 
+  function chunkByWords(str, maxLen) {
+  const words = str.split(/(\s+)/);       // keep spaces as tokens
+  const chunks = [];
+  let buf = '';
+
+  for (const w of words) {
+    if ((buf + w).length > maxLen && buf) {
+      chunks.push(buf);
+      buf = w.trimStart();                // start new chunk
+    } else {
+      buf += w;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+
   async function getPageHtml(url, options = {}) {
     const { timeout = 30_000, delay_ms = 5_000} = options;
     
@@ -2769,5 +2787,6 @@ module.exports = {
   toHHMMSS,
   getMimeTypeFromPath,
   getPageScreenshotForBrowser,
-  htmlShorterner
+  htmlShorterner,
+  chunkByWords
 };
