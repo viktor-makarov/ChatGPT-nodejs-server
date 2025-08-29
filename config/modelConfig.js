@@ -12,7 +12,8 @@ module.exports = {
     "canUseTemperature":true,
     "canUseReasoning":false,
     "includeUsage":[
-        "message.input_image.image_url"
+        "message.input_image.image_url",
+        "code_interpreter_call.outputs"
     ],
     "timeout_ms":120000,
     "long_wait_notes": [
@@ -34,7 +35,8 @@ module.exports = {
     "canUseTemperature":true,
     "canUseReasoning":false,
     "includeUsage":[
-        "message.input_image.image_url"
+        "message.input_image.image_url",
+        "code_interpreter_call.outputs"
     ],
     "long_wait_notes": [
         {time_ms:30000,comment:"Сервер отвечает дольше обычного ...🤔"},
@@ -56,7 +58,8 @@ module.exports = {
     "canUseReasoning":true,
     "includeUsage":[
         "message.input_image.image_url",
-        "reasoning.encrypted_content"
+        "reasoning.encrypted_content",
+        "code_interpreter_call.outputs"
     ],
     "long_wait_notes": [
         {time_ms:30000,comment:"Сервер отвечает дольше обычного ...🤔"},
@@ -78,7 +81,8 @@ module.exports = {
     "canUseReasoning":true,
     "includeUsage":[
         "message.input_image.image_url",
-        "reasoning.encrypted_content"
+        "reasoning.encrypted_content",
+        "code_interpreter_call.outputs"
     ],
     "long_wait_notes": [
         {time_ms:30000,comment:"Сервер отвечает дольше обычного ...🤔"},
@@ -100,7 +104,8 @@ module.exports = {
     "canUseReasoning":true,
     "includeUsage":[
         "message.input_image.image_url",
-        "reasoning.encrypted_content"
+        "reasoning.encrypted_content",
+        "code_interpreter_call.outputs"
     ],
     "long_wait_notes": [
         {time_ms:30000,comment:"Сервер отвечает дольше обычного ...🤔"},

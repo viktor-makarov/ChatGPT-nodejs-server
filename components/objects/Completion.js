@@ -188,9 +188,15 @@ class Completion extends EventEmitter {
             break;
           case 'response.output_text.delta':
             this.#message_items[event.output_index].text += event?.delta || "";
+
+            if(this.#message_items[event.output_index].deliverResponseToTgm.sentMsgIds().length === 0){
+              await this.#message_items[event.output_index].deliverResponseToTgm.setInitialSentMsgId(this.#statusMsg)
+              this.#statusMsg = null;
+            };
             this.#message_items[event.output_index].throttledDeliverResponseToTgm()
             break;
           case 'response.image_generation_call.partial_image':
+            console.log("Partial image event")
             await this.#hostedImageGenerationCall.partialCommit(event)
             break
           case 'response.output_text.done':
@@ -232,30 +238,22 @@ class Completion extends EventEmitter {
 
   async handleOutputItemAdded(event){
     
-    if(!this.#statusMsg){
-      this.#statusMsg = await this.#replyMsg.sendStatusMsg()
-    }
-
     try{
       switch (event.item.type) {
         case 'message':
           this.handleMessageAdded(event)
-          this.#statusMsg = null;
           break;
         case 'function_call':
           await this.createFunctionCall(event)
-          this.#statusMsg = null;
           break;
         case 'web_search_call':
           this.#hostedSearchWebToolCall = this.searchWebToolCall(event)
           await this.#hostedSearchWebToolCall.initialCommitToTGM()
-          this.#statusMsg = null;
           break;
         case 'code_interpreter_call':
           if(!this.#hostedCodeInterpreterCall){
             this.#hostedCodeInterpreterCall = this.codeInterpreterCall()
             await this.#hostedCodeInterpreterCall.initialCommit()
-            this.#statusMsg = null;
           } else {
             await this.#hostedCodeInterpreterCall.resumeCommit()
           }
@@ -264,7 +262,6 @@ class Completion extends EventEmitter {
           if(!this.#hostedReasoningCall){
             this.#hostedReasoningCall = this.reasoningCall(event)
             await this.#hostedReasoningCall.initialCommit()
-            this.#statusMsg = null;
           } else {
             await this.#hostedReasoningCall.resumeCommit()
           }
@@ -272,21 +269,17 @@ class Completion extends EventEmitter {
         case 'image_generation_call':
           this.#hostedImageGenerationCall = this.imageGenerationCall(event)
           await this.#hostedImageGenerationCall.initialCommit()
-          this.#statusMsg = null;
           break;
         case 'mcp_list_tools':
           this.#hostedMCPToolRequest = this.MCPToolsRequest(event)
           await this.#hostedMCPToolRequest.initialCommit()
-          this.#statusMsg = null;
           break;
         case 'mcp_call':
           this.#hostedMCPCall = this.MCPCall(event)
           await this.#hostedMCPCall.initialCommit(event)
-          this.#statusMsg = null;
           break;
         case 'mcp_approval_request':
           this.#hostedMCPApprovalRequest = this.MCPApprovalRequest()
-          this.#statusMsg = null;
           break;
       }
       
@@ -311,7 +304,7 @@ class Completion extends EventEmitter {
         this.#message_items[output_index].role = role;
         this.#message_items[output_index].completion_ended = false;
         this.#message_items[output_index].text = "";
-        this.#message_items[output_index].deliverResponseToTgm = this.deliverResponseToTgmHandler(this.#statusMsg.message_id,this.#statusMsg.text.length,output_index);
+        this.#message_items[output_index].deliverResponseToTgm = this.deliverResponseToTgmHandler(output_index);
         this.#message_items[output_index].throttledDeliverResponseToTgm = this.throttleWithImmediateStart(this.#message_items[output_index].deliverResponseToTgm.run,appsettings.telegram_options.send_throttle_ms);
         this.#message_items[output_index].completion_version = this.#completionCurrentVersionNumber;
   }
@@ -361,14 +354,18 @@ class Completion extends EventEmitter {
       this.#message_items[output_index].content = [item?.content[0]];
       const completionObj = this.#message_items[output_index];
       this.#commitToDBQueue.add(() => this.#dialogue.commitCompletionDialogue(completionObj));
-    } else {
-      this.#tgmMessagesQueue.add(() => this.#replyMsg.deleteMsgByID(this.#message_items[output_index].deliverResponseToTgm.statusMsgId));
     }
   }
 
     reasoningCall(initialEvent){
 
-      const statusMsgId = this.#statusMsg?.message_id
+      let timerId = null;
+      const INTERVAL_MS = 2000;
+      const statusMsgIds = [];
+        if(this.#statusMsg){
+          statusMsgIds.push(this.#statusMsg.message_id)
+          this.#statusMsg = null;
+        }
       const {output_index,item} = initialEvent;
       const {type,status,id} = item;
       let functionDescription = "Рассуждение";
@@ -378,43 +375,60 @@ class Completion extends EventEmitter {
         "initialCommit":() => {
           this.#reasoningTimer.start_lap();
           let details = "думаю...";
-          const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-          this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
-            chat_id:this.#replyMsg.chatId,
-            message_id:statusMsgId,
-            reply_markup:null,
-            parse_mode: "html"
-          }))
+
+          timerId = setInterval(()=> {
+          const MsgText = `⏳ <b>${functionDescription}</b>: ${details}  ${this.#reasoningTimer.get_total_HHMMSS()}`
+          this.#tgmMessagesQueue.add(() => (async () =>{
+              if(statusMsgIds.length>0){
+                await this.#replyMsg.simpleMessageUpdate(MsgText,{
+                  chat_id:this.#replyMsg.chatId,
+                  message_id:statusMsgIds.at(-1),
+                  reply_markup:null,
+                  parse_mode: "html"
+                })
+              } else {
+                  const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
+                  statusMsgIds.push(result.message_id)
+              }
+            })())}, INTERVAL_MS);
         },
         "resumeCommit": async () => {
           
           this.#reasoningTimer.start_lap();
           let details = "снова думаю ...";
-          const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+
+          clearInterval(timerId);
+          timerId = setInterval(()=> {
+          const MsgText = `⏳ <b>${functionDescription}</b>: ${details} ${this.#reasoningTimer.get_total_HHMMSS()}`
           this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(MsgText,{
             chat_id:this.#replyMsg.chatId,
-            message_id:statusMsgId,
+            message_id:statusMsgIds.at(-1),
             reply_markup:null,
             parse_mode: "html"
-          }))
+          }))}, INTERVAL_MS);
         },
         "endCommit": async (reasoning_event) => {
           this.#reasoningTimer.stop_lap();
           const msgText = `✅ <b>${functionDescription}</b> ${this.#reasoningTimer.get_total_HHMMSS()}`
+          clearInterval(timerId);
           this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(msgText,{
               chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
+              message_id:statusMsgIds.at(-1),
               reply_markup:null,
               parse_mode: "html"
           }))
-          this.#commitToDBQueue.add(() => this.#dialogue.commitReasoningToDialogue(this.#responseId,output_index,reasoning_event.item));
+         // this.#commitToDBQueue.add(() => this.#dialogue.commitReasoningToDialogue(this.#responseId,output_index,reasoning_event.item));
         }
     }
   }
 
     MCPToolsRequest(initialEvent){
 
-      const statusMsgId = this.#statusMsg?.message_id
+      const statusMsgIds = [];
+        if(this.#statusMsg){
+          statusMsgIds.push(this.#statusMsg.message_id)
+          this.#statusMsg = null;
+        }
       const {output_index,item} = initialEvent;
       const {server_label} = item;
       let functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
@@ -425,12 +439,20 @@ class Completion extends EventEmitter {
           this.#mcpToolsTimer.start_lap();
           let details = "получаю список инструментов ...";
           const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-          this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
-            chat_id:this.#replyMsg.chatId,
-            message_id:statusMsgId,
-            reply_markup:null,
-            parse_mode: "html"
-          }))
+          this.#tgmMessagesQueue.add(() => (async () =>{
+
+              if(statusMsgIds.length>0){
+                await this.#replyMsg.simpleMessageUpdate(MsgText,{
+                  chat_id:this.#replyMsg.chatId,
+                  message_id:statusMsgIds.at(-1),
+                  reply_markup:null,
+                  parse_mode: "html"
+                })
+              } else {
+                  const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
+                  statusMsgIds.push(result.message_id)
+              }
+            })());
         },
         "endCommit": async (mcp_tool_event) => {
           this.#mcpToolsTimer.stop_lap();
@@ -440,21 +462,22 @@ class Completion extends EventEmitter {
 
           this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(msgText,{
               chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
+              message_id:statusMsgIds.at(-1),
               reply_markup:null,
               parse_mode: "html"
           }));
-          this.#commitToDBQueue.add(() => this.#dialogue.commitMCPToolsToDialogue(this.#responseId,output_index,mcp_tool_event.item));
+          this.#commitToDBQueue.add(() => this.#dialogue.commitMCPToolsToDialogue(this.#responseId,output_index,mcp_tool_event.item,statusMsgIds.at(-1)));
         }
       }
     }
 
     MCPApprovalRequest(){
 
-        const statusMsgId = this.#statusMsg?.message_id
-        
         return {
           "approvalRequest": async (event) => {
+
+            const statusMsg = this.#statusMsg ? structuredClone(this.#statusMsg) : await this.#replyMsg.sendStatusMsg();
+            this.#statusMsg = null;
 
             const {output_index,item} = event;
             const {type,server_label,id,name} = item;
@@ -463,15 +486,19 @@ class Completion extends EventEmitter {
             const functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
             const MsgText = `<b>${functionDescription}</b> запрашивает подтверждение. \nПодтвердите выполнение запроса <code>${name}</code> со следующими агрументами: <code>${call_arguments}</code>.`
 
-            const reply_markup = await this.craftReplyMarkupForMCPApprovalRequest(this.#responseId,output_index,item,statusMsgId,MsgText);
+            const reply_markup = await this.craftReplyMarkupForMCPApprovalRequest(this.#responseId,output_index,item,statusMsg.message_id,MsgText);
 
-            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
-                chat_id:this.#replyMsg.chatId,
-                message_id:statusMsgId,
-                reply_markup:reply_markup,
-                parse_mode: "html"
-            }));
-            this.#commitToDBQueue.add(() => this.#dialogue.commitMCPApprovalRequestToDialogue(this.#responseId,output_index,item,statusMsgId));
+            this.#tgmMessagesQueue.add(() => (async () =>{
+
+                await this.#replyMsg.simpleMessageUpdate(MsgText,{
+                  chat_id:this.#replyMsg.chatId,
+                  message_id:statusMsg.message_id,
+                  reply_markup:reply_markup,
+                  parse_mode: "html"
+                })
+
+            })());
+            this.#commitToDBQueue.add(() => this.#dialogue.commitMCPApprovalRequestToDialogue(this.#responseId,output_index,item,statusMsg.message_id));
           }
         }
       }
@@ -529,7 +556,14 @@ class Completion extends EventEmitter {
     
     MCPCall(initialEvent){
 
-        const statusMsgId = this.#statusMsg?.message_id
+        let timerId = null;
+        const INTERVAL_MS = 2000;
+        const statusMsgIds = [];
+        if(this.#statusMsg){
+          statusMsgIds.push(this.#statusMsg.message_id)
+          this.#statusMsg = null;
+        }
+
         const {output_index,item} = initialEvent;
         const {type,server_label,id,name,approval_request_id,} = item;
         let functionDescription = `${server_label.charAt(0).toUpperCase() + server_label.slice(1)}`;
@@ -541,13 +575,23 @@ class Completion extends EventEmitter {
             const {item} = event;
             const {name} = item;
             let details = `запрос '${name}'  ...`;
-            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
-              chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
-              reply_markup:null,
-              parse_mode: "html"
-            }))
+
+            timerId = setInterval(()=> {
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details} ${this.#mcpCallTimer.get_total_HHMMSS()}`
+            this.#tgmMessagesQueue.add(() => (async () =>{
+
+              if(statusMsgIds.length>0){
+                await this.#replyMsg.simpleMessageUpdate(MsgText,{
+                  chat_id:this.#replyMsg.chatId,
+                  message_id:statusMsgIds.at(-1),
+                  reply_markup:null,
+                  parse_mode: "html"
+                })
+              } else {
+                  const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
+                  statusMsgIds.push(result.message_id)
+              }
+            })())}, INTERVAL_MS);
           },
           "endCommit": async (event) => {
             const {output_index,item} = event;
@@ -564,13 +608,14 @@ class Completion extends EventEmitter {
             }
 
             const reply_markup = this.#user.showDetails ? await this.craftReplyMarkupForMCPCall(item,msgText) : null ;
+            clearInterval(timerId);
             this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(msgText,{
                 chat_id:this.#replyMsg.chatId,
-                message_id:statusMsgId,
+                message_id:statusMsgIds.at(-1),
                 reply_markup:reply_markup,
                 parse_mode: "html"
             })),
-            this.#commitToDBQueue.add(() => this.#dialogue.commitMCPCallToDialogue(this.#responseId,output_index,item,statusMsgId))
+            this.#commitToDBQueue.add(() => this.#dialogue.commitMCPCallToDialogue(this.#responseId,output_index,item,statusMsgIds.at(-1)))
           }
       }
     }
@@ -611,8 +656,15 @@ class Completion extends EventEmitter {
 
       imageGenerationCall(initialEvent){
 
-        const statusMsgId = this.#statusMsg?.message_id
-        let imageMsgId = new Set([]);
+        let timerId = null;
+        const INTERVAL_MS = 2000;
+        let statusMsgIds = [];
+        if(this.#statusMsg){
+          statusMsgIds.push(this.#statusMsg.message_id)
+          this.#statusMsg = null;
+        }
+
+        let imageMsgIds = [];
         const {output_index,item} = initialEvent;
         const {type,status,id} = item;
         let functionDescription = "Изображение OpenAI";
@@ -622,13 +674,23 @@ class Completion extends EventEmitter {
           "initialCommit":async () => {
             this.#imageGenTimer.start_lap();
             let details = "генерирую ...";
-            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
-              chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
-              reply_markup:null,
-              parse_mode: "html"
-            }))
+
+            timerId = setInterval(()=> {
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details} ${this.#imageGenTimer.get_total_HHMMSS()}`
+            this.#tgmMessagesQueue.add(() => (async () =>{
+
+              if(statusMsgIds.length>0){
+                await this.#replyMsg.simpleMessageUpdate(MsgText,{
+                  chat_id:this.#replyMsg.chatId,
+                  message_id:statusMsgIds.at(-1),
+                  reply_markup:null,
+                  parse_mode: "html"
+                })
+              } else {
+                  const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
+                  statusMsgIds.push(result.message_id)
+              }
+            })())}, INTERVAL_MS);
           },
           "partialCommit": async (event) => {
 
@@ -638,18 +700,30 @@ class Completion extends EventEmitter {
             const filename = `partial_image_${item_id.slice(0, 10)}_${partial_image_index}.${output_format}`;
             const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
             let details = "это еще не все. Продолжаю ..."
-            const caption = `⏳ <b>${functionDescription}</b>: ${details}`;
+            const caption = `⏳ <b>${functionDescription}</b>: ${details} ${this.#imageGenTimer.get_total_HHMMSS()}`;
 
+            clearInterval(timerId);
             this.#tgmMessagesQueue.add(() => Promise.all([
               (async () => { 
                 const {message_id} = await this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html")
-                imageMsgId.add(message_id);
+                imageMsgIds.push(message_id);
               })(),
+              
               (async () => {
-                const msgToDeleteID = Array.from(imageMsgId).length===0 ? statusMsgId : Array.from(imageMsgId).at(-1);
-                this.#replyMsg.deleteMsgByID(msgToDeleteID)
+                if(imageMsgIds.length>0){
+                  const msgToDeleteID = imageMsgIds.at(-1);
+                  await this.#replyMsg.deleteMsgByID(msgToDeleteID)
+                  imageMsgIds = imageMsgIds.filter(item => item !== msgToDeleteID)
+                }
               })()
             ]));
+
+            this.#tgmMessagesQueue.add(() =>(async () => {
+                if(statusMsgIds.length>0){
+                  await this.#replyMsg.deleteMsgByID(statusMsgIds.at(-1))
+                  statusMsgIds =[];
+                }
+              })());
     
           },
           "endCommit": async (completedEvent) => {
@@ -660,7 +734,7 @@ class Completion extends EventEmitter {
 
             const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
             const imageBuffer = Buffer.from(result, 'base64');
-            const filename = otherFunctions.valueToMD5(String(this.#user.userid))+ "_" + this.#user.currentRegime + "_" + otherFunctions.valueToMD5(String(imageMsgId)) + "." + output_format;
+            const filename = otherFunctions.valueToMD5(String(this.#user.userid))+ "_" + this.#user.currentRegime + "_" + otherFunctions.valueToMD5(String(imageMsgIds.at(-1))) + "." + output_format;
             const msgText = `✅ <b>${functionDescription}</b> ${this.#imageGenTimer.get_total_HHMMSS()}`;
             
             let caption;
@@ -671,19 +745,28 @@ class Completion extends EventEmitter {
              caption = `${msgText}\n\n${revised_prompt.slice(0, appsettings.telegram_options.big_outgoing_caption_threshold)}... --size ${size} --quality ${quality} --background ${background}`;
             }
                       
-            console.log(3)
+            clearInterval(timerId);
             this.#tgmMessagesQueue.add(() => Promise.all([
               (async () => {
-                const msgToDeleteID = Array.from(imageMsgId).length===0 ? statusMsgId : Array.from(imageMsgId).at(-1);
-                this.#replyMsg.deleteMsgByID(msgToDeleteID)
+                if(imageMsgIds.length>0){
+                  const msgToDeleteID = imageMsgIds.at(-1);
+                  await this.#replyMsg.deleteMsgByID(msgToDeleteID)
+                }
               })(),
              (async () => {
               const {Location} = await  awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
               const reply_markup = this.craftReplyMarkupForImageGeneration(Location);
               const {message_id} = await this.#replyMsg.sendOAIImage(imageBuffer,caption,id,output_format,mime_type,"html",reply_markup);
-              imageMsgId.add(message_id);
+              imageMsgIds.push(message_id);
              })()
             ]))
+
+            this.#tgmMessagesQueue.add(() =>(async () => {
+                if(statusMsgIds.length>0){
+                  await this.#replyMsg.deleteMsgByID(statusMsgIds.at(-1))
+                  statusMsgIds =[];
+                }
+              })());
             
             const fileComment = {
               image_id: id,
@@ -694,7 +777,6 @@ class Completion extends EventEmitter {
 
             this.#commitToDBQueue.add(() => this.#dialogue.commitImageToDialogue(fileComment,{url:null,base64:result,sizeBytes:imageBuffer.length,mimetype:mime_type},0,null));
             
-
             mongo.insertCreditUsage({
                     userInstance: this.#user,
                     creditType: "oai_image_generation",
@@ -722,7 +804,13 @@ class Completion extends EventEmitter {
 
       codeInterpreterCall(){
 
-        const statusMsgId = this.#statusMsg?.message_id
+        let timerId = null;
+        const INTERVAL_MS = 2000;
+        const statusMsgIds = [];
+        if(this.#statusMsg){
+          statusMsgIds.push(this.#statusMsg.message_id)
+          this.#statusMsg = null;
+        }
         let functionDescription = "Анализ данных";
 
         const codeInterpreterOutput = [];
@@ -734,30 +822,43 @@ class Completion extends EventEmitter {
           "initialCommit":() => {
             this.#codeIntTimer.start_lap();
             let details = "в работе ...";
-            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
-            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
-              chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
-              reply_markup:reply_markup,
-              parse_mode: "html"
-            }))
+            timerId = setInterval(()=> {
+
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details} ${this.#codeIntTimer.get_total_HHMMSS()}`
+            this.#tgmMessagesQueue.add(() => (async () =>{
+              if(statusMsgIds.length>0){
+                await this.#replyMsg.simpleMessageUpdate(MsgText,{
+                  chat_id:this.#replyMsg.chatId,
+                  message_id:statusMsgIds.at(-1),
+                  reply_markup:reply_markup,
+                  parse_mode: "html"
+                })
+              } else {
+                  const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
+                  statusMsgIds.push(result.message_id)
+              }
+            })())}, INTERVAL_MS);
           },
           "resumeCommit": async () => {
             this.#codeIntTimer.start_lap();
+
             let details = "снова в работе ...";
-            const MsgText = `⏳ <b>${functionDescription}</b>: ${details}`
+
+            clearInterval(timerId);
+            timerId = setInterval(()=> {
+            const MsgText = `⏳ <b>${functionDescription}</b>: ${details} ${this.#codeIntTimer.get_total_HHMMSS()}`
             this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
               chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
+              message_id:statusMsgIds.at(-1),
               reply_markup:reply_markup,
               parse_mode: "html"
-            }))
+            }))}, INTERVAL_MS);
           },
           "endCommit": async (completedEvent) => {
             this.#codeIntTimer.stop_lap();
             const {item,output_index} = completedEvent;
             const {code,outputs=[]} = item;
-
+  
             const outputsImages = [];
             const outputsLogs = [];
 
@@ -774,14 +875,16 @@ class Completion extends EventEmitter {
 
             codeInterpreterOutput.push({code, outputs: outputsLogs,output_index});
 
-            this.#commitToDBQueue.add(() => this.#dialogue.commitCodeInterpreterOutputToDialogue(this.#responseId,output_index,item,statusMsgId));
+            this.#commitToDBQueue.add(() => this.#dialogue.commitCodeInterpreterOutputToDialogue(this.#responseId,output_index,item,statusMsgIds.at(-1)));
 
             finalMsgText = `✅ <b>${functionDescription}</b> ${this.#codeIntTimer.get_total_HHMMSS()}`;
 
             reply_markup = this.#user.showDetails ? await this.craftReplyMarkupForDetails(codeInterpreterOutput,finalMsgText) : null
+            
+            clearInterval(timerId);
             this.#tgmMessagesQueue.add(() =>  this.#replyMsg.simpleMessageUpdate(finalMsgText,{
                 chat_id:this.#replyMsg.chatId,
-                message_id:statusMsgId,
+                message_id:statusMsgIds.at(-1),
                 reply_markup:reply_markup,
                 parse_mode: "html"
             }))
@@ -864,7 +967,12 @@ class Completion extends EventEmitter {
 
       searchWebToolCall(initialEvent){
 
-        const statusMsgId = this.#statusMsg?.message_id
+        const statusMsgIds = [];
+        if(this.#statusMsg){
+          statusMsgIds.push(this.#statusMsg.message_id)
+          this.#statusMsg = null;
+        }
+
         const {output_index,item} = initialEvent; 
         const {type,action} = item;
         let functionDescription;
@@ -900,13 +1008,20 @@ class Completion extends EventEmitter {
                 toolType = "web_search_preview";
             };
             const MsgText = `⏳ <b>${functionDescription}</b> `
-            this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(MsgText,{
-              chat_id:this.#replyMsg.chatId,
-              message_id:statusMsgId,
-              reply_markup:null,
-              parse_mode: "html"
-            }));
+            this.#tgmMessagesQueue.add(() => (async () =>{
 
+              if(statusMsgIds.length>0){
+                await this.#replyMsg.simpleMessageUpdate(MsgText,{
+                  chat_id:this.#replyMsg.chatId,
+                  message_id:statusMsgIds.at(-1),
+                  reply_markup:null,
+                  parse_mode: "html"
+                })
+              } else {
+                  const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
+                  statusMsgIds.push(result.message_id)
+              }
+            })());
           },
           "finalCommitToTGM": async (completedEvent) => {
           
@@ -929,7 +1044,7 @@ class Completion extends EventEmitter {
 
             this.#tgmMessagesQueue.add(() => this.#replyMsg.simpleMessageUpdate(msgText,{
                 chat_id:this.#replyMsg.chatId,
-                message_id:statusMsgId,
+                message_id:statusMsgIds.at(-1),
                 reply_markup:null,
                 parse_mode: "html"
             }));
@@ -962,7 +1077,8 @@ class Completion extends EventEmitter {
         const {item,output_index} = event;
         const {id,call_id,name,status} = item;
         const item_type = item.type;
-        const statusMsgId = this.#statusMsg?.message_id;
+        const statusMsg = this.#statusMsg ? structuredClone(this.#statusMsg) : await this.#replyMsg.sendStatusMsg();
+        this.#statusMsg = null;
 
         const availableTools = new AvailableTools(this.#user);
         const toolConfig = await availableTools.toolConfigByFunctionName(name);
@@ -979,12 +1095,13 @@ class Completion extends EventEmitter {
             replyMsgInstance:this.#replyMsg,
             dialogueInstance:this.#dialogue,
             requestMsgInstance:this.#requestMsg,
-            statusMsg:this.#statusMsg
+            statusMsg:statusMsg
         };
         this.#functionCalls[output_index] = new FunctionCall(options)
         
         this.#functionCalls[output_index].startFunctionTimer()
-        this.#tgmMessagesQueue.add(() => this.#functionCalls[output_index].initStatusMessage(statusMsgId))
+        this.#tgmMessagesQueue.add(() => this.#functionCalls[output_index].initStatusMessage())
+
       }
 
       async triggerFunctionCall(event){
@@ -1293,16 +1410,21 @@ class Completion extends EventEmitter {
       );
     };
 
-    deliverResponseToTgmHandler(initialMsgId,initialMsgCharCount = 0,output_index){
-          const sentMsgIds = new Set([initialMsgId])
-          let sentMsgsCharCount = [initialMsgCharCount];
+    deliverResponseToTgmHandler(output_index){
+          const sentMsgIds = new Set([])
+          let sentMsgsCharCount;
           let replyMarkUpCount = [null];
           const additionalMsgOptions = {disable_web_page_preview: true};
           let completion_delivered = false;
           const completionObject = this.#message_items[output_index];
            
       return {
-        "statusMsgId": initialMsgId,
+        "sentMsgIds":() => Array.from(sentMsgIds),
+        "setInitialSentMsgId": async (statusMsgInput) => {
+          const statusMsg = statusMsgInput ? structuredClone(statusMsgInput) : await this.#replyMsg.sendStatusMsg()
+          sentMsgIds.add(statusMsg.message_id)
+          sentMsgsCharCount = [statusMsg.text.length]
+        },
         "run":async () =>{
 
           try{

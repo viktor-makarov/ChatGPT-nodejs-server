@@ -1096,7 +1096,7 @@ class AvailableTools {
                     additionalProperties: false
                 },
                 friendly_name: "Конвертертация",
-                timeout_ms: 15000,
+                timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
@@ -1147,7 +1147,7 @@ class AvailableTools {
                     additionalProperties: false
                 },
                 friendly_name: "Курсы валют",
-                timeout_ms: 15000,
+                timeout_ms: 30000,
                 try_limit: 30,
                 availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],

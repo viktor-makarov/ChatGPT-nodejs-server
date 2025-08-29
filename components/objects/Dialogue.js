@@ -702,7 +702,7 @@ class Dialogue {
     };
 
     async commitMCPToolsToDialogue(responseId,output_index,mcp_tool_item,tgm_msg_id){
-
+        
         const {id,server_label,tools} = mcp_tool_item;
         const datetime = new Date();
         const sourceid = `${responseId}_output_index_${output_index}`;

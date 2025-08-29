@@ -327,7 +327,7 @@ const TelegramDialogSheema = new Schema(
     mcp_call_approve: { type: Boolean},
     mcp_call_user_response_reason: { type: String},
     mcp_call_id: { type: String},
-    mcp_call_error: { type: String},
+    mcp_call_error: { type: Object},
     mcp_call_output: { type: String},
     image_id: { type: String},
     image_result_base64: { type: String},

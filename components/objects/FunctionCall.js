@@ -12,6 +12,7 @@ const devPrompts = require("../../config/developerPrompts.js");
 const { error } = require("pdf-lib");
 const AvailableTools = require("./AvailableTools.js");
 const WebBrowser = require("./WebBrowser.js");
+const { set } = require("mongoose");
 
 class FunctionCall {
     #replyMsg;
@@ -35,6 +36,8 @@ class FunctionCall {
     #functionTimer
     #availableToolsInstance
     #errorHandlerInstance
+    #statusMsgUpdateIntervalId = null;
+    #INTERVAL_MS = 2000;
     
 constructor(obj) {
     this.#functionCall = obj.functionCall;
@@ -305,6 +308,7 @@ async functionErrorPrompt(errorObject){
 triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
 
     return long_wait_notes.map(note => {        
+
             const options = {
                 chat_id:this.#replyMsg.chatId,
                 message_id:tgmMsgId,
@@ -313,8 +317,11 @@ triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
 
             return setTimeout(() => {
                 if(this.#inProgress){
-                const MsgText = `<b>${this.#functionConfig.friendly_name}</b>. Выполняется.\n${note.comment}`
-                this.#replyMsg.simpleMessageUpdate(MsgText,options)
+                clearInterval(this.#statusMsgUpdateIntervalId);
+                this.#statusMsgUpdateIntervalId = setInterval(() => {
+                    const MsgText = `<b>${this.#functionConfig.friendly_name}</b>. Выполняется.\n${note.comment} ${this.#functionTimer.get_total_HHMMSS()}`
+                    this.#replyMsg.simpleMessageUpdate(MsgText,options)
+                }, this.#INTERVAL_MS);
             }
             }, note.time_ms);
         })
@@ -347,39 +354,44 @@ async backExecutingStatusMessage(statusMessageId){
     })
 }
 
+set statusMsgUpdateIntervalId(value){
+    this.#statusMsgUpdateIntervalId = value
+}
 
-
-async initStatusMessage(msgId){
+async initStatusMessage(){
     const functionFriendlyName = this.#functionConfig.friendly_name;
-    const msgText = `⏳ <b>${functionFriendlyName}</b> ...`
+    this.#statusMsgUpdateIntervalId = setInterval(async () => {
+    const msgText = `⏳ <b>${functionFriendlyName}</b> ${this.#functionTimer.get_total_HHMMSS()}`
     await this.#replyMsg.simpleMessageUpdate(msgText,{
         chat_id:this.#replyMsg.chatId,
-        message_id:msgId,
+        message_id:this.#statusMsgId,
         reply_markup:null,
         parse_mode: "html"
-    })
+    })}, this.#INTERVAL_MS);
 }
 
 async executionStatusMessage(msgId){
 
     const {friendly_name} = this.#functionConfig;
     const {function_description,site_name} = this.#argumentsJson;
-    let msgText;
+    clearInterval(this.#statusMsgUpdateIntervalId);
+    this.#statusMsgUpdateIntervalId = setInterval(async () => {
+        let msgText;
 
-    if (site_name && function_description) {
-        msgText = `⏳ <b>${friendly_name} ${site_name}</b>: ${function_description} ...`
-    } else if (function_description) {
-        msgText = `⏳ <b>${friendly_name}</b>: ${function_description} ...`
-    } else {
-        msgText = `⏳ <b>${friendly_name}</b>: ...`
-    }
-    
-    await this.#replyMsg.simpleMessageUpdate(msgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:msgId,
-        reply_markup:null,
-        parse_mode: "html"
-    })
+        if (site_name && function_description) {
+            msgText = `⏳ <b>${friendly_name} ${site_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
+        } else if (function_description) {
+            msgText = `⏳ <b>${friendly_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
+        } else {
+            msgText = `⏳ <b>${friendly_name}</b>: ${this.#functionTimer.get_total_HHMMSS()}`
+        }
+        
+        await this.#replyMsg.simpleMessageUpdate(msgText,{
+            chat_id:this.#replyMsg.chatId,
+            message_id:msgId,
+            reply_markup:null,
+            parse_mode: "html"
+        })}, this.#INTERVAL_MS);
 }
 
 async progressStatusChange(progressText){
@@ -414,6 +426,7 @@ async finalizeStatusMessage(functionResult,statusMessageId){
     const {friendly_name} = this.#functionConfig;
     const {function_description,site_name} = this.#argumentsJson;
     let msgText;
+    clearInterval(this.#statusMsgUpdateIntervalId);
     const resultIcon = functionResult.success === 1 ? "✅" : "❌";
     if (site_name && function_description) {
         msgText = `${resultIcon} <b>${friendly_name} ${site_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
@@ -1501,7 +1514,7 @@ ${diagram_body}`;
         async handleExchangeRateQuery(query_params){
 
             const {date,from_currency,to_currency} = query_params;
-            const api_result_xml = await cbrAPI.get_rate_by_date(date);
+            const api_result_xml = await cbrAPI.get_rate_by_date(date,this.#timeoutId);
             const api_result_json = await cbrAPI.convertCbrXmlToJson(api_result_xml);
 
             const ex_rate = api_result_json[from_currency] / api_result_json[to_currency];
@@ -1538,7 +1551,7 @@ ${diagram_body}`;
                     converted_amount = ex_rate * amount;
 
             } else {
-                const api_result = await ExRateAPI.get_rate("USD");
+                const api_result = await ExRateAPI.get_rate("USD",this.#timeoutId);
                 ex_rate = api_result[to_currency] / api_result[from_currency]
                 converted_amount = ex_rate * amount;
                 mongo.saveExchangeRateInternational(api_result) //intentionally async
