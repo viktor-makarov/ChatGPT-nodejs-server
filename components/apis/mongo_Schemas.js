@@ -420,6 +420,52 @@ const SelfCorrectedInstructionsSheema = new Schema(
   { collection: appsettings.mongodb_names.coll_self_corrected_instructions }
 );
 
+const TempReplyMarkupSheema = new Schema(
+  {
+    userid: { type: Number, index: true },
+    messageId: { type: Number, index: true },
+    replyMarkup: { type: Object },
+    createdAt: {
+      type: Date,
+      default: Date.now
+    }
+  },
+  { collection: appsettings.mongodb_names.coll_temp_reply_markup }
+);
+
+const tempResourceStorageSheema = new Schema({
+  userid: { type: Number, index: true },
+  resourceId: { type: Number, index: true },
+  resourceType: { type: String, index: true },
+  extracted: { type: Boolean, default: false },
+  embeddedInDialogue: { type: Boolean, default: false },
+  resourceData: { type: Object },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+},
+{ collection: appsettings.mongodb_names.coll_temp_resource_storage }
+);
+
+const outputDocumentSheema = new Schema({
+  userid: { type: Number, index: true },
+  documentId: { type: String, index: true },
+  fileName: { type: String },
+  fileCaption: { type: String },
+  contentText: { type: Array },
+  contentHtml: { type: Array },
+  status: { type: String,  default: 'inprogress' },
+  contentSizeTokens: { type: Number },
+  contentSizeSymbols: { type: Number },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+},
+{ collection: appsettings.mongodb_names.coll_output_documents }
+);
+
 module.exports = {
   ProfileSheema,
   LogsSheema,
@@ -441,5 +487,8 @@ module.exports = {
   ExchangeRates,
   ResponseEventsSheema,
   TestDiagramSheema,
-  SelfCorrectedInstructionsSheema
+  SelfCorrectedInstructionsSheema,
+  TempReplyMarkupSheema,
+  tempResourceStorageSheema,
+  outputDocumentSheema
 };

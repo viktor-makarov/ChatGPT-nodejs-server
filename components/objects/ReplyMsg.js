@@ -369,6 +369,20 @@ async updateMessageReplyMarkup(msgId,reply_markup){
 )
 }
 
+async editMessageCaption(caption, msgId, parse_mode) {
+
+
+  let options = {
+    chat_id: this.#chatId,
+    message_id: msgId,
+  };
+
+  if (parse_mode) {
+    options.parse_mode = parse_mode;
+  }
+
+  return await this.#botInstance.editMessageCaption(caption, options);
+}
 
 async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,parse_mode="html"){
 
@@ -397,6 +411,10 @@ async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,par
       
       return result.data;
 }
+
+
+
+
 
 async sendToNewMessage(text,reply_markup,parse_mode,add_options){
 
@@ -838,6 +856,14 @@ async removeAllButtonsFromMsg(msgId){
         {chat_id:this.#chatId,message_id:msgId}
     )
 }
+
+async removeReplyMarkupFromMsg(msgId){
+   await this.#botInstance.editMessageReplyMarkup(
+        { inline_keyboard: [] },
+        {chat_id:this.#chatId,message_id:msgId}
+    )
+}
+
 
 throttle(fn, delay) {
     let timerId;

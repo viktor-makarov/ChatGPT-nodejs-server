@@ -28,7 +28,48 @@ const exchange_rates_international_collection = global.mongoConnection.model(glo
 const response_events_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_response_events,scheemas.ResponseEventsSheema);
 const test_diagram_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_test_diagram_log,scheemas.TestDiagramSheema);
 const self_corrected_instructions_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_self_corrected_instructions,scheemas.SelfCorrectedInstructionsSheema);
+const temp_reply_markup_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_temp_reply_markup,scheemas.TempReplyMarkupSheema);
 
+const temp_resource_storage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_temp_resource_storage,scheemas.tempResourceStorageSheema);
+const output_document_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_output_documents,scheemas.outputDocumentSheema);
+
+
+async function saveTempReplyMarkup(user_id, message_id, reply_markup){
+
+  try {
+    const object = {userid:user_id,messageId:message_id,replyMarkup:reply_markup};
+    const newReplyMarkup = new temp_reply_markup_collection(object);
+    return await newReplyMarkup.save();
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveTempReplyMarkup";
+      throw err;
+  }
+};
+
+async function getTempReplyMarkup(user_id) {
+
+  try {
+    const result = await temp_reply_markup_collection.find({ user_id: user_id }, { _id: 0, __v: 0 }).lean()
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getTempReplyMarkup";
+    throw err;
+  }
+}
+
+async function deleteTempReplyMarkup(user_id){
+
+  try {
+    return await temp_reply_markup_collection.deleteMany({ userid: user_id });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteTempReplyMarkup";
+    throw err;
+  }
+}
 
 async function getSelfCorrectedInstructions(domain, type) {
   try {
@@ -1801,5 +1842,8 @@ module.exports = {
   addTokensUsage,
   saveNewTestDiagram,
   addCorrectionToInstructions,
-  getSelfCorrectedInstructions
+  getSelfCorrectedInstructions,
+  saveTempReplyMarkup,
+  getTempReplyMarkup,
+  deleteTempReplyMarkup
 };

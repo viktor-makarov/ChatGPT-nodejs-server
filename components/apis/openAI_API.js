@@ -9,16 +9,20 @@ const mongo = require("./mongo.js");
 const otherFunctions = require("../common_functions.js");
 const axios = require("axios");
 const OpenAI = require("openai");
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-  timeout: 180000
-});
-const AvailableTools = require("../objects/AvailableTools.js");
 
-async function responseStream(dialogueClass,instructions = null) {
+const AvailableTools = require("../objects/AvailableTools.js");
+const { time } = require("console");
+
+async function responseStream(dialogueClass,instructions = null){
+
 
 const userInstance = dialogueClass.userInstance
 const model = userInstance.currentModel
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: modelConfig[model].timeout_ms || 180000,
+});
 
 const input = await dialogueClass.getDialogueForRequest(model)
 
@@ -27,7 +31,7 @@ const options = {
     input: input,
     stream: true,
     store:false,
-    background: false,
+    background: false
 }
 const includeUsage = modelConfig[model].includeUsage
 if (includeUsage) {
@@ -63,6 +67,11 @@ return responseStream;
 }
 
 async function responseSync(model,instructions, input,temperature = 0,tools = [],tool_choice = "auto",output_format = { "type": "text" },truncation = null) {
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: 180000,
+});
 
 const options = {
     model: model,

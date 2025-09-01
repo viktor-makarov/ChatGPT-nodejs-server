@@ -1,12 +1,13 @@
 const mongo = require("../apis/mongo");
 const msqTemplates = require("../../config/telegramMsgTemplates");
 const otherFunctions = require("../common_functions");
-const { APIError } = require("openai");
+const { APIError,APIConnectionTimeoutError } = require("openai");
 
 class ErrorHandler {
 
 #replyMsgInstance;
 #dialogueInstance;
+#userInstance
 #userid;
 #userLanguageCode;
 
@@ -18,6 +19,7 @@ class ErrorHandler {
     this.#dialogueInstance = dialogueInstance;
     this.#userid = replyMsgInstance?.user?.userid || null;
     this.#userLanguageCode = replyMsgInstance.user.language_code;
+    this.#userInstance = replyMsgInstance.user;
   }
 
   applyDefaults(err){
@@ -32,10 +34,11 @@ async handleError(err){
   err = this.applyDefaults(err)
 
 try{
+console.log("Error occurred:", err)
 
 err.userid = this.#userid;
 err = await this.enrichErrorObject(err)
-//console.log("Error occurred:", err)
+
 
 //Log to mongodb
 const error_to_log  = this.createErrorObjectForMongo(err);
@@ -59,12 +62,21 @@ if(err.sendToUser){
     const detailsHtml = `<pre>Код ошибки: ${err.internal_code}. Запись в логе _id=<code>${err.mongodblog_id}</code></pre>\n\nПодробности:<pre><code class="json">${JSON.stringify(err.details,null,4)}</code></pre>`
     reply_markup = await this.replyMarkupForDetails(detailsHtml,err.sendToUserText)
     }
-    const user_msg_result = await this.#replyMsgInstance.simpleSendNewMessage(err.sendToUserText,reply_markup,"html",{disable_web_page_preview: true})
+  /*  if(this.#replyMsgInstance.lastMsgSentId){
+        await this.#replyMsgInstance.simpleMessageUpdate(err.sendToUserText,{
+                  chat_id:this.#replyMsgInstance.chatId,
+                  message_id:this.#replyMsgInstance.lastMsgSentId,
+                  reply_markup:reply_markup,
+                  parse_mode: "html"
+                })
+    }   else {*/
+        await this.#replyMsgInstance.simpleSendNewMessage(err.sendToUserText,reply_markup,"html",{disable_web_page_preview: true})
+         otherFunctions.logToTempFile(`Error ${new Date()} | ${err.user_message}`,`messageLog.txt`)
+        //  }
 }
 
 //Add message to dialogue
 if(err.systemMsg){
-    console.log("2")
     const systemMsgStr = typeof err.systemMsg === "object" ? JSON.stringify(err.systemMsg) : err.systemMsg
     await this.#dialogueInstance.commitDevPromptToDialogue(systemMsgStr);
 }
@@ -74,7 +86,7 @@ if( this.#replyMsgInstance.user.isAdmin && err.adminlog && err.mongodblog){
     let unfolded_text = JSON.stringify(error_to_log,null,4)
     unfolded_text = otherFunctions.wireHtml(unfolded_text)
 
-    const unfoldedTextHtml = `<b>Error details:</b>\n${JSON.stringify(error_to_log,null,4)}`
+    const unfoldedTextHtml = `<b>Error details:</b>\n<pre><code class="json">${JSON.stringify(error_to_log,null,4)}</code></pre>`
     const sendToAdminText = "Детали ошибки из лога Mongo DB"
 
     let infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:sendToAdminText})
@@ -89,7 +101,6 @@ if( this.#replyMsgInstance.user.isAdmin && err.adminlog && err.mongodblog){
     
     const add_options = {disable_web_page_preview: true}
     const admin_msg_result = await this.#replyMsgInstance.simpleSendNewMessage(sendToAdminText,replyMarkap,"html",add_options)
-
 }
 
 } catch(error){
@@ -102,7 +113,16 @@ if( this.#replyMsgInstance.user.isAdmin && err.adminlog && err.mongodblog){
 
 async enrichErrorObject(err){
 
-    if(err instanceof APIError){
+    if(err instanceof APIConnectionTimeoutError){
+
+        console.log(err)
+        err.user_message = otherFunctions.getLocalizedPhrase("OAI_timeout",this.#userLanguageCode)
+        err.details = err.message
+        err.mongodblog = false
+        err.consolelog = false
+        err.adminlog = false
+
+    } else if(err instanceof APIError ){
 
         const {error} = err;
         const {message,type,param,code} = error;

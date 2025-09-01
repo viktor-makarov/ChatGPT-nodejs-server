@@ -2294,6 +2294,14 @@ function htmlShorterner(html,limit){
     }
 
   const $ = cheerio.load(html, null, false);
+  saveTextToTempFile(html,"before_shortening.html")
+  console.log("Number of nodes",$('*')                // every element
+  .contents()                               // its children, incl. text nodes
+  .filter((_, node) =>                      // keep…
+    node.type === 'text' &&                 // …only real text nodes
+    node.data.trim() !== ''                 // …that aren’t just whitespace
+  )
+  .length)
 
   const excessLength = totalLength - limit;
   let longestTextNode = null;
@@ -2311,6 +2319,7 @@ function htmlShorterner(html,limit){
 
   if (longestTextNode) {
       const currentText = $(longestTextNode).text();
+      console.log("text length",currentText.length)
       // Укорачиваем текст на нужное количество символов и добавляем '...(текст сокращен)'
       const shortenedText = currentText.slice(0, longestTextNodeLength - excessLength - endStr.length) + endStr;
       $(longestTextNode).replaceWith(shortenedText);

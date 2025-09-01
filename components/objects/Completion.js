@@ -196,7 +196,6 @@ class Completion extends EventEmitter {
             this.#message_items[event.output_index].throttledDeliverResponseToTgm()
             break;
           case 'response.image_generation_call.partial_image':
-            console.log("Partial image event")
             await this.#hostedImageGenerationCall.partialCommit(event)
             break
           case 'response.output_text.done':
@@ -390,6 +389,8 @@ class Completion extends EventEmitter {
                   const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
                   statusMsgIds.push(result.message_id)
               }
+
+              if(this.#reasoningTimer.get_total_seconds > 120) clearInterval(timerId)
             })())}, INTERVAL_MS);
         },
         "resumeCommit": async () => {
@@ -405,7 +406,9 @@ class Completion extends EventEmitter {
             message_id:statusMsgIds.at(-1),
             reply_markup:null,
             parse_mode: "html"
-          }))}, INTERVAL_MS);
+          }))
+          if(this.#reasoningTimer.get_total_seconds > 120) clearInterval(timerId)
+        }, INTERVAL_MS);
         },
         "endCommit": async (reasoning_event) => {
           this.#reasoningTimer.stop_lap();
@@ -591,6 +594,7 @@ class Completion extends EventEmitter {
                   const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
                   statusMsgIds.push(result.message_id)
               }
+              if(this.#reasoningTimer.get_total_seconds > 120) clearInterval(timerId)
             })())}, INTERVAL_MS);
           },
           "endCommit": async (event) => {
@@ -690,7 +694,9 @@ class Completion extends EventEmitter {
                   const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
                   statusMsgIds.push(result.message_id)
               }
-            })())}, INTERVAL_MS);
+            })())
+          if(this.#reasoningTimer.get_total_seconds > 120) clearInterval(timerId)
+          }, INTERVAL_MS);
           },
           "partialCommit": async (event) => {
 
@@ -701,30 +707,37 @@ class Completion extends EventEmitter {
             const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
             let details = "это еще не все. Продолжаю ..."
             const caption = `⏳ <b>${functionDescription}</b>: ${details} ${this.#imageGenTimer.get_total_HHMMSS()}`;
-
-            clearInterval(timerId);
+            
             this.#tgmMessagesQueue.add(() => Promise.all([
-              (async () => { 
-                const {message_id} = await this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html")
-                imageMsgIds.push(message_id);
-              })(),
-              
               (async () => {
                 if(imageMsgIds.length>0){
-                  const msgToDeleteID = imageMsgIds.at(-1);
-                  await this.#replyMsg.deleteMsgByID(msgToDeleteID)
-                  imageMsgIds = imageMsgIds.filter(item => item !== msgToDeleteID)
+                    await this.#replyMsg.updateMediaFromBuffer(imageMsgIds.at(-1),partialImageBuffer,filename,"photo",caption,null,"html")
+                } else {
+                  const {message_id} = await this.#replyMsg.sendOAIImage(partialImageBuffer,caption,item_id,output_format,mime_type,"html",null);
+                  imageMsgIds.push(message_id);
                 }
               })()
+              
             ]));
 
-            this.#tgmMessagesQueue.add(() =>(async () => {
-                if(statusMsgIds.length>0){
+            clearInterval(timerId);
+            this.#tgmMessagesQueue.add(() => (async () => {
+                if(statusMsgIds.length>0){ 
                   await this.#replyMsg.deleteMsgByID(statusMsgIds.at(-1))
                   statusMsgIds =[];
                 }
-              })());
-    
+              })()
+            )
+
+            timerId = setInterval(()=> {
+              const captionUpdate = `⏳ <b>${functionDescription}</b>: ${details} ${this.#imageGenTimer.get_total_HHMMSS()}`;
+            this.#tgmMessagesQueue.add(() => 
+              (async () => {
+                await this.#replyMsg.editMessageCaption(captionUpdate,imageMsgIds.at(-1),"html")
+              })())
+            if(this.#reasoningTimer.get_total_seconds > 120) clearInterval(timerId)
+            }, INTERVAL_MS);
+
           },
           "endCommit": async (completedEvent) => {
             this.#imageGenTimer.stop_lap();
@@ -748,25 +761,28 @@ class Completion extends EventEmitter {
             clearInterval(timerId);
             this.#tgmMessagesQueue.add(() => Promise.all([
               (async () => {
-                if(imageMsgIds.length>0){
-                  const msgToDeleteID = imageMsgIds.at(-1);
-                  await this.#replyMsg.deleteMsgByID(msgToDeleteID)
-                }
-              })(),
-             (async () => {
-              const {Location} = await  awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
-              const reply_markup = this.craftReplyMarkupForImageGeneration(Location);
-              const {message_id} = await this.#replyMsg.sendOAIImage(imageBuffer,caption,id,output_format,mime_type,"html",reply_markup);
-              imageMsgIds.push(message_id);
-             })()
-            ]))
-
-            this.#tgmMessagesQueue.add(() =>(async () => {
                 if(statusMsgIds.length>0){
                   await this.#replyMsg.deleteMsgByID(statusMsgIds.at(-1))
                   statusMsgIds =[];
                 }
-              })());
+              })(),
+             (async () => {
+
+
+
+              if(imageMsgIds.length>0){
+                await this.#replyMsg.updateMediaFromBuffer(imageMsgIds.at(-1),imageBuffer,filename,"photo",caption,null,"html")
+              } else {
+                const {message_id} =  await this.#replyMsg.sendOAIImage(imageBuffer,caption,id,output_format,mime_type,"html",null);
+                imageMsgIds.push(message_id);
+              }
+              const {Location} = await  awsApi.uploadFileToS3FromBuffer(imageBuffer,filename)
+              const reply_markup = this.craftReplyMarkupForImageGeneration(Location);
+
+              await this.#replyMsg.updateMessageReplyMarkup(imageMsgIds.at(-1),reply_markup)
+              mongo.saveTempReplyMarkup(this.#user.userid,imageMsgIds.at(-1),reply_markup)
+            })()
+            ]))
             
             const fileComment = {
               image_id: id,
@@ -775,8 +791,10 @@ class Completion extends EventEmitter {
               content: "Image generated with image generation tool",
             }
 
-            this.#commitToDBQueue.add(() => this.#dialogue.commitImageToDialogue(fileComment,{url:null,base64:result,sizeBytes:imageBuffer.length,mimetype:mime_type},0,null));
+            this.#commitToDBQueue.add(() => this.#dialogue.commitImageToDialogue(fileComment,{url:null,base64:result,sizeBytes:imageBuffer.length,mimetype:mime_type},0,imageMsgIds.at(-1)));
             
+            setTimeout(() => this.#replyMsg.removeReplyMarkupFromMsg(imageMsgIds.at(-1)).catch(err => console.log(`Cannot delete ${imageMsgIds.at(-1)}`)),global.appsettings.telegram_options.edit_message_timeout_ms)
+
             mongo.insertCreditUsage({
                     userInstance: this.#user,
                     creditType: "oai_image_generation",
@@ -784,7 +802,6 @@ class Completion extends EventEmitter {
                     usage: 1,
                     details: {place_in_code:"imageGenerationCall"}
                 })
-
           }
       }
     }
@@ -837,7 +854,9 @@ class Completion extends EventEmitter {
                   const result = await this.#replyMsg.sendToNewMessage(MsgText,null,"html");
                   statusMsgIds.push(result.message_id)
               }
-            })())}, INTERVAL_MS);
+            })())
+          if(this.#reasoningTimer.get_total_seconds > 120) clearInterval(timerId)
+          }, INTERVAL_MS);
           },
           "resumeCommit": async () => {
             this.#codeIntTimer.start_lap();
@@ -852,7 +871,9 @@ class Completion extends EventEmitter {
               message_id:statusMsgIds.at(-1),
               reply_markup:reply_markup,
               parse_mode: "html"
-            }))}, INTERVAL_MS);
+            }))
+          if(this.#reasoningTimer.get_total_seconds > 120) clearInterval(timerId)
+          }, INTERVAL_MS);
           },
           "endCommit": async (completedEvent) => {
             this.#codeIntTimer.stop_lap();
@@ -907,10 +928,11 @@ class Completion extends EventEmitter {
                 public_url: Location
                 };
                 const {message_id} = await this.#replyMsg.sendCodeInterpreterImage(imageBuffer,null,filename,mimeType,"html",reply_markup);
+                mongo.saveTempReplyMarkup(this.#user.userid,message_id,reply_markup)
+                setTimeout(() => this.#replyMsg.removeReplyMarkupFromMsg(message_id).catch(err => console.log(`Cannot delete ${imageMsgIds.at(-1)}`)),global.appsettings.telegram_options.edit_message_timeout_ms)
                 this.#commitToDBQueue.add(() => this.#dialogue.commitImageToDialogue(fileComment,{base64:data,mimetype:mimeType,sizeBytes},index,message_id));
               })())
             })
-
 
             mongo.insertCreditUsage({
                     userInstance: this.#user,
@@ -919,7 +941,6 @@ class Completion extends EventEmitter {
                     usage: 1,
                     details: {place_in_code:"codeInterpreterCall"}
                 })
-
           }
       }
     }
@@ -1312,7 +1333,6 @@ class Completion extends EventEmitter {
         if(long_wait_notes && long_wait_notes.length > 0){
             
             for (const note of long_wait_notes){
-                
                 const timeoutInstance = setTimeout(() => {
                   this.updateStatusMsg(note.comment,statusMsg.message_id,statusMsg.chat.id)
                 }, note.time_ms);

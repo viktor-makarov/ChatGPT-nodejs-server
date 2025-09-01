@@ -281,17 +281,23 @@ class Dialogue {
 
     async deleteAllInlineButtons() {
 
-        const documentsWithBtns = await mongo.getDocByTgmBtnsFlag(this.#user.userid,this.#user.currentRegime)
-        
-        if(documentsWithBtns.length === 0){
-            return
-        }
 
         let lastTgmMsgIdsFromCompletions = new Set();
+
+        const [documentsWithBtns,tempReplyMarkup] = await Promise.all([
+            mongo.getDocByTgmBtnsFlag(this.#user.userid,this.#user.currentRegime),
+            mongo.getTempReplyMarkup(this.#user.userid)
+        ])
         
-        documentsWithBtns.forEach(doc => {
+        documentsWithBtns.length > 0 && documentsWithBtns.forEach(doc => {
             if (doc.telegramMsgId && Array.isArray(doc.telegramMsgId) && doc.telegramMsgId.length > 0) {
                 lastTgmMsgIdsFromCompletions.add(doc.telegramMsgId.at(-1));
+            }
+        });
+
+        tempReplyMarkup.length > 0 && tempReplyMarkup.forEach(doc => {
+            if (doc.messageId) {
+                lastTgmMsgIdsFromCompletions.add(doc.messageId);
             }
         });
      
@@ -307,6 +313,9 @@ class Dialogue {
                 console.log("Error in deleteAllInlineButtons",err.message)
             }
         }
+
+        await mongo.deleteTempReplyMarkup(this.#user.userid)
+
         }
 
 
