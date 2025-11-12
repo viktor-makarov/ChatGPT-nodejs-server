@@ -5,6 +5,8 @@
 
 #Temp files
 tempfiles/
+releaseRoadmaps/
+diagrams/myDrafts/
 
 # Node artifact files
 node_modules/

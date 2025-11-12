@@ -17,7 +17,9 @@ const { set } = require("mongoose");
 class FunctionCall {
     #replyMsg;
     #requestMsg;
-    #dialogue
+    #dialogue;
+    #completion;
+    #output_index;
     #user;
     #inProgress = false;
     #tokensLimitPerCall;
@@ -31,13 +33,9 @@ class FunctionCall {
     #long_wait_notes;
     #timeoutId
     #tool_call_id
-    #statusMsg
-    #statusMsgId
     #functionTimer
     #availableToolsInstance
     #errorHandlerInstance
-    #statusMsgUpdateIntervalId = null;
-    #INTERVAL_MS = 2000;
     
 constructor(obj) {
     this.#functionCall = obj.functionCall;
@@ -47,20 +45,18 @@ constructor(obj) {
     this.#replyMsg = obj.replyMsgInstance;
     this.#dialogue = obj.dialogueInstance;
     this.#requestMsg = obj.requestMsgInstance;
+    this.#completion = obj.completionInstance;
     this.#user = obj.dialogueInstance.userInstance;
-    this.#timeout_ms = this.#functionConfig.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
-    this.#statusMsg = obj?.statusMsg;
-    this.#statusMsgId = this.#statusMsg.message_id;
+    this.#timeout_ms = this.#functionConfig?.timeout_ms ? this.#functionConfig.timeout_ms : 30000;
+    this.#output_index = obj.output_index;
     this.#functionTimer = this.timer();
     this.#availableToolsInstance = new AvailableTools(this.#user);
     this.#errorHandlerInstance = new ErrorHandler({replyMsgInstance: this.#replyMsg, dialogueInstance: this.#dialogue});
-
 };
 
 async removeFunctionFromQueue(){
-    this.#functionConfig.queue_name && await mongo.removeFunctionFromQueue(this.#functionCall.tool_call_id)
+    this.#functionConfig?.queue_name && await mongo.removeFunctionFromQueue(this.#functionCall.tool_call_id)
 }
-
 
 timer(){
         const timeLaps = [];
@@ -104,13 +100,13 @@ timer(){
       }
     }
 
-    startFunctionTimer(){
-        this.#functionTimer.start_lap();
-    }
+startFunctionTimer(){
+    this.#functionTimer.start_lap();
+}
 
-    endFunctionTimer(){
-        this.#functionTimer.stop_lap();
-    }
+endFunctionTimer(){
+    this.#functionTimer.stop_lap();
+}
 
 get functionName(){
     return this.#functionName;
@@ -144,7 +140,7 @@ get tool_config(){
     return this.#functionCall?.tool_config
 }
 
-async addFunctionToQueue(statusMessageId){
+async addFunctionToQueue(){
 
     const queue_name = this.#functionConfig.queue_name
    
@@ -166,14 +162,14 @@ async addFunctionToQueue(statusMessageId){
         if(result){
             
             if(statusMessage === `in queue`){
-                await this.backExecutingStatusMessage(statusMessageId)
+                this.#completion.updateOutputItemDetails(this.#output_index,`выполняется`)
                 statusMessage = `execution`
             }
             return true
         } else {
 
             if(statusMessage === `execution`){
-              await this.inQueueStatusMessage(statusMessageId)
+              this.#completion.updateOutputItemDetails(this.#output_index,`ожидает очереди`)
               statusMessage = `in queue`
             }
             await func.delay(interval_ms)
@@ -210,10 +206,10 @@ async router(){
         this.validateFunctionCallObject(this.#functionCall)
         this.#argumentsJson = this.argumentsToJson(this.#functionCall?.function_arguments);
         
-        await this.executionStatusMessage(this.#statusMsgId)
-        await this.addFunctionToQueue(this.#statusMsgId)
+        await this.addFunctionDescToProgressMsg()
+        await this.addFunctionToQueue()
 
-        this.#long_wait_notes = this.triggerLongWaitNotes(this.#statusMsgId,this.#functionConfig.long_wait_notes)
+        this.#long_wait_notes = this.triggerLongWaitNotes(this.#functionConfig.long_wait_notes)
        
         functionOutcome = await this.functionHandler(this.#argumentsJson);
         functionOutcome.tool_call_id = this.#tool_call_id;
@@ -242,11 +238,11 @@ async router(){
         this.clearLongWaitNotes()
         await this.removeFunctionFromQueue()
         await this.handleFunctionsStatus(functionOutcome?.success,this.#functionName,err?.queue_timeout)
-        this.#statusMsgId && await this.finalizeStatusMessage(functionOutcome,this.#statusMsgId)
 
-        this.#replyMsg.insertFunctionUsage({ //intentionally async
+        mongo.insertFunctionUsagePromise({ //intentionally async
             userInstance:this.#user,
             tool_function:this.#functionName,
+            tool_call: this.#functionCall,
             tool_reply:{...functionOutcome, supportive_data: undefined},
             call_duration:functionOutcome?.supportive_data?.duration,
             success:functionOutcome.success
@@ -260,7 +256,7 @@ async functionErrorPrompt(errorObject){
     const {tool_call_id, functionName, errorMessage, errorStack, assistant_instructions,user_instructions} = errorObject;
 
 
-    const availableFunctions = await this.#availableToolsInstance.getAvailableToolsForCompletion()
+    const availableFunctions = await this.#availableToolsInstance.getAvailableToolsForCompletion("main")
     const otherAvailableFunctions = availableFunctions.map(func => func.name).filter(funcName => funcName !== functionName);
 
     let prompt = `
@@ -305,24 +301,14 @@ async functionErrorPrompt(errorObject){
 
 }
 
-triggerLongWaitNotes(tgmMsgId,long_wait_notes = []){
+triggerLongWaitNotes(long_wait_notes = []){
 
     return long_wait_notes.map(note => {        
 
-            const options = {
-                chat_id:this.#replyMsg.chatId,
-                message_id:tgmMsgId,
-                parse_mode:"html"
-            }
-
             return setTimeout(() => {
                 if(this.#inProgress){
-                clearInterval(this.#statusMsgUpdateIntervalId);
-                this.#statusMsgUpdateIntervalId = setInterval(() => {
-                    const MsgText = `<b>${this.#functionConfig.friendly_name}</b>. Выполняется.\n${note.comment} ${this.#functionTimer.get_total_HHMMSS()}`
-                    this.#replyMsg.simpleMessageUpdate(MsgText,options)
-                }, this.#INTERVAL_MS);
-            }
+                    this.#completion.updateOutputItemDetails(this.#output_index,note.comment)
+                }
             }, note.time_ms);
         })
 };
@@ -334,134 +320,35 @@ clearLongWaitNotes() {
     }
 }
 
-async inQueueStatusMessage(statusMessageId){
 
-    const msgText = `⏳ <b>${this.#functionConfig.friendly_name}</b>. В очереди ... `
 
-    const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:statusMessageId
-    })
+async addFunctionDescToProgressMsg(){
 
-}
-
-async backExecutingStatusMessage(statusMessageId){
-    const msgText = `⏳ ${this.#functionConfig.friendly_name}`
-
-    const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:statusMessageId
-    })
-}
-
-set statusMsgUpdateIntervalId(value){
-    this.#statusMsgUpdateIntervalId = value
-}
-
-async initStatusMessage(){
-    const functionFriendlyName = this.#functionConfig.friendly_name;
-    this.#statusMsgUpdateIntervalId = setInterval(async () => {
-    const msgText = `⏳ <b>${functionFriendlyName}</b> ${this.#functionTimer.get_total_HHMMSS()}`
-    await this.#replyMsg.simpleMessageUpdate(msgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:this.#statusMsgId,
-        reply_markup:null,
-        parse_mode: "html"
-    })}, this.#INTERVAL_MS);
-}
-
-async executionStatusMessage(msgId){
-
-    const {friendly_name} = this.#functionConfig;
     const {function_description,site_name} = this.#argumentsJson;
-    clearInterval(this.#statusMsgUpdateIntervalId);
-    this.#statusMsgUpdateIntervalId = setInterval(async () => {
-        let msgText;
 
         if (site_name && function_description) {
-            msgText = `⏳ <b>${friendly_name} ${site_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
+            this.#completion.updateOutputItemDetails(this.#output_index,`${site_name} - ${function_description}`)
         } else if (function_description) {
-            msgText = `⏳ <b>${friendly_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
-        } else {
-            msgText = `⏳ <b>${friendly_name}</b>: ${this.#functionTimer.get_total_HHMMSS()}`
+            this.#completion.updateOutputItemDetails(this.#output_index,`${function_description}`)
         }
-        
-        await this.#replyMsg.simpleMessageUpdate(msgText,{
-            chat_id:this.#replyMsg.chatId,
-            message_id:msgId,
-            reply_markup:null,
-            parse_mode: "html"
-        })}, this.#INTERVAL_MS);
 }
 
 async progressStatusChange(progressText){
 
-    const {friendly_name} = this.#functionConfig;
     const {function_description,site_name} = this.#argumentsJson;
-const statusMessageId = this.#statusMsgId;
 
-if(!statusMessageId || !progressText){
-    return
-}
-
-let msgText;
-if (site_name && function_description) {
-    msgText = `⏳ <b>${friendly_name} ${site_name}</b>: ${function_description} - ${progressText} ...`
-} else if (function_description) {
-    msgText = `⏳ <b>${friendly_name}</b>: ${function_description} - ${progressText} ...`
-} else {
-    msgText = `⏳ <b>${friendly_name}</b> - ${progressText} ...`
-}
-
-await this.#replyMsg.simpleMessageUpdate(msgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:statusMessageId,
-        reply_markup:null,
-        parse_mode: "html"
-    })
-}
-
-
-async finalizeStatusMessage(functionResult,statusMessageId){
-    const {friendly_name} = this.#functionConfig;
-    const {function_description,site_name} = this.#argumentsJson;
-    let msgText;
-    clearInterval(this.#statusMsgUpdateIntervalId);
-    const resultIcon = functionResult.success === 1 ? "✅" : "❌";
-    if (site_name && function_description) {
-        msgText = `${resultIcon} <b>${friendly_name} ${site_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
-    } else if (function_description) {
-        msgText = `${resultIcon} <b>${friendly_name}</b>: ${function_description} ${this.#functionTimer.get_total_HHMMSS()}`
-    } else {
-        msgText = `${resultIcon} <b>${friendly_name}</b> ${this.#functionTimer.get_total_HHMMSS()}`
+    if(!progressText){
+        return
     }
-    
-      const reply_markup =  this.#user.showDetails ? await this.craftReplyMarkupForFunctionCall(functionResult,msgText) : null;
 
-      const result = await this.#replyMsg.simpleMessageUpdate(msgText,{
-        chat_id:this.#replyMsg.chatId,
-        message_id:statusMessageId,
-        reply_markup:reply_markup,
-        parse_mode: "html"
-    })
+if (site_name && function_description) {
+    this.#completion.updateOutputItemDetails(this.#output_index,`${site_name} - ${function_description} - ${progressText}`)
+} else if (function_description) {
+    this.#completion.updateOutputItemDetails(this.#output_index,`${function_description} - ${progressText}`)
 }
 
-async craftReplyMarkupForFunctionCall(functionResult,msgText){
-
-    const unfoldedTextHtml = this.buildFunctionResultHtml(functionResult)
-    const infoForUserEncoded = await func.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:msgText})
-    const callback_data = {e:"un_f_up",d:infoForUserEncoded}
-    
-    const fold_button = {
-        text: "Показать подробности",
-        callback_data: JSON.stringify(callback_data),
-      };
-
-return {
-        one_time_keyboard: true,
-        inline_keyboard: [[fold_button],],
-      };
 }
+
 
 modifyStringify(key,value){
 
@@ -474,8 +361,12 @@ return value
 buildFunctionResultHtml(functionResult){
     
     let argsText = JSON.stringify(this.#argumentsJson,this.modifyStringify,2)
+    func.saveTextToTempFile(argsText,"function_arguments1.json")
     argsText = func.unWireText(argsText)
-    const request = `<pre>${func.wireHtml(argsText)}</pre>`
+    func.saveTextToTempFile(argsText,"function_arguments2.json")
+    argsText = func.wireHtml(argsText)
+    func.saveTextToTempFile(argsText,"function_arguments3.json")
+    const request = `<pre>${argsText}</pre>`
 
     let stringifiedFunctionResult = JSON.stringify(functionResult,this.modifyStringify,2)
     
@@ -495,26 +386,32 @@ async selectAndExecuteFunction(argumentsJson) {
         "create_midjourney_image": () => this.CreateMdjImageRouter(argumentsJson),
         "imagine_midjourney": () => this.ImagineMdjRouter(argumentsJson),
         "custom_midjourney": () => this.CustomQueryMdjRouter(argumentsJson),
-        "extract_text_from_file": () => this.extract_text_from_file_router(argumentsJson),
-        "speech_to_text": () => this.speechToText(argumentsJson),
+        //file handling
+        "extract_content": () => this.extract_content(argumentsJson),
+        "save_to_document": () => this.saveToDocument(argumentsJson),
+        "generate_document": () => this.generateDocument(argumentsJson),
         "fetch_url_content": () => this.fetchUrlContentRouter(argumentsJson),
-        "create_pdf_file": () => this.createPDFFile(argumentsJson),
         "create_excel_file": () => this.createExcelFile(argumentsJson),
-        "create_text_file": () => this.createTextFile(argumentsJson),
+        "text_to_speech": () => this.textToSpeech(argumentsJson),
+        //RAG (database)
         "get_chatbot_errors": () => this.get_data_from_mongoDB_by_pipepine("errors_log",argumentsJson),
         "get_functions_usage": () => this.get_data_from_mongoDB_by_pipepine("functions_log",argumentsJson),
+        "get_users_activity": () => this.get_data_from_mongoDB_by_pipepine("tokens_logs",argumentsJson),
+        //RAG (text)
         "get_knowledge_base_item": () => this.get_knowledge_base_item(argumentsJson),
         "get_user_guide": () => this.get_user_guide(argumentsJson),
-        "get_users_activity": () => this.get_data_from_mongoDB_by_pipepine("tokens_logs",argumentsJson),
+        //Analytical capabilities
         "run_javascript_code": () => this.runJavascriptCode(argumentsJson),
         "run_python_code": () => this.runPythonCode(argumentsJson),
-        "text_to_speech": () => this.textToSpeech(argumentsJson),
+        //Special capabilities
         "currency_converter": () => this.currencyConverter(argumentsJson),
         "get_currency_rates": () => this.getCurrencyRates(argumentsJson),
         "web_search": () => this.webSearch(argumentsJson),
         "create_mermaid_diagram": () => this.createMermaidDiagrams(argumentsJson),
         "web_browser": () => this.webBrowser(argumentsJson),
     };
+
+    
     
     const targetFunction = functionMap[this.#functionName];
     if (!targetFunction) {
@@ -759,7 +656,7 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
             }
             ];
           
-          const tools = await this.#availableToolsInstance.getToolsAvailableForAgent(functionName)
+          const tools = await this.#availableToolsInstance.getToolsAvailableForAgent(functionName);
           
           const tool_choice = "required"
           const output_format = { "type": "text" };
@@ -1972,148 +1869,171 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
         }
     }
 
-    async createPDFFile(argumentsJson){
+    async generateDocument(argumentsJson){
 
-        this.validateRequiredFieldsFor_createPDFFile(argumentsJson)
+        this.validateRequiredFieldsFor_generateDocument(argumentsJson)
 
-        const {filename,html,content_reff} = argumentsJson
+        const {filename,status,content,function_description} = argumentsJson
+        const extension = filename.slice(filename.lastIndexOf('.')+1);
+        const data = {};
 
-        let formatedHtml;
-        if(html){
-            formatedHtml = func.formatHtml(html,filename)
+        if(status==="inprogress"){ 
+
+            const resultAfterUpdate = await mongo.insertContentToOutputStorage(filename,this.#user.userid,this.#user.currentRegime,content);
+
+            return {success:1,result:`New piece of content for file ${filename} has been added to the temporary storage. You need to send the next piece of content to complete the generation of the file.`};
             
-        } else {
-            const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
+        } else if (status==="completed") {
 
-            previuslyExtractedContent.sort((a, b) => {
-                return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
-            });
-
-            if(previuslyExtractedContent.length === 0){
-                return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
-            }
-            formatedHtml = func.fileContentToHtml(previuslyExtractedContent,filename)
-            
+            const contentChuncs = await mongo.getContentByFilename(filename,this.#user.userid);
+            if(contentChuncs.length===0){
+                data.combinedContent = content;
+            } else {
+                data.combinedContent = contentChuncs.map(item => item.content).join('\n');
+                data.combinedContent += `\n${content}`;
+            };
         }
 
-        const filebuffer = await func.htmlToPdfBuffer(formatedHtml,this.#timeout_ms)
-        const mimetype = "application/pdf"
+        if(extension==="pdf"){
+            const formatedHtml = func.formatHtml(data.combinedContent,filename)
+            func.saveTextToTempFile(formatedHtml,"formatedHtml.txt")
+            data.filebuffer = await func.htmlToPdfBuffer(formatedHtml,this.#timeout_ms)
+        } else {
+            data.filebuffer = func.generateTextBuffer(data.combinedContent)
+        }
+            data.mimetype = func.getMimeTypeFromPath(filename)
+            const {sizeBytes, sizeString} = func.calculateFileSize(data.filebuffer)
+            data.sizeBytes = sizeBytes;
+            data.sizeString = sizeString;
+
+            func.checkFileSizeToTgmLimit(content.sizeBytes,appsettings.telegram_options.file_size_limit)
+
+        console.log("generateDocument",filename,status,content.length)
+        func.saveTextToTempFile(data.combinedContent,"generatedDocumentContent.txt")
+
+        if(this.#isCanceled){return}
+
+        const result = {success:1,supportive_data:{response_delivered:true},result:`File ${filename} (${data.sizeString} bytes) was sent to the user.`};
+        const caption = this.craftFinalMessageText({success:1,function_description,site_name:null});
+        const reply_markup = null;
         
-        const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
-        
-        func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+        console.log("generateDocument",filename,data.mimetype,data.filebuffer.length)
+        await Promise.all([
+            this.#replyMsg.sendDocumentAsBinary(data.filebuffer,filename,data.mimetype || 'text/plain',{caption, parse_mode:"html",reply_markup})
+        ])
+
+        return result
+    }
+
+    craftFinalMessageText(objectParams){
+        const {success,function_description,site_name} = objectParams;
+        //may be will be useful in future
+        return null
+    };
+
+    async saveToDocument(argumentsJson){
+
+        this.validateRequiredFieldsFor_saveToDocument(argumentsJson)
+
+        const {resource_ids,filename,function_description} = argumentsJson
+        const resources = await mongo.getResourcesById(resource_ids,this.#user.currentRegime)
+        if(resources.length===0){
+            throw new Error("Resource is not found by id.")
+        };
+
+        resources.sort((a, b) => {return resource_ids.indexOf(a.resourceId) - resource_ids.indexOf(b.resourceId)});
+        const content = {}
+
+        const extension = filename.slice(filename.lastIndexOf('.')+1);
+
+        if(extension==="pdf"){
+
+            const htmlParts = resources.map(res => res?.resourceData?.content_html || "");
+            const combinedHtml = htmlParts.join('<div style="page-break-after: always;"></div>')
+            const formatedHtml = func.formatHtml(combinedHtml,filename)
+            content.mimetype = "application/pdf"
+
+            content.filebuffer = await func.htmlToPdfBuffer(formatedHtml,this.#timeout_ms)
+            const {sizeBytes, sizeString} = func.calculateFileSize(content.filebuffer)
+            content.sizeBytes = sizeBytes;
+            content.sizeString = sizeString;
+
+        } else {
+
+            const textParts = resources.map(res => res.resourceData.content_text)
+            const combinedText = textParts.join('\n\n')
+            content.mimetype = func.getMimeTypeFromPath(filename)
+
+            content.filebuffer = func.generateTextBuffer(combinedText)
+            const {sizeBytes, sizeString} = func.calculateFileSize(content.filebuffer)
+            content.sizeBytes = sizeBytes;
+            content.sizeString = sizeString;
+        }
+
+        func.checkFileSizeToTgmLimit(content.sizeBytes,appsettings.telegram_options.file_size_limit)
         
         if(this.#isCanceled){return}
 
-        await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+        const result = {success:1,supportive_data:{response_delivered:true},result:`The file ${filename} (${content.sizeString}) has been generated and successfully sent to the user.`};
+        const caption = this.craftFinalMessageText({success:1,function_description,site_name:null});
+        const reply_markup = null;
+
+        await Promise.all([
+            this.#replyMsg.sendDocumentAsBinary(content.filebuffer,filename,content.mimetype || 'text/plain',{caption, parse_mode:"html",reply_markup}),
+        ])
         
-        return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
+        return result
+        }
+
+    async textToSpeech(argumentsJson){
+
+            this.validateRequiredFieldsFor_textToSpeech(argumentsJson)
+
+            const {filename,text,voice} = argumentsJson
+
+            const constrainedText = func.handleTextLengthForTextToVoice(this.#user.language_code,text)
+            const filenameWithExt = `${filename}_${voice}.mp3` || `tts_${voice}_${Date.now()}.mp3`
+            const readableStream = await elevenLabsApi.textToVoiceStream(constrainedText,voice)
+
+            const msgResult = await this.#replyMsg.sendAudio(readableStream,filenameWithExt);
+
+            mongo.insertCreditUsage({
+                    userInstance: this.#user,
+                    creditType: "text_to_speech",
+                    creditSubType: "elevenlabs",
+                    usage:msgResult?.result?.audio?.duration || 0,
+                    details: {place_in_code:"textToSpeech function"}
+                })
+
+            return {success:1,result:`Audio file ${filenameWithExt} has been generated and successfully sent to the user.`}
         }
 
 
-        async textToSpeech(argumentsJson){
+    async runPythonCode(argumentsJson){
 
-                this.validateRequiredFieldsFor_textToSpeech(argumentsJson)
+        try{
+            let result;               
+            const codeToExecute = argumentsJson.python_code
 
-                const {filename,text,content_reff,voice} = argumentsJson
+        try{
+        result = await func.executePythonCode(codeToExecute)
 
-                let textToConvert;
-                if(text){
-                    textToConvert = text
-                } else {
-                    const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
-                    
-                    previuslyExtractedContent.sort((a, b) => {
-                        return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
-                    });
+        } catch(err) {
 
-                    if(previuslyExtractedContent.length === 0){
-                        return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
-                    }
-                    
-                    textToConvert = previuslyExtractedContent.map(obj => {
-                        return obj.tool_reply.fullContent.results.map(obj =>obj.text)
-                    }).flat().join('\n')
-                }
-
-                const constrainedText = func.handleTextLengthForTextToVoice(this.#user.language_code,textToConvert)
-                const filenameWithExt = `${filename}_${voice}.mp3` || `tts_${voice}_${Date.now()}.mp3`
-                const readableStream = await elevenLabsApi.textToVoiceStream(constrainedText,voice)
-
-                const msgResult = await this.#replyMsg.sendAudio(readableStream,filenameWithExt);
-
-                mongo.insertCreditUsage({
-                      userInstance: this.#user,
-                      creditType: "text_to_speech",
-                      creditSubType: "elevenlabs",
-                      usage:msgResult?.result?.audio?.duration || 0,
-                      details: {place_in_code:"textToSpeech function"}
-                    })
-
-                return {success:1,result:`Audio file ${filenameWithExt} has been generated and successfully sent to the user.`}
-            }
-
-        async createTextFile(argumentsJson){
-
-            this.validateRequiredFieldsFor_createTextFile(argumentsJson)
-
-            const {filename,text,content_reff,mimetype} = argumentsJson
-
-            let textToSave;
-            if(text){
-                textToSave = text
-            } else {
-                const previuslyExtractedContent = await mongo.getExtractedTextByReff(content_reff)
-                previuslyExtractedContent.sort((a, b) => {
-                    return content_reff.indexOf(a.tool_reply.fullContent.reff) - content_reff.indexOf(b.tool_reply.fullContent.reff);
-                });
-
-                if(previuslyExtractedContent.length === 0){
-                    return {success:0,error:`The content with the provided reff (${content_reff}) is not found in the database. Please check the reff and try again.`}
-                }
-                
-                textToSave = previuslyExtractedContent.map(obj => {
-                    return obj.fullContent.results.map(obj =>obj.text)
-                }).flat().join('\n')
-            }
-
-            const filebuffer = func.generateTextBuffer(textToSave)
-            const {sizeBytes,sizeString} = func.calculateFileSize(filebuffer)
-            
-            func.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
-
-            if(this.#isCanceled){return}
-
-            await  this.#replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
-            
-            return {success:1,result:`The file ${filename} (${sizeString}) has been generated and successfully sent to the user.`}
+            return {success:0,error: err.message + "" + err.stack}
         }
 
-        async runPythonCode(argumentsJson){
-
-            try{
-             let result;               
-             const codeToExecute = argumentsJson.python_code
-
-            try{
-            result = await func.executePythonCode(codeToExecute)
-
-            } catch(err) {
-
-                return {success:0,error: err.message + "" + err.stack}
-            }
-    
-            if (result === ""){
-                return {success:0,error:"No function output.",instructions:"You forgot to add print the results."}
-            }
+        if (result === ""){
+            return {success:0,error:"No function output.",instructions:"You forgot to add print the results."}
+        }
+        
+        return {success:1,result:result,instructions:"Explain your code to the user in details step by step."}
             
-            return {success:1,result:result,instructions:"Explain your code to the user in details step by step."}
-                
-                } catch(err){
-                    err.place_in_code = err.place_in_code || "runPythonCode";
-                    throw err;
-                }
-            };
+            } catch(err){
+                err.place_in_code = err.place_in_code || "runPythonCode";
+                throw err;
+            }
+        };
     
     async get_knowledge_base_item(argumentsJson){
 
@@ -2138,21 +2058,184 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                 }
         };
 
+    async transcribeMediaFile(openAIToken,url,mine_type,sizeBytes){
+    
+      const readableStream = await func.audioReadableStream(url,mine_type);
+      let transcript;
+    
+            try {
+                const {words} = await elevenLabsApi.speechToText(readableStream)
+                transcript = func.textByRolesFromWords(words);
+            } catch(err){
+                func.voiceToTextConstraintsCheck(mine_type,sizeBytes);
+                transcript = await openAIApi.VoiceToText(readableStream,openAIToken)
+                return {text:transcript}
+            };
+            return {text:transcript}
+    }
 
-    async extractTextFromFileWraper(resource_url,resource_mine_type,sizeBytes,index){
+    async extractContentWraper(resource,index){
+
+            const {resourceId,resourceType,resourceData: {fileName,mimeType,url,content_text,content_html,fileSize,tgmUrl,tgmUrlExpiration,pageCount,s3Url}} = resource;
+            
+            const internetSourceUrl = url;
+
+            const result = {
+                    resourceId,
+                    fileName:fileName,
+                    index
+                };
+            const data = {};
+
             try{
-                const extractedObject = await func.extractTextFromFile(resource_url,resource_mine_type,sizeBytes,this.#user)
-                return {...extractedObject,index,resource_url,resource_mine_type}
+
+                let url;
+                if(tgmUrlExpiration < new Date() && s3Url){
+                    url = s3Url;
+                } else {
+                    url = tgmUrl;
+                }
+
+                if(!url && !internetSourceUrl){
+                    const error = new Error("Url source is not found.")
+                    throw error;
+                }
+
+                const content = {}
+                if(resourceType==="url"){
+
+                    const {html,screenshot} = await func.getPageContent(internetSourceUrl,{delay_ms:3000,timeout_ms:15000})
+                    content.raw_html = html;
+                    content.screenshotBase64 = screenshot?.base64;
+                    content.screenshotSizeBytes = screenshot?.sizeBytes;
+                    content.screenshotMimeType = screenshot?.mimetype;
+                    const text = func.convertHtmlToText(html);
+                    content.html = text;
+                    content.text = text;
+
+                } if(resourceType==="media"){
+
+                    const {text} = await this.transcribeMediaFile(this.#user.openAIToken,url,mimeType,fileSize);
+                    content.text = text;
+                    
+                    mongo.insertCreditUsage({
+                        userInstance: this.#user,
+                        creditType: "speech_to_text",
+                        creditSubType: "elevenlabs",
+                        usage:duration || 0,
+                        details: {place_in_code:"extractContentWraper"}
+                    })
+
+                } else if(resourceType==="image"){
+                    
+                    const {text} = await func.documentOCR(url,mimeType);
+                    content.text = text;
+
+                    mongo.insertCreditUsage({
+                        userInstance: this.#user,
+                        creditType: "ocr",
+                        creditSubType: "image",
+                        usage: fileSize || 0,
+                        details: {place_in_code:"extractContentWraper"}
+                    })
+
+                } else if(resourceType==="document"){ 
+                    
+                    if(mimeType === "application/pdf"){
+
+                        if(content_text){
+                            content.text = content_text;
+                            content.html = content_html;
+                        } else {
+
+                            const fileBuffer = await func.fileDownload(url)
+
+                            let combined_text ="";
+                            if(pageCount <= appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk){
+                                const {text} = await func.documentOCR(url,mimeType);
+                                content.text = text;
+                                content.html = text;
+
+                            } else {
+                    
+                                const pageChunks = await func.splitPDFByPageChunks(fileBuffer,appsettings.functions_options.OCR_max_allowed_pages_in_one_chunk)
+                                const ocrPromiseArr = pageChunks.map((chunk,index) => {
+                                    return (async () =>{
+                                            const result = await func.documentOCRBuffer(chunk,mimeType)
+                                            return {text:result.text,index}
+                                        })()
+                                })
+
+                            const ocrResults = await Promise.all(ocrPromiseArr)
+                            func.saveTextToTempFile(JSON.stringify(ocrResults,null,4),"ocrResults.json")
+                            ocrResults.sort((a, b) => a.index - b.index);
+                    
+                            ocrResults.forEach( result => {
+                                combined_text += result.text
+                            })
+                            content.text = combined_text;
+                            content.html = combined_text;
+
+                            }
+
+                            mongo.insertCreditUsage({
+                                userInstance: this.#user,
+                                creditType: "ocr",
+                                creditSubType: "pdf",
+                                usage: fileSize || 0,
+                                details: {place_in_code:"extractContentWraper"}
+                            })
+                        }
+
+                    } else {
+                        const result = await func.extractContentWithTika(url,)
+                        const {text,metadata,html} = result;
+                        content.text = text;
+                        content.metadata = metadata;
+                        content.html = html;
+                    }
+                }
+
+                data.extracted = true; result.extracted = true;
+                data["resourceData.charCount"] = content.text.length; result.charCount = content.text.length;
+                result.pageCount = pageCount;
+                data["resourceData.content_text"] = content.text; data["resourceData.content_html"] = content.text; 
+                data["resourceData.content_raw_html"] = content.raw_html; data["resourceData.content_screenshotBase64"] = content.screenshotBase64;
+
+                result.tokenCount = await func.countTokensLambda(content.text,this.#user.currentModel)
+                data["resourceData.tokenCount"] = result.tokenCount;
+                
+                if(result.tokenCount < this.#tokensLimitPerCall){
+                     await this.#dialogue.commitExtractedTextToDialogue(content.text, resourceId)
+                     result.includedInDialogue = true;  data.embeddedInDialogue = true;
+                } else {
+                    result.includedInDialogue = false; data.embeddedInDialogue = false
+                }
+
+                if(content.screenshotBase64){
+            
+                    const fileComment = {text_content:`Screenshot of the page for resource ${resourceId}:`}
+                    await this.#dialogue.commitImageToDialogue(fileComment,{
+                                base64:content.screenshotBase64,
+                                sizeBytes:content.screenshotSizeBytes,
+                                mimetype:content.screenshotMimeType},0,null)
+                };
+                return result;
                 
             } catch(err){
-                return {success:0,index,resource_url,resource_mine_type, error:`${err.message}\n ${err.stack}`}
+                
+                result.extracted = result.extracted || false;
+                result.includedInDialogue = result.includedInDialogue || false;
+                result.error = err.message; data.error = err.message;
+                return result;
+            } finally {
+                mongo.updateDataInTempStorage(this.#user.userid, resourceId, data)
             }
         }
 
     getArrayFromParam(param){
 
         if(Array.isArray(param)){
-
             return param
         }
 
@@ -2162,202 +2245,40 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
         return stringSplit
     }
 
-    async speechToTextWraper(userInstance,resource_url,resource_mine_type,duration,sizeBytes,index){
-
-            try{
-                const extractedObject = await this.transcribeAudioFile(userInstance,resource_url,resource_mine_type,duration,sizeBytes)
-                return {...extractedObject,index,resource_url,resource_mine_type}
-                
-            } catch(err){
-                return {success:0,index,resource_url,resource_mine_type, error:`${err.message}\n ${err.stack}`}
-            }
-    }
 
 
-    async transcribeAudioFile(userInstance,url,mine_type,duration,sizeBytes){
-    
-      const readableStream = await func.audioReadableStream(url,mine_type);
-      let transcript;
-    
-      try{
-            try {
-                const {words} = await elevenLabsApi.speechToText(readableStream)
-                transcript = func.textByRolesFromWords(words);
-    
-                mongo.insertCreditUsage({
-                  userInstance: userInstance,
-                  creditType: "speech_to_text",
-                  creditSubType: "elevenlabs",
-                  usage:duration || 0,
-                  details: {place_in_code:"transcribeAudioFile"}
-                })
-    
-            } catch(err){
-              const checkResult = this.voiceToTextConstraintsCheck(mine_type,sizeBytes);
-              if(checkResult.success===0){
-                responses.push(checkResult.response)
-                return responses;
-              }
-              transcript = await openAIApi.VoiceToText(readableStream,userInstance.openAIToken,userInstance)
-    
-            }
-    
-            console.log("transcript:",transcript)
-            return {success:1,text:transcript}
-    
-          } catch(err){
-          return {success:0,error:err.message}
-        }
-    }
+    async extract_content(argumentsJson){
 
-    voiceToTextConstraintsCheck(mine_type,sizeBytes){
+    try{
+        this.validateRequiredFieldsFor_extract_content(argumentsJson)
 
-if(!appsettings.voice_to_text.wisper_mime_types.includes(mine_type)){
- return {success:0,response:{text:msqTemplates.audiofile_format_limit_error}}
-}
-
-if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
-
-    return {success:0,response:{text:msqTemplates.audiofile_format_limit_error.replace(
-        "[size]",
-        appsettings.voice_to_text.filesize_limit_mb.toString()
-      )}}
-}
-
- return {success:1}
-}
-
-    async speechToText(argumentsJson){
-
-        try {
-        this.validateRequiredFieldsFor_speechToText(argumentsJson)
-
-        const sourceid_list_array = argumentsJson.resources
-        const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
-        resources.sort((a, b) => {
-            return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
-        });
+        const {resource_ids} = argumentsJson
+        const resources = await mongo.getResourcesById(resource_ids,this.#user.currentRegime)
 
         if(resources.length===0){
-            return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
+            throw new Error("Resource is not found by id.")
         }
 
-        const extractFunctions = resources.map((resource,index) => this.speechToTextWraper(this.#user,resource.fileUrl,resource.fileMimeType,resource.fileDurationSeconds,resource.fileSizeBytes,index))
+        const extractFunctions = resources.map((resource,index) => this.extractContentWraper(resource,index))
         
         let results = await Promise.all(extractFunctions)
         
         if(this.#isCanceled){return}
-
-        results.sort((a, b) => a.index - b.index);
-
-        const firstFailedResult = results.findIndex(result => result.success === 0);
-        if(firstFailedResult != -1){
-            return {success:0,resource_index:firstFailedResult,resource_url:results.at(firstFailedResult).resource_url,resource_mine_type:results.at(firstFailedResult).resource_mine_type,error: results.at(firstFailedResult).error,instructions:"Fix the error in the respective resource and re-call the entire function."}
-        }
-
-        const concatenatedText = results.map(obj => obj.text).join(' ');      
-
-        const fullContent = {
-            reff:Date.now(), //Used as unique numeric identifier for the extracted content
-            fileids: sourceid_list_array,
-            fileNames: resources.map(obj => obj.fileName),
-            results
-        }
-
-        const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
-        //console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
-
-        if(numberOfTokens > this.#tokensLimitPerCall){
-            return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, 
-            error: `The volume of the file content (${numberOfTokens} tokens) exceeds the token limit (${this.#tokensLimitPerCall} tokens) and cannot be included in the dialogue.`, 
-            instructions:`Inform the user that content size exceeds the dialog limits and therefore cannot be included in the dialogue.`}
-        }
+                    
+        const successfulExtractions = results.filter(result => result.extracted)
 
         return {
-            success:1,
-            content_reff:fullContent.reff,
-            text:concatenatedText,
-            supportive_data:{
-                fullContent
-            },
-            instructions:`Inform the user that: the text has been extracted successfully.`
+            success: successfulExtractions.length > 0 ? 1 : 0,
+            results,
+            instructions:`Inform the user about the results of the extractions`
         }
-
-        } catch(err){
-                err.place_in_code = err.place_in_code || "speechToText";
-                throw err;
-            }
+            
+    } catch(err){
+        err.place_in_code = err.place_in_code || "extract_content";
+        throw err;
     }
+    };
 
-    async extract_text_from_file_router(argumentsJson){
-
-            try{
-
-                this.validateRequiredFieldsFor_extractTextFromFile(argumentsJson)
-
-                const sourceid_list_array = argumentsJson.resources
-                const resources = await mongo.getUploadedFilesBySourceId(sourceid_list_array)
-                resources.sort((a, b) => {
-                    return sourceid_list_array.indexOf(a.sourceid) - sourceid_list_array.indexOf(b.sourceid);
-                });
-
-                if(resources.length===0){
-                    return {success:0,error:"File is not found by id.",instructions:"You should use fileid from the previous system message."}
-                }
-
-                const extractFunctions = resources.map((resource,index) => this.extractTextFromFileWraper(resource.fileUrl,resource.fileMimeType,resource.fileSizeBytes,index))
-                
-                let results = await Promise.all(extractFunctions)
-                
-                if(this.#isCanceled){return}
-
-                results.sort((a, b) => a.index - b.index);
-
-                const firstFailedResult = results.findIndex(result => result.success === 0);
-                if(firstFailedResult != -1){
-                    return {success:0,resource_index:firstFailedResult,resource_url:results.at(firstFailedResult).resource_url,resource_mine_type:results.at(firstFailedResult).resource_mine_type,error: results.at(firstFailedResult).error,instructions:"Fix the error in the respective resource and re-call the entire function."}
-                }
-
-                const concatenatedText = results.map(obj => obj.text).join(' ');
-
-                const fullContent = {
-                    reff: Date.now(), //Used as unique numeric identifier for the extracted content
-                    fileids: sourceid_list_array,
-                    fileNames: resources.map(obj => obj.fileName),
-                    results
-                }
-
-                let metadataText ="";
-                if(results.length === 1){
-                    metadataText = JSON.stringify(results[0].metadata,null,2)
-                } else if (results.length > 1){
-                    metadataText = results.map((obj,index) => `Part ${index}\n${JSON.stringify(obj.metadata,null,2)}`).join("\n");
-                }
-
-                const  numberOfTokens = await func.countTokensLambda(concatenatedText,this.#user.currentModel)
-                //console.log("numberOfTokens",numberOfTokens,"this.#tokensLimitPerCall",this.#tokensLimitPerCall)
-                if(numberOfTokens > this.#tokensLimitPerCall){
-                    return {success:0, content_token_count:numberOfTokens, token_limit_left:this.#tokensLimitPerCall, 
-                    error: `The volume of the file content (${numberOfTokens} tokens) exceeds the token limit (${this.#tokensLimitPerCall} tokens) and cannot be included in the dialogue.`, 
-                    instructions:`Inform the user that file size exceeds the dialog limits and therefore cannot be included in the dialogue.`}
-                }
-                            
-                return {
-                    success:1,
-                    content_reff:fullContent.reff,
-                    text:concatenatedText,
-                    metadata: metadataText,
-                    supportive_data:{
-                        fullContent
-                    },
-                    instructions:`Inform the user that: the text has been extracted successfully.`
-                }
-                    
-            } catch(err){
-                err.place_in_code = err.place_in_code || "extract_text_from_file_router";
-                throw err;
-            }
-            };
 
     async runJavaScriptCodeAndCaptureLogAndErrors(code) {
         // Store the original console.log function
@@ -2386,81 +2307,110 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
         return outputs.join('\n');
         }
 
-    async fetchUrlContent(url,tokenLimitPerUrl){
+    async fetchUrlContent(url,tokenLimitPerUrl,index){
+
+        const result = {
+            url:url,
+            index
+        };
+        const data = {};
+        const resourceId = func.convertStringToUniqueNumber(url);
 
     try{
-        const {html,screenshot} = await func.getPageHtml(url,{delay_ms:3000,timeout_ms:15000});
-        const textReply = func.convertHtmlToText(html);
-        const numberOfTokens = await func.countTokensLambda(textReply,this.#user.currentModel);
-       
-        const result = {
-            text:textReply,
-            url: url,
-            screenshot: screenshot,
-            content_token_count: numberOfTokens,
-            token_limit_exceeded: numberOfTokens > tokenLimitPerUrl,
-        }
 
-        if(result.token_limit_exceeded){
-            result.success = 0;
-            result.error = `The volume of the URL content (${numberOfTokens} tokens) exceeds the token limit (${tokenLimitPerUrl} tokens) and cannot be included in the dialogue.`;
-            delete result.text;
+        await this.#dialogue.commitResourceToTempStorage("url",resourceId);
+        await mongo.updateDataInTempStorage(this.#user.userid, resourceId, {"resourceData.url":url})
+
+        const {html,screenshot} = await func.getPageContent(url,{delay_ms:3000,timeout_ms:15000});
+
+        result.screenshotCaptured = screenshot?.base64 ? true : false;
+
+        data["resourceData.content_raw_html"] = html;
+        data["resourceData.content_screenshotBase64"] = screenshot?.base64
+        const text = func.convertHtmlToText(html);
+        data["resourceData.content_text"] = text;
+        data["resourceData.content_html"] = text;
+
+        data.extracted = true; result.extracted = true;
+        result.charCount = text.length; data["resourceData.charCount"] = text.length;
+        
+        result.tokenCount = await func.countTokensLambda(text,this.#user.currentModel);
+        data["resourceData.tokenCount"] = result.tokenCount;
+        
+        if(result.tokenCount < tokenLimitPerUrl){
+            await this.#dialogue.commitExtractedTextToDialogue(text, resourceId)
+            result.includedInDialogue = true; data.embeddedInDialogue = true;
         } else {
-            result.success = 1;
+            result.includedInDialogue = false; data.embeddedInDialogue = false;
+            result.comments = `The text volume (${result.tokenCount} tokens) exceeds the token limit of ${tokenLimitPerUrl} tokens, so it cannot be included into dialogue.`
+        };
+
+        if(screenshot?.base64){
+            
+            const fileComment = {text_content:`Screenshot of the page for resource ${resourceId}:`}
+            await this.#dialogue.commitImageToDialogue(fileComment,{
+                        base64:screenshot?.base64,
+                        sizeBytes:screenshot?.sizeBytes,
+                        mimetype:screenshot?.mimetype},0,null)
         }
 
         return result;
+
     } catch(err){
-        
-        return{success:0,error:`Failed to fetch URL content: ${err.message}`,screenshot:null}
+        result.extracted = result.extracted || false
+        result.includedInDialogue = result.includedInDialogue || false
+        result.error = err.message; data.error = err.message;
+        return result;
+
+    } finally {
+        mongo.updateDataInTempStorage(this.#user.userid, resourceId, data)
     }
     }
 
     async fetchUrlContentRouter(argumentsJson){
 
-        this.validateRequiredFieldsFor_fetchUrlContent(argumentsJson)
-        const {urls} = argumentsJson
-
    try{
-       const tokenLimitPerUrl = this.#tokensLimitPerCall / urls.length;
-       const urlHandlers = urls.map((url) => this.fetchUrlContent(url,tokenLimitPerUrl));
+       this.validateRequiredFieldsFor_fetchUrlContent(argumentsJson)
+       const {urls} = argumentsJson
 
+       const tokenLimitPerUrl = this.#tokensLimitPerCall / urls.length;
+       // Map to lazily-invoked functions instead of immediately executed Promises
+      // const urlHandlers = urls.map((url,index) => () => this.fetchUrlContent(url,tokenLimitPerUrl,index));
+    const urlHandlers = urls.map((url,index) => this.fetchUrlContent(url,tokenLimitPerUrl,index));
        const results = await Promise.all(urlHandlers);
 
-       const successfullResults = results.filter(result => result.success === 1).length;
-       const screenshots = results.map(result => result.screenshot).filter(screenshot => screenshot !== null);
+ /*      const results = [];
+       for (const [index, handler] of urlHandlers.entries()){
+           console.log(index,"fetch started");
+           console.time(`fetchURL ${index}`);
+           const result = await handler();
+           console.timeEnd(`fetchURL ${index}`);
+           results.push(result);
+       }*/
        
-       const resultWithoutScreenshot = results.map(result => { delete result.screenshot; return result; })
+       const successfullResults = results.filter(result => !result.error).length;
 
        if(successfullResults === 0){
            return {success:0, 
                    error:"All URL fetch attempts failed.",
-                   results: resultWithoutScreenshot,
-                   instructions:"(1) Inform the user that all URLs fetches failed. Provide details about each URL and the respective content. (2) Consider using page screenshots provided in the next user message.",
-                   supportive_data:{
-                    screenshots: screenshots,
+                   results: results,
+                   instructions:"(1) Inform the user that all URLs fetches failed. Provide details about each URL and the respective content. (2) Consider using page screenshots."
                    }
-                };
+                
        } else if(successfullResults === urls.length){
               return {success:1, 
-                     results: resultWithoutScreenshot,
-                     instructions:"Inform the user that all URLs were successfully fetched. Provide details about each URL and the respective content. Also, consider using page screenshots provided in the next user message.",
-                     supportive_data:{
-                      screenshots: screenshots,
-                     }
+                     results: results,
+                     instructions:"Inform the user that all URLs were successfully fetched. Provide details about each URL and the respective content. Also, consider using page screenshots."
                  };
        } else {
 
-            const failedResults = results.filter(result => result.success === 0);
-            const successfulResults = results.filter(result => result.success === 1);
+            const failedResults = results.filter(result => result.error);
+            const successfulResults = results.filter(result => !result.error);
 
             return {success:1, 
                     error:`Some URLs fetch attempts failed. Successful fetches: ${successfulResults.length}, failed fetches: ${failedResults.length}.`,
-                    results: resultWithoutScreenshot,
-                    instructions:"(1) Inform the user about the successful and failed URL fetch attempts. Provide details about each URL and the respective content. (2) Consider using page screenshots provided in the next user message.",
-                    supportive_data:{
-                        screenshots: screenshots
-                    }
+                    results: results,
+                    instructions:"(1) Inform the user about the successful and failed URL fetch attempts. Provide details about each URL and the respective content. (2) Consider using page screenshots.",
                 };
             }
 
@@ -2517,7 +2467,7 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
       const mimeType = func.getMimeTypeFromUrl(tgm_url)
       const downloadStream = await func.startFileDownload(tgm_url)
       const buffer = await func.streamToBuffer(downloadStream.data)
-
+      
       return {buffer,mimeType}
     }
 
@@ -2788,37 +2738,66 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
       }
 
 
-    validateRequiredFieldsFor_createPDFFile(argumentsJson){    
+    validateRequiredFieldsFor_generateDocument(argumentsJson){
 
-        const {html,filename,content_reff} = argumentsJson
+        const {filename,status,content} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
+        if(!filename || filename === ""){
+            error.message = `'filename' parameter is missing. Provide the value for the agrument.`
+            throw error;
+        }
         
+        if (!filename.includes('.') || filename.split('.').pop() === "") {
+            error.message = `'filename' must have a valid extension.`;
+            throw error;
+        }
+
+        const officeExtensions = ['.doc','.docx', '.xls', '.xlsx', '.ppt', '.pptx']; // MS Office formats
+        const extension = filename.slice(filename.lastIndexOf('.'));
+        if (officeExtensions.includes(extension)) {
+            error.message = `${extension} format is not supported.`;
+            throw error;
+        }
+
+        if(!status || status === ""){
+            error.message = `'status' parameter is missing. Provide the value for the agrument.`
+            throw error;
+        }
+
+        if(!content || content === ""){
+            error.message = `'content' parameter is missing. Provide the value for the agrument.`
+            throw error;
+        }
+    }
+
+    validateRequiredFieldsFor_saveToDocument(argumentsJson){
+
+        const {resource_ids,filename} = argumentsJson;
+
+        let error = new Error();
+        error.assistant_instructions = "Fix the error and retry the function."
+
         if(!filename || filename === ""){
             error.message = `'filename' parameter is missing. Provide the value for the agrument.`
             throw error;
         }
 
-        const contentReffIsPresent = content_reff && Array.isArray(content_reff) && content_reff.length > 0
-
-        if(!html && !contentReffIsPresent){
-            error.message = `Either 'html' or 'content_reff' parameter must be present. Provide at least one of them.`
+        if (!filename.includes('.') || filename.split('.').pop() === "") {
+            error.message = `'filename' must have a valid extension.`;
             throw error;
         }
 
-        if(html && contentReffIsPresent){
-            error.message = `'html' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
-            throw error;
-        }
-        
-        if(html && html === ""){
-            error.message = `'html' parameter must not be blank.`
+        const officeExtensions = ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx']; // MS Office formats
+        const extension = filename.slice(filename.lastIndexOf('.'));
+        if (officeExtensions.includes(extension)) {
+            error.message = `MS Office formats are not supported.`;
             throw error;
         }
 
-        if(content_reff && !Array.isArray(content_reff)){
-            error.message = `'content_reff' parameter must be an array.`
+        if(!resource_ids || !Array.isArray(resource_ids) || resource_ids.length === 0){
+            error.message = `'resource_ids' parameter is missing or empty. Provide the value for the agrument.`
             throw error;
         }
 
@@ -2826,7 +2805,7 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
 
     validateRequiredFieldsFor_textToSpeech(argumentsJson){
 
-        const {filename,text,content_reff,voice} = argumentsJson
+        let {filename,text,voice} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
@@ -2841,28 +2820,8 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
             throw error;
         }
 
-        if(!text && !content_reff){
-            error.message = `Either 'text' or 'content_reff' parameter must be present. Provide at least one of them.`
-            throw error;
-        }
-
-        if(text && text === ""){
-            error.message = `'text' parameter must contain text.`
-            throw error;
-        }
-
-        if(content_reff && !Array.isArray(content_reff)){
-            error.message = `'content_reff' parameter must be an array.`
-            throw error;
-        }
-
-        if(content_reff && Array.isArray(content_reff) && content_reff.length === 0){
-            error.message = `'content_reff' array is empty.`
-            throw error;
-        }
-
-        if(text && content_reff){
-            error.message = `'text' or 'content_reff' parameters cannot be present at the same time. Use only one of them.`
+        if(!text || text === ""){
+            error.message = `'text' parameter must be present and contain text.`
             throw error;
         }
     }
@@ -2934,25 +2893,25 @@ if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
 
     }
 
-    validateRequiredFieldsFor_extractTextFromFile(argumentsJson){
+    validateRequiredFieldsFor_extract_content(argumentsJson){
 
-        const resources = argumentsJson.resources
+        const {resource_ids} = argumentsJson
 
         let error = new Error();
         error.assistant_instructions = "Fix the error and retry the function."
 
-        if(!resources){
-            error.message = `'resources' parameter is missing.`
+        if(!resource_ids){
+            error.message = `'resource_ids' parameter is missing.`
             throw error;
         }
 
-        if(!Array.isArray(resources)){
-            error.message = `'resources' parameter is not an array.`
+        if(!Array.isArray(resource_ids)){
+            error.message = `'resource_ids' parameter is not an array.`
             throw error;
         }
 
-        if(resources.length === 0){
-            error.message = `'resources' array is empty.`
+        if(resource_ids.length === 0){
+            error.message = `'resource_ids' array is empty.`
             throw error;
         }
         

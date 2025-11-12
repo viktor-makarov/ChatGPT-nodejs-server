@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const modelConfig = require("../config/modelConfig.js");
 const { Script } = require('vm');
 const cryptofy = require('crypto');
@@ -18,7 +19,6 @@ const { execSync } = require("child_process");
 const pako = require('pako');
 const devPrompts = require("../config/developerPrompts.js");
 const { convert } = require('html-to-text');
-
 
 const sharp = require('sharp');
 const svgson = require('svgson');
@@ -44,6 +44,8 @@ const tableWrapperExtension = {
     return '<div class="table-container">' + match + '</div>';
   }
 };
+
+
 
 const technicalIdentifierExtension = {
         type: 'lang',
@@ -73,6 +75,14 @@ const technicalIdentifierExtension = {
         tableWrapperExtension
     ]
 });
+
+function convertStringToUniqueNumber(str){
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) >>> 0; // unsigned 32-bit
+  }
+  return Number(String(hash % 100000).padStart(5, '0'));
+}
 
 async function createExcelWorkbookToBuffer(worksheets = []) {
   const workbook = new Excel.Workbook();
@@ -888,7 +898,7 @@ function wireHtml(text){
       return screenshotBuffer;
 
     } catch (error) {
-      console.error('Error in getPageHtml:', error.message);
+      console.error('Error in getPageScreenshotForBrowser:', error.message);
       throw error;
     } finally {
       await page.close();
@@ -913,7 +923,7 @@ function wireHtml(text){
 }
 
 
-  async function getPageHtml(url, options = {}) {
+  async function getPageContent(url, options = {}) {
     const { timeout = 30_000, delay_ms = 5_000} = options;
     
     const page = await global.chromeBrowserHeadless.newPage();
@@ -922,15 +932,13 @@ function wireHtml(text){
       await page.goto(url);
 
       await delay(delay_ms);
-
       
       const screenshot = {page_url: url};
 
       try{
         for (const quality of [80,60,40,20,0]) {
-          console.log("Before taking screenshot",quality, url);
-          screenshot.buffer = await page.screenshot({ fullPage: true,type: 'jpeg',quality: quality });
-          console.log("After taking screenshot",quality, url);
+          
+          screenshot.buffer = await page.screenshot({ fullPage: true,optimizeForSpeed: true, type: 'jpeg',quality: quality, timeout: timeout });
           screenshot.sizeBytes = screenshot.buffer.length;
           screenshot.quality = quality;
           if (screenshot.sizeBytes <= 10 * 1024 * 1024) {
@@ -952,7 +960,7 @@ function wireHtml(text){
       return { html, screenshot };
       
     } catch (error) {
-      console.error('Error in getPageHtml:', error.message);
+      console.error('Error in getPageContent:', error.message);
       throw error;
     } finally {
       await page.close();
@@ -1153,6 +1161,59 @@ async function audioReadableStream(url,mime_type){
     return audioReadStream
 };
 
+function voiceToTextConstraintsCheck(mine_type,sizeBytes){
+
+if(!appsettings.voice_to_text.wisper_mime_types.includes(mine_type)){
+  const error = new Error(msqTemplates.audiofile_format_limit_error)
+  throw error;
+}
+
+if(sizeBytes > appsettings.voice_to_text.filesize_limit_mb * 1024 * 1024){
+
+  const errorMsg = msqTemplates.audiofile_format_limit_error.replace(
+    "[size]",
+    appsettings.voice_to_text.filesize_limit_mb.toString()
+  )
+  throw new Error(errorMsg);
+}
+}
+
+function toDotNotation(obj, prefix = '', out = {}) {
+  Object.entries(obj).forEach(([key, val]) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+
+    if (
+      val !== null &&
+      typeof val === 'object' &&
+      !Array.isArray(val) &&           // keep arrays as atomic values
+      Object.keys(val).length          // skip empty objects
+    ) {
+      toDotNotation(val, path, out);   // recurse for nested objects
+    } else {
+      out[path] = val;                 // leaf values
+    }
+  });
+  return out;
+}
+
+async function documentOCRBuffer(fileBuffer,mine_type){
+
+const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
+const text = ocrResult.text
+
+return {text}
+
+}
+
+async function documentOCR(url,mine_type){
+
+const fileBuffer = await fileDownload(url)
+const ocrResult =  await googleApi.ocr_document(fileBuffer,mine_type)
+const text = ocrResult.text
+
+return {text}
+}
+
 async function extractTextFromFile(url,mine_type,sizeBytes,useInstance){
 
   try{
@@ -1224,6 +1285,12 @@ async function extractTextFromFile(url,mine_type,sizeBytes,useInstance){
   } catch(err){
     return {success:0,error:err.message}
   }
+}
+
+function wireFunctionName(input){
+
+  const regex = /[^a-zA-Z0-9_-]/g;
+  return input.replace(regex, '_');
 }
 
 async function executePythonCode(codeToExecute){
@@ -1378,6 +1445,39 @@ function charLimitFor(modelname){
 
   return charLimit
 }
+
+
+function splitTextToLimitedChunks(text,limit) {
+
+  const chunks = [];
+  let remainingText = text;
+
+  while (remainingText.length > limit) {
+          let chunkEnd = limit;
+          
+          // Find the last line break within the threshold
+          const lastLineBreak = remainingText.lastIndexOf('\n', chunkEnd);
+          if (lastLineBreak > 0) {
+            chunkEnd = lastLineBreak;
+          } else {
+            // If no line break found, find the last space within the threshold
+            const lastSpace = remainingText.lastIndexOf(' ', chunkEnd);
+            if (lastSpace > 0) {
+              chunkEnd = lastSpace;
+            }
+          }
+          chunks.push(remainingText.substring(0, chunkEnd));
+          remainingText = remainingText.substring(chunkEnd).trim();
+        }
+
+      if (remainingText.length > 0) {
+              chunks.push(remainingText);
+      }
+
+  return chunks;
+}
+
+
 
 function splitTextByCharLimit(text) {
   const lines = text.split('\n');
@@ -1572,6 +1672,7 @@ async function optionsToButtons(object,requestMsgInstance){
   let main_rows =[]
   let main_rows_final =[]
   let back_row =[]
+  let close_settings_row =[]
   let listItems = Object.keys(object)
   
   const callback_data_decoded = await decodeJson(requestMsgInstance.callback_data)
@@ -1590,6 +1691,8 @@ async function optionsToButtons(object,requestMsgInstance){
 
     if(item==="back"){
       back_row.push({text:object[item].name,callback_data:JSON.stringify(callback_data)})
+    } else if (item === "close_settings") {
+      close_settings_row.push({text:object[item].name,callback_data:JSON.stringify(callback_data)})
     } else {
       main_rows.push({text:object[item].name,callback_data:JSON.stringify(callback_data)})
     }
@@ -1619,7 +1722,11 @@ async function optionsToButtons(object,requestMsgInstance){
   if(back_row.length>0){
     buttons_array.push(back_row)
   }
-  
+
+  if(close_settings_row.length>0){
+    buttons_array.push(close_settings_row)
+  }
+
   return buttons_array
 } catch(err){
   console.log(err)
@@ -1720,6 +1827,7 @@ function formatObjectToText(obj) {
 }
 
 function saveTextToTempFile(text, filename) {
+  if(process.env.DEPLOYMENT != "dev") return;
   const tempDir = path.join(__dirname, '../tempfiles');
   // Create directory if it doesn't exist
   if (fs.existsSync(tempDir)) {
@@ -1909,7 +2017,9 @@ function formatHtml(html,filename){
 function handleTextLengthForTextToVoice(user_language_code,text){
 
     const limit = global.elevenlabs_models[appsettings.text_to_speach.model_id].maximumTextLengthPerRequest || 4000;
-    const cutNotification = getLocalizedPhrase("text_to_speech_cut_notification",user_language_code)
+    
+    const placeholders = [{key:"[limit]",filler:String(limit)}]
+    const cutNotification = getLocalizedPhrase("text_to_speech_cut_notification",user_language_code,placeholders)
     const cutResult = cutTextToLimit(text,limit,cutNotification.length)
     let constrainedText;
     if (cutResult.isCut){
@@ -2288,7 +2398,7 @@ function htmlShorterner(html,limit){
   const totalLength = html.length;
 
   const endStr = '... (текст сокращен)'
-
+  
   if (totalLength <= limit) {
         return html; // Если длина в пределах лимита, возвращаем исходный HTML
     }
@@ -2592,7 +2702,56 @@ function getMimeTypeFromUrl(url) {
         'css': 'text/css',
         'js': 'application/javascript',
         'json': 'application/json',
-        'xml': 'application/xml'
+        'xml': 'application/xml',
+
+        // Code files
+        'py': 'text/x-python',
+      'java': 'text/x-java-source',
+      'c': 'text/x-c',
+      'cpp': 'text/x-c++src',
+      'cxx': 'text/x-c++src',
+      'cc': 'text/x-c++src',
+      'h': 'text/x-c',
+      'hpp': 'text/x-c++hdr',
+      'cs': 'text/x-csharp',
+      'php': 'text/x-php',
+      'rb': 'text/x-ruby',
+      'go': 'text/x-go',
+      'rs': 'text/x-rust',
+      'swift': 'text/x-swift',
+      'kt': 'text/x-kotlin',
+      'scala': 'text/x-scala',
+      'r': 'text/x-r',
+      'pl': 'text/x-perl',
+      'sh': 'text/x-shellscript',
+      'bash': 'text/x-shellscript',
+      'ps1': 'text/x-powershell',
+      'sql': 'text/x-sql',
+      'ts': 'text/typescript',
+      'jsx': 'text/jsx',
+      'tsx': 'text/tsx',
+      'vue': 'text/x-vue',
+      'dart': 'text/x-dart',
+      'lua': 'text/x-lua',
+      'matlab': 'text/x-matlab',
+      'm': 'text/x-matlab',
+      'vb': 'text/x-vb',
+      'vbs': 'text/x-vbscript',
+      'asm': 'text/x-asm',
+      's': 'text/x-asm',
+      'f': 'text/x-fortran',
+      'f90': 'text/x-fortran',
+      'pas': 'text/x-pascal',
+      'hs': 'text/x-haskell',
+      'clj': 'text/x-clojure',
+      'lisp': 'text/x-lisp',
+      'ex': 'text/x-elixir',
+      'exs': 'text/x-elixir',
+      'elm': 'text/x-elm',
+      'nim': 'text/x-nim',
+      'jl': 'text/x-julia',
+      'tcl': 'text/x-tcl',
+      'awk': 'text/x-awk'
     };
 
     return mimeTypes[extension] || 'application/octet-stream';
@@ -2664,7 +2823,56 @@ function getMimeTypeFromPath(filePath) {
     'css': 'text/css',
     'js': 'application/javascript',
     'json': 'application/json',
-    'xml': 'application/xml'
+    'xml': 'application/xml',
+
+     // Code files
+      'py': 'text/x-python',
+      'java': 'text/x-java-source',
+      'c': 'text/x-c',
+      'cpp': 'text/x-c++src',
+      'cxx': 'text/x-c++src',
+      'cc': 'text/x-c++src',
+      'h': 'text/x-c',
+      'hpp': 'text/x-c++hdr',
+      'cs': 'text/x-csharp',
+      'php': 'text/x-php',
+      'rb': 'text/x-ruby',
+      'go': 'text/x-go',
+      'rs': 'text/x-rust',
+      'swift': 'text/x-swift',
+      'kt': 'text/x-kotlin',
+      'scala': 'text/x-scala',
+      'r': 'text/x-r',
+      'pl': 'text/x-perl',
+      'sh': 'text/x-shellscript',
+      'bash': 'text/x-shellscript',
+      'ps1': 'text/x-powershell',
+      'sql': 'text/x-sql',
+      'ts': 'text/typescript',
+      'jsx': 'text/jsx',
+      'tsx': 'text/tsx',
+      'vue': 'text/x-vue',
+      'dart': 'text/x-dart',
+      'lua': 'text/x-lua',
+      'matlab': 'text/x-matlab',
+      'm': 'text/x-matlab',
+      'vb': 'text/x-vb',
+      'vbs': 'text/x-vbscript',
+      'asm': 'text/x-asm',
+      's': 'text/x-asm',
+      'f': 'text/x-fortran',
+      'f90': 'text/x-fortran',
+      'pas': 'text/x-pascal',
+      'hs': 'text/x-haskell',
+      'clj': 'text/x-clojure',
+      'lisp': 'text/x-lisp',
+      'ex': 'text/x-elixir',
+      'exs': 'text/x-elixir',
+      'elm': 'text/x-elm',
+      'nim': 'text/x-nim',
+      'jl': 'text/x-julia',
+      'tcl': 'text/x-tcl',
+      'awk': 'text/x-awk'
   };
 
   return mimeTypes[extension] || 'application/octet-stream';
@@ -2718,8 +2926,44 @@ async function drawCrossOnImage(imageBuffer, x, y, crossSize = 10, color = 'red'
     }
 }
 
+function setIntervalAdvanced(fn, interval) {
+    fn();
+    const timerId = setInterval(fn, interval);
+    return timerId;
+}
+
+async function commitMCPToolsToProfile(userid,mcp_tool_item) {
+            const {server_label} = mcp_tool_item;
+            const dotPath = `mcp.tools.${server_label}`
+            const data = {}
+            data[dotPath] = mcp_tool_item
+            await mongo.updateProfile(userid,data); //записываем prompt в базу
+            console.log("MCP TOOLS LIST COMMITED TO PROFILE")
+        };
+
+async function commitMCPSessionIdsToProfile(userid,session_id_item) {
+
+            const {server_label,mcp_session_id} = session_id_item;
+            const dotPath = `mcp.auth.${server_label}.mcp_session_id`
+            const data = {}
+            data[dotPath] = mcp_session_id
+            await mongo.updateProfile(userid,data); //записываем prompt в базу
+            console.log("MCP SESSION IDS COMMITED TO PROFILE")
+        };
+
+function generateServerInstanceId(){
+
+  const host = os.hostname();           
+  const ts = Date.now().toString(36);   
+  const uuid = cryptofy.randomUUID().replace(/-/g, '').substring(0, 8);   
+  return `${host}-${ts}-${uuid}`;
+
+}
+
 module.exports = {
+  commitMCPSessionIdsToProfile,
   convertHtmlToText,
+  commitMCPToolsToProfile,
   drawCrossOnImage,
   formatObjectToText,
   countTokens,
@@ -2791,11 +3035,20 @@ module.exports = {
   htmlRendered,
   logToTempFile,
   //countTokensTiktokenJS,
-  getPageHtml,
+  getPageContent,
   getMimeTypeFromUrl,
   toHHMMSS,
   getMimeTypeFromPath,
   getPageScreenshotForBrowser,
   htmlShorterner,
-  chunkByWords
+  chunkByWords,
+  convertStringToUniqueNumber,
+  toDotNotation,
+  voiceToTextConstraintsCheck,
+  documentOCR,
+  documentOCRBuffer,
+  setIntervalAdvanced,
+  splitTextToLimitedChunks,
+  wireFunctionName,
+  generateServerInstanceId
 };

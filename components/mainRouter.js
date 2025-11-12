@@ -21,10 +21,19 @@ async function MdjAccountInfo(){
 
 async function UpdateGlobalVariables() {
 
+    global.serverInstanceId = otherFunctions.generateServerInstanceId();
+    global.completionInstances = {}; //хранение всех инстансов Completion по их short id
     await mongo.setDefaultVauesForNonExiting(); //Должно быть перед get_all_registeredPromise
     console.log(new Date(), "Success! Default values setted");
     const replaceResult = await mongo.replaceProfileValues(false);
     console.log(new Date(), "Success! Replacements performed" ,replaceResult);
+
+    setInterval(telegramCmdHandler.updateAllUsersMCPToolsLists,appsettings.mcp_options.tools_update_interval_ms);
+    console.log(new Date(), "Success! MCP Tools update interval set to" ,appsettings.mcp_options.tools_update_interval_ms,"ms");
+
+    
+    
+
 }
 
 async function GetLibrariesFromAPIs() {
@@ -32,9 +41,8 @@ async function GetLibrariesFromAPIs() {
     const write_oai_models = await mongo.update_models_listPromise(oai_models_array.data);
     console.log(new Date(), `Success! OpenAI models updated: ${write_oai_models}`);
     
-    
     const elevenlabs_models_array = await elevenLabsApi.getAvailableModels(); //обновляем список моделей в базе
-    global.elevenlabs_models = otherFunctions.arrayToObjectByKey(elevenlabs_models_array,"modelId")
+    global.elevenlabs_models = otherFunctions.arrayToObjectByKey(elevenlabs_models_array,"model_id")
     const write_elevenlabs_models = await mongo.update_elevenlabs_models_list(elevenlabs_models_array);
     if(global.elevenlabs_models[appsettings.text_to_speach.model_id] === undefined){
         throw new Error(`Default model ${appsettings.text_to_speach.model_id} not found in ElevenLabs models list`);
@@ -70,11 +78,8 @@ function router(botInstance) {
 }
 
 async function inlineQueryRouter(inlineQuery,botInstance){
-console.log(inlineQuery)
 
 const {query,id} = inlineQuery;
-
-
 console.log(new Date(),"Inline query received:",query,id);
 
 const answerText = query.length > 0
@@ -97,8 +102,7 @@ await botInstance.answerInlineQuery(id, results);
 }
 
 async function eventRouter(event,botInstance){
-
-
+  
   let user,requestMsg,replyMsg;
   
   //Слушаем сообщения пользователей
@@ -160,7 +164,7 @@ async function eventRouter(event,botInstance){
               break;
         case "pinned_message":
               //ignore this type of message
-              break
+              break;
         default:
             responses = [{text:msqTemplates.unknown_msg_type}]
     };
@@ -171,7 +175,10 @@ async function eventRouter(event,botInstance){
 
     if(response.operation === "updatePinnedMsg" ){
       user.pinnedHeaderAllowed === true && await updatePinnedMsg(requestMsg,replyMsg,ErrorHandlerInstance)
+    } else if (response.operation === "closeMessage"){
+      await replyMsg.deleteMsgByID(response?.message_id)
     } else if (response.operation === "removePinnedMsg"){
+    
       await unpinAllChatMessages(replyMsg)
     } else if(response.operation === "updateSettings") {
 
@@ -182,7 +189,23 @@ async function eventRouter(event,botInstance){
                 parse_mode: response?.parse_mode,
               })
     } else {
-      await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options)
+
+      if(response.text.length < appsettings.telegram_options.big_outgoing_message_threshold){
+        await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response?.parse_mode,response?.add_options)
+
+      } else {
+
+        const chunks = otherFunctions.splitTextToLimitedChunks(response.text, appsettings.telegram_options.big_outgoing_message_threshold);
+        
+        // Send each chunk as a separate message
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          const isLastChunk = i === chunks.length - 1;
+          const reply_markup = isLastChunk ? response?.buttons?.reply_markup : null;
+          await replyMsg.sendToNewMessage(chunk, reply_markup, response?.parse_mode, response?.add_options);
+        }
+      }
+      
     }
     }
 

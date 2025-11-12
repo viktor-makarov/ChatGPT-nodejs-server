@@ -46,7 +46,7 @@ class RequestMsg{
 #msgIdsFromRequest =[];
 
 constructor(obj) {
-   // console.log(obj.requestMsg)
+    //console.log(obj.requestMsg)
  
     this.#user = obj.userInstance
     this.#botInstance = obj.botInstance
@@ -143,6 +143,7 @@ constructor(obj) {
             this.#inputType = "file"
             this.#fileType = "video"
             this.#fileName = obj.requestMsg.video?.file_name
+            this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
             this.#duration_seconds = obj.requestMsg?.video?.duration
             this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileMimeType = obj.requestMsg.video.mime_type
@@ -317,6 +318,10 @@ async getFileLinkFromTgm(){
     this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
     this.#fileMimeType = this.#fileMimeType ? this.#fileMimeType : mime.lookup(this.#fileName)
     
+    if (this.#fileMimeType && this.#fileMimeType.startsWith("image/")) {
+        this.#fileType = "image" //Ensure correct file type
+    };
+
     return this.#fileLink
 };
 

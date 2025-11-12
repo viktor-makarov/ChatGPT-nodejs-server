@@ -1,7 +1,8 @@
 
 mongodb_names:  #db and collections names for mongodb
   db_prod: pva
-  db_dev: pva_dev    #db name
+  db_dev: pva_dev   
+  db_test: pva_test
   coll_profiles: telegram_profile #stores profiles of registered users
   coll_accounts: telegram_accounts #stores registration information
   coll_mdj_image: mdj_image_msg

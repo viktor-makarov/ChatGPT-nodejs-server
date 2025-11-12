@@ -5,6 +5,11 @@
         size: A4;
         margin: 15mm 20mm 15mm 20mm;
     }
+
+    @page wide {
+        size: A4 landscape;
+        margin: 15mm 20mm 15mm 20mm;
+    }
       /* Body adjustments for print */
     body {
         font-size: 10pt !important;
@@ -98,46 +103,85 @@
     }
       /* Table adjustments for PDF - preserve existing border-collapse behavior */
     table {
-        font-size: 9pt !important;
+        font-size: 0.9rem !important;
         width: 100% !important;
         /* Keep existing border-collapse and spacing for consistency */
         border-collapse: collapse !important;
-        border-spacing: 1pt !important;
         margin: 8pt 0 !important;
-        page-break-inside: avoid;
-        /* Override existing margin */
-        margin-bottom: 8pt !important;
+        page-break-inside: auto;
+        break-inside: auto;
     }
     
     table thead {
         background: #f0f0f0 !important;
         font-weight: bold;
+        display: table-header-group;
+    }
+    table tfoot {
+        display: table-footer-group;
     }
     
     table tbody tr:nth-child(even) {
         background-color: #f8f8f8 !important;
     }
     
-    table th, table td {
+    table th, 
+    table td {
         border: 1pt solid #666;
         padding: 4pt 6pt;
         text-align: left;
         vertical-align: top;
+        white-space: normal;           /* разрешаем переносы */
+        overflow-wrap: anywhere;       /* перенос длинных слов/URL */
+   /*     word-break: break-word; */
+        hyphens: auto;
     }
     
     /* Disable table container scrolling for print */
     .table-container {
         width: 100% !important;
-        overflow-x: auto !important;
-        margin: 1rem 0 !important;
-        font-size: 0.9rem !important; /* Slightly smaller text */
+        margin: 8pt 0 !important;
+        overflow: visible !important;
+        font-size: inherit !important;
         }
 
-        td, th {
-        padding: 4px 6px; /* Минимальные отступы */
-        white-space: nowrap; /* Запрет переноса строк */
+    td, th {
+
         font-size: 0.9em; /* Уменьшение шрифта */
         }
+
+
+        table tr { 
+            page-break-inside: avoid; 
+            break-inside: avoid-page; 
+        }
+
+    /* ≥5 столбцов → «плотная» (аналог .table--dense) */
+    table:has(> thead > tr > *:nth-child(n+5)),
+    table:has(> tbody > tr:first-child > *:nth-child(n+5)) {
+        /* ничего не ломаем у мелких таблиц */
+    }
+    table:has(> thead > tr > *:nth-child(n+5)) th,
+    table:has(> tbody > tr:first-child > *:nth-child(n+5)) td {
+        padding: 2pt 4pt;
+        font-size: 8pt;
+    }
+
+    /* ≥7 столбцов → «очень плотная» + фиксированная раскладка (аналог .table--tiny + .table--fixed) */
+    table:has(> thead > tr > *:nth-child(n+7)),
+    table:has(> tbody > tr:first-child > *:nth-child(n+7)) {
+        table-layout: fixed;
+    }
+    table:has(> thead > tr > *:nth-child(n+7)) th,
+    table:has(> tbody > tr:first-child > *:nth-child(n+7)) td {
+        padding: 1pt 3pt;
+        font-size: 7.5pt;
+    }
+    
+    table:has(> thead > tr > *:nth-child(n+10)),
+    table:has(> tbody > tr:first-child > *:nth-child(n+10)) {
+      page: wide;
+    }
 
     
     /* Blockquote adjustments */

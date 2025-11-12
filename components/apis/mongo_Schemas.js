@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const modelSettings = require("../../config/telegramModelsSettings");
+const { error } = require("pdf-lib");
+const { auth } = require("@modelcontextprotocol/sdk/client/auth.js");
 
 const ProfileSheema = new Schema(
   {
@@ -38,6 +40,8 @@ const ProfileSheema = new Schema(
         voice: { type: String, default: appsettings.text_to_speach.default_voice_name}
         },
     },
+    mcp: {type: Object,default: { auth: {}, tools: {} }
+    },
     token: {type: String},
     plan:{type: String},
     active:{type: Boolean},
@@ -53,7 +57,9 @@ const ProfileSheema = new Schema(
       groups: {type: Object}
     },
   },
-  { collection: appsettings.mongodb_names.coll_profiles }
+  { collection: appsettings.mongodb_names.coll_profiles ,
+    toObject: { minimize: false },
+    toJSON: { minimize: false }}
 );
 
 ProfileSheema.index({ id: -1 });
@@ -217,7 +223,8 @@ const FunctionUsageLogSheema = new Schema(
     username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
     model: { type: String,description: "OpenAI model used for request. Hint: for correct filtering on this field first fetch all the unique values." },
     tool_function:{ type: String,description: "Function name. Hint: for correct filtering on this field first fetch all the unique values." },
-    tool_reply: { type: Object,description: "Function details. Hint: for correct filtering on this field first fetch all the unique values." },
+    tool_call: { type: Object,description: "Function query. Hint: for correct filtering on this field first fetch all the unique values." },
+    tool_reply: { type: Object,description: "Function output. Hint: for correct filtering on this field first fetch all the unique values." },
     call_duration: {type: Number},
     call_number: {type: String},
     regime: { type: String,description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
@@ -271,6 +278,7 @@ const TelegramDialogSheema = new Schema(
     respoonseId: { type: String, index: true },
     createdAtSourceTS: { type: Number, index: true },
     createdAtSourceDT_UTC: { type: Date },
+    expires_at: { type: Date, index: true, default: new Date('9999-12-31') },
     telegramMsgId:{type: Object},
     telegramMsgBtns:{type: Boolean},
     telegramMsgRegenerateBtns:{type: Boolean},
@@ -278,6 +286,7 @@ const TelegramDialogSheema = new Schema(
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
+    chatid: { type: Number, index: true },
     model:{ type: String },
     fileId: { type: Number },
     fileName:{ type: String },
@@ -352,6 +361,7 @@ TelegramDialogSheema.index({ userid: -1 });
 const DialogMetaSheema = new Schema(
   {
     userid: { type: Number, index: true },
+    server_errors_count: { type: Number, default: 0 },
     total_tokens: { type: Number},
     image_input_bites: { type: Number},
     image_input_count: { type: Number},
@@ -360,6 +370,7 @@ const DialogMetaSheema = new Schema(
     pdf_input_pages: { type: Number},
     pdf_input_limit_exceeded: { type: Boolean},
     function_calls: {type: Object},
+    oai_storage_files_in_progress: {type: Object},
   },
   { collection: appsettings.mongodb_names.col_dialogue_meta }
 );
@@ -435,9 +446,11 @@ const TempReplyMarkupSheema = new Schema(
 
 const tempResourceStorageSheema = new Schema({
   userid: { type: Number, index: true },
+  agent: { type: String },
   resourceId: { type: Number, index: true },
+  error: { type: String },
   resourceType: { type: String, index: true },
-  extracted: { type: Boolean, default: false },
+  extracted: { type: Boolean, default: false, index: true },
   embeddedInDialogue: { type: Boolean, default: false },
   resourceData: { type: Object },
   createdAt: {
@@ -449,15 +462,10 @@ const tempResourceStorageSheema = new Schema({
 );
 
 const outputDocumentSheema = new Schema({
-  userid: { type: Number, index: true },
-  documentId: { type: String, index: true },
-  fileName: { type: String },
-  fileCaption: { type: String },
-  contentText: { type: Array },
-  contentHtml: { type: Array },
-  status: { type: String,  default: 'inprogress' },
-  contentSizeTokens: { type: Number },
-  contentSizeSymbols: { type: Number },
+  userid: { type: Number, index: true},
+  agent: { type: String, index: true},
+  filename: { type: String, index: true },
+  content: { type: Array },
   createdAt: {
     type: Date,
     default: Date.now

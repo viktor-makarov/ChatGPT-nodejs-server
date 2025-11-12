@@ -9,6 +9,7 @@
     "@aws-sdk/lib-storage": "^3.701.0",
     "@elevenlabs/elevenlabs-js": "^2.2.0",
     "@google-cloud/documentai": "^8.12.0",
+    "@modelcontextprotocol/sdk": "^1.19.1",
     "axios": "^1.7.7",
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.0.3",
@@ -41,12 +42,14 @@
     "sod": "^0.1.0",
     "svgson": "^5.3.1",
     "unicodeit": "^0.7.5",
+    "ws": "^8.18.3",
     "xml2js": "^0.6.2"
   },
   "main": "server.js",
   "scripts": {
     "start": "node bin/www_prod",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test:mcp": "powershell -Command \"$env:NODE_ENV='test'; node tests/intergarion_tests/mcpAPIIntegration.tests.js\"",
+    "test": "npm run test:mcp"
   },
   "author": "Truvouwka",
   "license": "ISC"

@@ -6,25 +6,74 @@ const modelSettings = require("../../config/telegramModelsSettings.js");
 const modelConfig = require("../../config/modelConfig.js");
 const { Readable } = require("stream");
 const mongo = require("./mongo.js");
-const otherFunctions = require("../common_functions.js");
 const axios = require("axios");
 const OpenAI = require("openai");
-
 const AvailableTools = require("../objects/AvailableTools.js");
-const { time } = require("console");
+const otherFunctions = require("../common_functions.js");
+
+// Polyfill global File (and Blob) for Node < 20 to support file uploads in OpenAI SDK
+if (typeof globalThis.File === "undefined") {
+    const { File, Blob } = require("node:buffer");
+    globalThis.File = File;
+    if (typeof globalThis.Blob === "undefined" && Blob) {
+      globalThis.Blob = Blob;
+    }
+}
+
+async function uploadFile(fileStream,purpose ='user_data',expires_seconds){
+
+  const openai = new OpenAI({
+    baseURL: `https://${process.env.OAI_URL}/v1`,
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: 60000
+  });
+
+  const options = {
+    file: fileStream,
+    purpose: purpose
+  };
+
+  if (expires_seconds){
+    options.expires_after = {
+      anchor: "created_at",
+      seconds: expires_seconds
+    }
+  }
+
+  return  await openai.files.create(options);
+}
+
+async function deleteFile(fileId){
+  const openai = new OpenAI({
+    baseURL: `https://${process.env.OAI_URL}/v1`,
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: 60000
+  });
+  const result = await openai.files.delete(fileId)
+  return result;
+}
+
+async function listFiles(){
+  const openai = new OpenAI({
+    baseURL: `https://${process.env.OAI_URL}/v1`,
+    apiKey: process.env.OPENAI_API_KEY,
+    timeout: 60000
+  });
+  const result = await openai.files.list()
+  return result;
+}
 
 async function responseStream(dialogueClass,instructions = null){
 
-
 const userInstance = dialogueClass.userInstance
 const model = userInstance.currentModel
-
 const openai = new OpenAI({
+  baseURL: `https://${process.env.OAI_URL}/v1`,
   apiKey: process.env.OPENAI_API_KEY,
-  timeout: modelConfig[model].timeout_ms || 180000,
+  timeout: modelConfig[model].timeout_ms || 180000
 });
 
-const input = await dialogueClass.getDialogueForRequest(model)
+const input = await dialogueClass.getDialogueForRequest(model,userInstance.currentRegime)
 
 const options = {
     model: model,
@@ -33,7 +82,10 @@ const options = {
     store:false,
     background: false
 }
+
+
 const includeUsage = modelConfig[model].includeUsage
+
 if (includeUsage) {
     options.include = includeUsage
 }
@@ -52,16 +104,18 @@ const modelCanUseTemperature = modelConfig[model].canUseTemperature
 if (modelCanUseTemperature) {
     options.temperature = userInstance.currentTemperature;
 }
+
 const availableToolsInstance = new AvailableTools(userInstance);
-const available_tools =  await availableToolsInstance.getAvailableToolsForCompletion()
+const available_tools =  await availableToolsInstance.getAvailableToolsForCompletion(userInstance.currentRegime);
 const modelCanUseTools = modelConfig[model].canUseTool
 
-if(available_tools && available_tools.length>0 && modelCanUseTools){
+if(available_tools && available_tools.length > 0 && modelCanUseTools){
       options.tools = available_tools;
-      options.tool_choice = "auto"
-  }
+      options.tool_choice = "auto";
+};
+otherFunctions.saveTextToTempFile(JSON.stringify(options,null,4),`oai_request_${dialogueClass.id}.json`)
 
-const   responseStream = await openai.responses.create(options);
+const responseStream = await openai.responses.create(options);
 
 return responseStream;
 }
@@ -69,6 +123,7 @@ return responseStream;
 async function responseSync(model,instructions, input,temperature = 0,tools = [],tool_choice = "auto",output_format = { "type": "text" },truncation = null) {
 
 const openai = new OpenAI({
+  baseURL: `https://${process.env.OAI_URL}/v1`,
   apiKey: process.env.OPENAI_API_KEY,
   timeout: 180000,
 });
@@ -114,14 +169,14 @@ async function getModels() {
     return models.data
 };
 
-async function VoiceToText(audioReadStream,openAIToken,userInstance) {
+async function VoiceToText(audioReadStream,openAIToken) {
   try {
 
     
     const formData = new FormData();
     formData.append("file", audioReadStream);
     formData.append("model", appsettings.voice_to_text.oai_model_id);
-
+    
     const headers = {
       Authorization: `Bearer ${openAIToken}`,
       ...formData.getHeaders(),
@@ -154,12 +209,6 @@ async function VoiceToText(audioReadStream,openAIToken,userInstance) {
       transcript = openai_resp.data.text;
     }
 
-    await mongo.insertTokenUsage({
-      userInstance:userInstance,
-      prompt_tokens:null,
-      completion_tokens:null,
-      mode:appsettings.voice_to_text.oai_model_id
-    });
     return transcript;
   } catch (err) {
     if (err.mongodblog === undefined) {
@@ -245,138 +294,30 @@ const options = {
   }
 } 
 
-async function chatCompletionStreamAxiosRequest(
-  requestMsg, 
-  dialogueClass
-) {
-
-    const completionInstance = dialogueClass.completionInstance
-
-    const options = {
-      url: modelSettings[requestMsg.user.currentRegime].hostname + modelSettings[requestMsg.user.currentRegime].url_path,
-      method: "POST",
-      encoding: "utf8",
-      responseType: "stream",
-      timeout: completionInstance.timeout,
+async function getFileFromContainer(containerId, fileId) {
+  const options = {
+      url: `https://${process.env.OAI_URL}/v1/containers/${containerId}/files/${fileId}/content`,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${requestMsg.user.openAIToken}`,
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
-      validateStatus: function (status) {
-        return status == appsettings.http_options.SUCCESS_CODE;
-      },
-      data: {
-        model:requestMsg.user.currentModel,
-        messages: await dialogueClass.getDialogueForRequest(),
-        stream: true,
-        stream_options: {
-          include_usage: true,
-        }
-      },
-    };
-    
-    const availableToolsInstance = new AvailableTools(dialogueClass.userInstance);
-    const available_tools =  await availableToolsInstance.getAvailableToolsForCompletion()
-    const canUseTools = modelConfig[requestMsg.user.currentModel].canUseTool
-    const canUseTemperature = modelConfig[requestMsg.user.currentModel].canUseTemperature
-    
-    if(canUseTemperature){
-      options.data.temperature = requestMsg.user.currentTemperature
+      responseType: 'arraybuffer'
     }
 
-    if(available_tools && available_tools.length>0 && canUseTools){
-      //Add functions, if they exist
-      options.data.tools = available_tools;
-      options.data.tool_choice = "auto"
-    }
-   // console.log("4","before axios",new Date())
-    
-    try {
-      return await axios(options);
-    } catch (error) {
+    const response = await axios(options)
 
-      const errorAugmented = await OpenAIErrorHandle(error,dialogueClass);
-      throw errorAugmented
-    }
+    return Buffer.from(response.data)
+
 }
-
-async function OpenAIErrorHandle(error,dialogueClass) {
-
-        let newErr = error;
-        console.log("OpenAIErrorHandle",error)
-        newErr.place_in_code = newErr.place_in_code || "openAi_API.OpenAIErrorHandle";
-
-        if (error.status === 400 || error.message.includes("400")) {
-
-          newErr.code = "OAI_ERR_400";
-          newErr.user_message = msqTemplates.OAI_ERR_400.replace("[original_message]",error?.message ?? "отсутствует");
-          
-          // Regular expression to check if the error message indicates that the context length limit has been exceeded
-          const contentExceededPattern = new RegExp(/context_length_exceeded/);
-          const contentIsExceeded = contentExceededPattern.test(error.message)
-          const imageSizeExceededPattern = new RegExp(/image size is (\d+(?:\.\d+)?[KMG]B), which exceeds the allowed limit of (\d+(?:\.\d+)?[KMG]B)/);
-          const imageSizeIsExceededMatch = newErr.message.match(imageSizeExceededPattern)
-          
-          if(contentIsExceeded){
-            newErr.resetDialogue = {
-              message_to_user: otherFunctions.getLocalizedPhrase("token_limit_exceeded",dialogueClass.userInstance.language_code)
-            }
-
-          } else if (imageSizeIsExceededMatch){
-            const placeholders = [{key:"[actualsize]",filler:imageSizeIsExceededMatch[1]},{key:"[limit]",filler:imageSizeIsExceededMatch[2]}]
-            newErr.resetDialogue = {
-              message_to_user: otherFunctions.getLocalizedPhrase("image_size_exceeded",dialogueClass.userInstance.language_code,placeholders)  
-            }
-          } else if(error.message.includes("MCP approval requests do not have an approval")){
-            
-             newErr.user_message = otherFunctions.getLocalizedPhrase("mcp_approval_required",dialogueClass.userInstance.language_code);
-             newErr.mongodblog = false;
-             newErr.adminlog = false;
-             newErr.code = "OAI_ERR_400"
-             newErr.userResponseRequired = true;
-          }
-            return newErr;
-          
-        } else if (error.status === 401 || error.message.includes("401")) {
-          newErr.code = "OAI_ERR_401";
-          newErr.user_message = msqTemplates.OAI_ERR_401.replace("[original_message]",newErr?.message ?? "отсутствует");
-          return newErr;
-        } else if (error.status === 429 || error.message.includes("429")) {
-          newErr.code = "OAI_ERR_429";
-          newErr.data = error.data
-          newErr.user_message = msqTemplates.OAI_ERR_429.replace("[original_message]",newErr?.message ?? "отсутствует");
-          newErr.mongodblog = false;
-          return newErr;
-        } else if (error.status === 500 || error.message.includes("500")) {
-          newErr.code = "OAI_ERR_500";
-          newErr.user_message = msqTemplates.OAI_ERR_500.replace("[original_message]",newErr?.message ?? "отсутствует");
-          return newErr;
-        } else if (error.status === 501 || error.message.includes("501")) {
-          newErr.code = "OAI_ERR_501";
-          newErr.user_message = msqTemplates.OAI_ERR_501.replace("[original_message]",newErr?.message ?? "отсутствует");
-          return newErr;
-        } else if (error.status === 503 || error.message.includes("503")) {
-          newErr.code = "OAI_ERR_503";
-          newErr.user_message = msqTemplates.OAI_ERR_503.replace("[original_message]",newErr?.message ?? "отсутствует");
-          return newErr;
-        }  else if (error.code === "ECONNABORTED") {
-            newErr.code = "OAI_ERR_408";
-            newErr.user_message = msqTemplates.OAI_ERR_408;
-            return newErr;
-        } else {
-          newErr.code = "OAI_ERR99";
-          newErr.user_message = msqTemplates.error_api_other_problems;
-          return newErr;
-        }
-      }
-
-
 
 module.exports = {
   getModels,
-  chatCompletionStreamAxiosRequest,
   VoiceToText,
   TextToVoice,
   responseStream,
-  responseSync
+  responseSync,
+  uploadFile,
+  deleteFile,
+  listFiles,
+  getFileFromContainer
 };

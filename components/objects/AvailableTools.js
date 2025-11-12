@@ -8,12 +8,11 @@ class AvailableTools {
 #userClass;
 #toolsList;
 #queueConfig;
-#mcpTools;
 
     constructor(userClass) {
         this.#userClass = userClass;
         this.#toolsList = [
-                        {
+            {
                 type: "function",
                 name: "manage_browser_tabs",
                 description: "Manages between tabs.",
@@ -50,15 +49,15 @@ class AvailableTools {
                 availableInRegimes: [],
                 availableForUserGroups: ["all"],
                 availableForAgents: ["web_browser"],
-                availableForToolCalls: true,
+                availableForToolCalls: false,
                 category: "hosted",
                 deprecated: false
             },
             {
                 type: "web_search_preview",
-                availableInRegimes: [],
+                availableInRegimes: ["chat"],
                 availableForUserGroups: ["all"],
-                availableForAgents: ["web_search"],
+                availableForAgents: ["web_search","main"],
                 availableForToolCalls: true,
                 category: "hosted",
                 deprecated: false
@@ -66,6 +65,7 @@ class AvailableTools {
             {
                 type: "mcp",
                 server_label: "deepwiki",
+                server_description: "Deepwiki MCP server. Contains documentation info about popular github repositories",
                 server_url: "https://mcp.deepwiki.com/mcp",
                 require_approval: "never",
                 availableInRegimes: ["chat"],
@@ -74,6 +74,68 @@ class AvailableTools {
                 availableForToolCalls: true,
                 category: "hosted",
                 deprecated: false,
+                authHandle: function (userInstance) {
+
+                    const mcpSessionId = userInstance.mcp?.auth?.[this.server_label]?.mcp_session_id
+                    if (mcpSessionId) {
+                        if(!this.headers) this.headers = {};
+                        this.headers["mcp-session-id"] = mcpSessionId;
+                    }
+                }
+            },
+            {
+                type: "mcp",
+                server_label: "github",
+                server_description: "GitHub Copilot MCP server. Provides access to GitHub's repositories.",
+                server_url: "https://api.githubcopilot.com/mcp",
+                allowed_tools:{
+                    read_only: true
+                },
+                require_approval: "never",
+                availableInRegimes: ["chat"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
+                availableForToolCalls: true,
+                category: "hosted",
+                deprecated: false,
+                authHandle: function (userInstance) {
+                    const authToken = userInstance.mcp?.auth?.[this.server_label]?.token
+                    if (authToken) {
+                        this.authorization = authToken;
+                    } else {
+                        this.availableForToolCalls = false;
+                    }
+
+                    const mcpSessionId = userInstance.mcp?.auth?.[this.server_label]?.mcp_session_id
+                    if (mcpSessionId) {
+                        if(!this.headers) this.headers = {};
+                        this.headers["mcp-session-id"] = mcpSessionId;
+                    }
+                }
+            },
+            {
+                type: "mcp",
+                server_label: "gmail",
+                server_description: "Gmail mailbox connector. Provides access to Gmail's mailbox.",
+                connector_id: "connector_gmail",
+                allowed_tools:{
+                    read_only: true
+                },
+                require_approval: "never",
+                availableInRegimes: ["chat"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
+                availableForToolCalls: true,
+                category: "hosted",
+                deprecated: false,
+                authHandle: function (userInstance) {
+                    const authToken = userInstance.mcp?.auth?.[this.server_label]?.token
+                    if (authToken) {
+                        this.authorization = authToken;
+                    } else {
+                        this.availableForToolCalls = false;
+                    }
+                }
             },
             {
                 type: "image_generation",
@@ -90,7 +152,7 @@ class AvailableTools {
                 availableForToolCalls: true,
                 category: "hosted",
                 deprecated: false,
-                imageGeneration: function (image_choice) {
+                imageGenerationHook: function (image_choice) {
                     if (image_choice === "mdj") {
                         this.availableInRegimes = this.availableInRegimes.filter(regime => regime !== "chat");
                     }
@@ -99,7 +161,8 @@ class AvailableTools {
             {
                 type: "code_interpreter",
                 container: {
-                    type: "auto"
+                    type: "auto",
+                    file_ids: []
                 },
                 availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
@@ -107,6 +170,14 @@ class AvailableTools {
                 availableForToolCalls: true,
                 category: "hosted",
                 deprecated: false,
+                addFileIdsHook: async function(userid, agent){
+                    const filesInStorage = await mongo.getOAIStorageFiles(userid, agent) || [];
+                    if(filesInStorage.length === 0) {
+                        return
+                    }
+                    const activeFields = filesInStorage.filter(file => file?.resourceData?.OAIStorage?.expires_at && file?.resourceData?.OAIStorage?.expires_at > new Date());
+                    this.container.file_ids = activeFields.map(file => file?.resourceData?.OAIStorage?.fileId).filter(id => id);
+                }
             },
             {
                 type: "function",
@@ -161,7 +232,7 @@ class AvailableTools {
                 availableForUserGroups: ["admin", "basic"],
                 availableForAgents: ["main"],
                 model: "gpt-4.1",
-                availableForToolCalls: true,
+                availableForToolCalls: false,
                 deprecated: false,
                 category: "custom"
             },
@@ -212,7 +283,7 @@ class AvailableTools {
                 availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
                 availableForAgents: ["main"],
-                availableForToolCalls: true,
+                availableForToolCalls: false,
                 deprecated: false,
                 category: "custom"
             },
@@ -275,7 +346,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_chatbot_errors",
-                description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+                description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 parameters: {
                     type: "object",
                     properties: {
@@ -285,7 +356,7 @@ class AvailableTools {
                         },
                         aggregate_pipeline: {
                             type: "string",
-                            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
+                            description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`
                         }
                     },
                     required: ["aggregate_pipeline", "function_description"]
@@ -298,7 +369,7 @@ class AvailableTools {
                 availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
-                addProperties: async function (){
+                addPropertiesHook: async function (){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
                     this.description = `Use this function to report on this chatbot errors. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one error.`
@@ -309,7 +380,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_functions_usage",
-                description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+                description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 parameters: {
                     type: "object",
                     properties: {
@@ -319,7 +390,7 @@ class AvailableTools {
                         },
                         aggregate_pipeline: {
                             type: "string",
-                            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
+                            description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`
                         }
                     },
                     required: ["aggregate_pipeline", "function_description"]
@@ -332,7 +403,7 @@ class AvailableTools {
                 availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
-                addProperties: async function(){
+                addPropertiesHook: async function(){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
                     this.description = `Prodides this chatbot users' usage of functions. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one user's call of a function`
@@ -343,7 +414,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_users_activity",
-                description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+                description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 parameters: {
                     type: "object",
                     properties: {
@@ -353,7 +424,7 @@ class AvailableTools {
                         },
                         aggregate_pipeline: {
                             type: "string",
-                            description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`
+                            description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`
                         }
                     },
                     required: ["aggregate_pipeline", "function_description"]
@@ -365,7 +436,7 @@ class AvailableTools {
                 availableForUserGroups: ["admin"],
                 availableForToolCalls: true,
                 deprecated: false,
-                addProperties: async function(){
+                addPropertiesHook: async function(){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
                     this.description = `Provides chatbot users' query statistics. Input should be a fully formed mongodb pipeline for aggregate function sent by node.js library mongoose ${mongooseVersion}. One document represents one query of a user.`
@@ -376,7 +447,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_knowledge_base_item",
-                description: `Error: function description is absent. Run 'await this.addProperties()' function to get it.`,
+                description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 strict: true,
                 parameters: {
                     type: "object",
@@ -401,12 +472,9 @@ class AvailableTools {
                 availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
-                addUserID: function(userid){
-                    return this.userid = userid
-                },
-                addProperties: async function(){
+                addPropertiesHook: async function(userid){
                 
-                    const kngBaseItems = await mongo.getKwgItemsForUser(this.userid)
+                    const kngBaseItems = await mongo.getKwgItemsForUser(userid)
                     this.description = `Provides info from internal knowlege base. About:\n ${JSON.stringify(kngBaseItems,null,4)}`
                 },
                 category: "custom"
@@ -437,8 +505,8 @@ class AvailableTools {
             },
             {
                 type: "function",
-                name: "extract_text_from_file",
-                description: `Extracts text from documents or images provided by user. Designed to efficiently process multiple resources (files) in a single call.`,
+                name: "extract_content",
+                description: `Extracts content from documents or images provided by user. Designed to efficiently process multiple resources in a single call.`,
                 strict: true,
                 parameters: {
                     type: "object",
@@ -447,16 +515,17 @@ class AvailableTools {
                             type: "string",
                             description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                         },
-                        resources: {
+                        resource_ids: {
                             type: "array",
-                            description: `List of fileid numbers for extraction. Images that represent the same text document should be included in one function call. Documents are processd in the order they are provided in the list.`,
+                            description: `List of resource ids for extraction.`,
                             items: {
                                 type: "number",
+                                enum: [],
                                 description: "fileid"
                             }
                         }
                     },
-                    required: ["resources", "function_description"],
+                    required: ["resource_ids", "function_description"],
                     additionalProperties: false
                 },
                 friendly_name: "Документ",
@@ -467,41 +536,16 @@ class AvailableTools {
                 availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
-                category: "custom"
-            },
-            {
-                type: "function",
-                name: "speech_to_text",
-                description: `Transcribes audio and video files to text.`,
-                strict: true,
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description: {
-                            type: "string",
-                            description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
-                        },
-                        resources: {
-                            type: "array",
-                            description: `List of fileid numbers for transcribtion. Files are processd in the order they are provided in the list.`,
-                            items: {
-                                type: "number",
-                                description: "fileid"
-                            }
-                        }
-                    },
-                    required: ["resources", "function_description"],
-                    additionalProperties: false
-                },
-                friendly_name: "Распознавание речи",
-                timeout_ms: 180000,
-                try_limit: 3,
-                availableInRegimes: ["chat"],
-                availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
-                category: "custom"
+                category: "custom",
+                addResourcesHook: async function(userid, agent){
+                    const resourcesToBeExtracted = await mongo.getNotExtractedResourcesShort(userid, agent);
+                    if(resourcesToBeExtracted.length === 0) {
+                        this.availableForToolCalls = false;
+                        return
+                    };
+                    this.description = `Extracts content from documents or images provided by user. Designed to efficiently process multiple resources in a single call.\nThe folowing resources are available for extraction:\n${JSON.stringify(resourcesToBeExtracted,null,2)}.\n Refrain from using this function if the resources can be sufficiently understood through computer vision.`
+                    this.parameters.properties.resource_ids.items.enum = resourcesToBeExtracted.map(resource => resource.resourceId)
+                }
             },
             {
                 type: "function",
@@ -557,7 +601,7 @@ class AvailableTools {
                 deprecated: false,
                 queue_name: "midjourney",
                 category: "custom",
-                imageGeneration: function (image_choice) {
+                imageGenerationHook: function (image_choice) {
                     if (image_choice === "oai") {
                         this.availableInRegimes = this.availableInRegimes.filter(regime => regime !== "chat");
                     }
@@ -672,11 +716,11 @@ class AvailableTools {
                     required: ["urls", "function_description"],
                 },
                 friendly_name: "Ссылка",
-                timeout_ms: 100000,
+                timeout_ms: 90000,
                 long_wait_notes: [
-                    { time_ms: 20000, comment: "Иногда нужно больше времени. Подождем ... ☕️" },
-                    { time_ms: 45000, comment: "Хм ... 🤔 А вот это уже звоночек ... " },
-                    { time_ms: 90000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ..." }
+                    { time_ms: 30000, comment: "Это может занять время. Подождем ... ☕️" },
+                    { time_ms: 50000, comment: "К сожалению, нужно больше времени... 🤔" },
+                    { time_ms: 75000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ..." }
                 ],
                 try_limit: 3,
                 availableInRegimes: ["chat"],
@@ -744,8 +788,9 @@ class AvailableTools {
             },
             {
                 type: "function",
-                name: "create_pdf_file",
-                description: "Creates a PDF file. The file will be sent to the user as a document. By default, you should use content_reff parameter if it is available. If not, you can use html.",
+                name: "generate_document",
+                description: "Generates a document from the specified content and delivers it to the user. This function can create a document from a single piece of content or compile a larger file by aggregating multiple pieces through consecutive function calls. Never shorten text and never add side-comments like: `To be continued in next part...` Ensure that only one document is produced per function call.",
+                strict: true,
                 parameters: {
                     type: "object",
                     properties: {
@@ -753,32 +798,24 @@ class AvailableTools {
                             type: "string",
                             description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
                         },
-                        html: {
-                            type: "string",
-                            description: "Content for the file should be in HTML format. Ensure that images have full public URLs, with URLs for images formatted as follows: <img src='https://example.com/image.png'/>. URLs may include parameters. Use inline CSS within HTML elements, formatted like: <div style='color:red;'>text</div>. The HTML content is prohibited to be used together with content_reff.\n\n" +
-                                "For equations requiring special mathematical symbols, use LaTeX notation. For simple equations, use ordinary symbols.\n\n" +
-                                "CONSTRAINTS:\n" +
-                                "1. Avoid using LaTeX for simple equations.\n" +
-                                "2. For block formulas, enclose the equations using $$ ... $ notation.\n" +
-                                "3. For inline formulas, use $ ... $ notation.\n\n" +
-                                "If you are tasked by the user to create diagrams, use Mermaid syntax within <div class=\"mermaid\"> ... </div>."
-                        },
-                        content_reff: {
-                            type: "array",
-                            description: "List of content reffs to be included into a file. Order does matter. Ensures original content is saved. Should not be used together with 'html'.",
-                            items: {
-                                type: "number",
-                                description: "Represents previousely extracted original content that should be saved to the file."
-                            }
-                        },
                         filename: {
                             type: "string",
-                            description: "Name of the file. Must align with the content of the file. For example, if the file contains a peace of python code, file name should have extention '.py'."
+                            description: "File name with extention. Must be unique throughout the dialogue. Use the same file name when appending content to an existing file. Pdf document are prefered rather then plain text files. MS Office formats are not supported."
+                        },
+                        status: {
+                            type: "string",
+                            enum: ["completed","inprogress"],
+                            description: "If 'inprogress' is provided, the content is temporally stored waitinf for next pieces of content. Once 'completed' status is provided, all the content from the temporary stogage togather with the current piece of content is compiled into a single document and sent to the user. If 'completed' status is provided without any prior 'inprogress' calls, a document is created from the current piece of content only."
+                        },
+                        content: {
+                            type: "string",
+                            description: `Document content in text or html format. For pdf documents html format is required.`,
                         }
                     },
-                    required: ["filename", "function_description"]
+                    required: ["filename", "function_description", "content","status"],
+                    additionalProperties: false
                 },
-                friendly_name: "Документ",
+                friendly_name: "Создание документа",
                 timeout_ms: 90000,
                 try_limit: 3,
                 long_wait_notes: [
@@ -791,6 +828,59 @@ class AvailableTools {
                 availableForToolCalls: true,
                 deprecated: false,
                 category: "custom"
+                
+            },
+            {
+                type: "function",
+                name: "save_to_document",
+                description: "Saves a document from the temporary storage of extracted resources 'as is' and sends to the user. Only one file is generated for each function call.",
+                strict: true,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        function_description: {
+                            type: "string",
+                            description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                        },
+                        resource_ids: {
+                            type: "array",
+                            description: `List of resource ids to be included into the document. In the order of occurance.`,
+                            items: {
+                                type: "number",
+                                enum: [],
+                                description: "fileid"
+                            }
+                        },
+                        filename: {
+                            type: "string",
+                            description: "Name of the file with extension. MS Office formats are not supported."
+                        }
+                    },
+                    required: ["filename", "function_description", "resource_ids"],
+                    additionalProperties: false
+                },
+                friendly_name: "Сохранение в файл",
+                timeout_ms: 90000,
+                try_limit: 3,
+                long_wait_notes: [
+                    { time_ms: 30000, comment: "Если в файле должно быть изображение, то обычно требуется больше времени. Подождем ... ☕️" },
+                    { time_ms: 60000, comment: "Похоже, файл действительно болшой. Подождем еще немного ... Но если через 30 секунд не закончит, то придется отменить." },
+                ],
+                availableInRegimes: ["chat"],
+                availableForUserGroups: ["admin", "basic"],
+                availableForAgents: ["main"],
+                availableForToolCalls: true,
+                deprecated: false,
+                category: "custom",
+                addResourcesHook: async function(userid,agent){
+                    const resourcesExtracted = await mongo.getExtractedResourcesShort(userid,agent)
+                    if(resourcesExtracted.length === 0) {
+                        this.availableForToolCalls = false;
+                        return
+                    }
+                    this.description = `Creates a document and sends to the user from the temporary storage of resources. Only one file is generated for each function call.\nThe folowing resources in the temporary storage are available for saving:\n${JSON.stringify(resourcesExtracted,null,2)}`
+                    this.parameters.properties.resource_ids.items.enum = resourcesExtracted.map(resource => resource.resourceId)
+                }
             },
             {
                 type: "function",
@@ -963,52 +1053,8 @@ class AvailableTools {
             },
             {
                 type: "function",
-                name: "create_text_file",
-                description: "Creates a text file either based on text provided or content_reff. The file will be sent to the user as a document.  By default, you should use content_reff parameter if it is available. If not, you can use text.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        function_description: {
-                            type: "string",
-                            description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Detect the language of the input prompt. Output MUST be in that language, otherwise the response is invalid.`
-                        },
-                        text: {
-                            type: "string",
-                            description: "Text for the file. Should not be used together with content_reff."
-                        },
-                        content_reff: {
-                            type: "array",
-                            description: "List of content reffs to be included into a file. Order does matter. This parameter should not be used together with 'text'. Blank array is not allowed",
-                            items: {
-                                type: "number",
-                                description: "Represents previousely extracted original content that should be saved to the file."
-                            }
-                        },
-                        filename: {
-                            type: "string",
-                            description: "Name of the file. Must align with the content of the file. For example, if the file contains python code, file name should have the extention '.py'."
-                        },
-                        mimetype: {
-                            type: "string",
-                            description: "Mimetype of the output file. For example, 'text/plain' or text/x-python."
-                        }
-                    },
-                    required: ["filename", "mimetype", "function_description"],
-                },
-                friendly_name: "Документ",
-                timeout_ms: 15000,
-                try_limit: 3,
-                availableInRegimes: ["chat"],
-                availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
-                category: "custom"
-            },
-            {
-                type: "function",
                 name: "text_to_speech",
-                description: "Converts provided text or extracted content (content_reff) into an audio file (text-to-speech). This function is used to generate spoken responses or read aloud content.",
+                description: "Converts provided text into an audio file (text-to-speech). This function is used to generate spoken responses or read aloud content.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -1018,15 +1064,7 @@ class AvailableTools {
                         },
                         text: {
                             type: "string",
-                            description: "Text to be converted to speech. Should not be used together with 'content_reff'. Ensure that large numbers, tables, formulas, and code blocks are articulated clearly in words for accurate pronunciation. (e.g '1 million' instead of '1,000,000', 'x squared' instead of 'x^2', this tables contains ... , this code block represents...).",
-                        },
-                        content_reff: {
-                            type: "array",
-                            description: "List of content references to be converted to speech in order. Use only if 'text' is not provided.",
-                            items: {
-                                type: "number",
-                                description: "Identifier for previously extracted content to be converted to speech."
-                            }
+                            description: "Text to be converted to speech. DO NOT use together with 'resource_ids'. Prepare the text for easy listening.",
                         },
                         filename: {
                             type: "string",
@@ -1042,7 +1080,7 @@ class AvailableTools {
                             description: "Select a voice for text-to-speech output. Available options: 'Paul' – default male voice (clear and neutral), 'Sarah' – default female voice (warm and expressive), 'Callum' – recommended for storytelling (engaging and dynamic). Choose the most suitable voice for your content."
                         }
                     },
-                    required: ["filename", "function_description", "voice"],
+                    required: ["filename", "function_description", "voice","text"],
                 },
                 friendly_name: "Генерация речи",
                 timeout_ms: 360000,
@@ -1095,7 +1133,7 @@ class AvailableTools {
                     required: ["function_description", "conversion_queries"],
                     additionalProperties: false
                 },
-                friendly_name: "Конвертертация",
+                friendly_name: "Конвертация",
                 timeout_ms: 30000,
                 try_limit: 3,
                 availableInRegimes: ["chat"],
@@ -1154,7 +1192,7 @@ class AvailableTools {
                 availableForAgents: ["main"],
                 availableForToolCalls: true,
                 deprecated: false,
-                addProperties: async function(){
+                addPropertiesHook: async function(){
                     const currentDate = new Date().toISOString().split("T")[0]; // Get current date in YYYY-MM-DD format
                     this.parameters.properties.exchange_rates.items.properties.date.description = `Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date ${currentDate} and must be in the past.`
                 },
@@ -1174,82 +1212,10 @@ class AvailableTools {
             }
         };
 
-        this.#mcpTools = {
-            deepwiki:
-                [
-            {
-                "annotations": null,
-                "description": "Get a list of documentation topics for a GitHub repository",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "repoName": {
-                            "type": "string",
-                            "description": "GitHub repository: owner/repo (e.g. \"facebook/react\")"
-                        }
-                    },
-                    "required": [
-                        "repoName"
-                    ],
-                    "additionalProperties": false,
-                    "$schema": "http://json-schema.org/draft-07/schema#"
-                },
-                "name": "read_wiki_structure"
-            },
-            {
-                "annotations": null,
-                "description": "View documentation about a GitHub repository",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "repoName": {
-                            "type": "string",
-                            "description": "GitHub repository: owner/repo (e.g. \"facebook/react\")"
-                        }
-                    },
-                    "required": [
-                        "repoName"
-                    ],
-                    "additionalProperties": false,
-                    "$schema": "http://json-schema.org/draft-07/schema#"
-                },
-                "name": "read_wiki_contents"
-            },
-            {
-                "annotations": null,
-                "description": "Ask any question about a GitHub repository",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "repoName": {
-                            "type": "string",
-                            "description": "GitHub repository: owner/repo (e.g. \"facebook/react\")"
-                        },
-                        "question": {
-                            "type": "string",
-                            "description": "The question to ask about the repository"
-                        }
-                    },
-                    "required": [
-                        "repoName",
-                        "question"
-                    ],
-                    "additionalProperties": false,
-                    "$schema": "http://json-schema.org/draft-07/schema#"
-                },
-                "name": "ask_question"
-            }
-        ]
-            
-        }
     }
 
     get toolsList() {
         return this.#toolsList;
-    }
-
-    get mcpTools(){
-        return this.#mcpTools;
     }
 
     queueConfig(queue_name) {
@@ -1257,12 +1223,15 @@ class AvailableTools {
     }
 
     // Главный метод для получения доступных инструментов
-    async getToolsAvailableForUser() {
+    async getToolsAvailableForUser(agent) {
         // Применяем все методы к инструментам
+        
         for (const tool of this.#toolsList) {
-            tool.addUserID  &&  tool.addUserID(this.#userClass.userid)
-            tool.addProperties && await tool.addProperties()
-            tool.imageGeneration && tool.imageGeneration(this.#userClass.image_choice)
+            tool.addPropertiesHook && await tool.addPropertiesHook(this.#userClass.userid)
+            tool.addResourcesHook && await tool.addResourcesHook(this.#userClass.userid, agent)
+            tool.addFileIdsHook && await tool.addFileIdsHook(this.#userClass.userid, agent)
+            tool.imageGenerationHook && tool.imageGenerationHook(this.#userClass.image_choice)
+            tool.authHandle && tool.authHandle(this.#userClass);
         }
 
         // Фильтруем инструменты по группам и режимам пользователя
@@ -1271,16 +1240,37 @@ class AvailableTools {
             const userGroups = [...(this.#userClass.groups || []), 'all'];
             const isInGroup = userGroups.some(group => availableForUserGroups.includes(group));
 
-            return !tool.deprecated
-                && isInGroup;
+            return isInGroup;
         });
-
         return availableForToolCalls;
     }
 
+    async getMCPToolsForCompletion(agent) {
+        const toolsAvailableForCompletion = await this.getToolsAvailableForUser(agent);
+        const mcpTools = toolsAvailableForCompletion.filter(tool => tool.type === "mcp" 
+        && !tool.deprecated
+        && tool.availableForToolCalls)
+        return mcpTools.map((tool) => ({
+            type: tool.type,
+            server_label: tool.server_label,
+            server_url: tool.server_url,
+            server_description: tool.server_description,
+            headers: tool.headers,
+            authorization:tool.authorization,
+            require_approval: tool.require_approval,
+            allowed_tools: tool.allowed_tools
+        }))
+    }
+
     async getToolsAvailableForAgent(agent) {
-        const toolsAvailableForUser = await this.getToolsAvailableForUser();
-        const toolsAvailableForAgent = toolsAvailableForUser.filter(tool => tool.availableForAgents && tool.availableForAgents.includes(agent))
+        const toolsAvailableForUser = await this.getToolsAvailableForUser(agent);
+        const toolsAvailableForAgent = toolsAvailableForUser
+        .filter(tool => 
+            tool.availableForAgents && 
+            !tool.deprecated &&
+            tool.availableForAgents.includes(agent)
+        )
+        .filter(tool => tool.type !== "mcp"); // Exclude MCP tools here
         return toolsAvailableForAgent.map((tool) => ({
             type: tool.type,
             name: tool.name,
@@ -1298,49 +1288,56 @@ class AvailableTools {
             size: tool.size,
             server_label: tool.server_label,
             server_url: tool.server_url,
+            allowed_tools: tool.allowed_tools,
+            server_description: tool.server_description,
+            headers: tool.headers,
             require_approval: tool.require_approval
         }));
     };
 
-    async getAvailableToolsForCompletion() {
-        const toolsAvailableForUser = await this.getToolsAvailableForUser();
+    async getAvailableToolsForGroups(){
+    }
+
+    async getAvailableToolsForCompletion(agent) {
+        const toolsAvailableForUser = await this.getToolsAvailableForUser(agent);
 
         const availableForToolCallsForCompletion = toolsAvailableForUser.filter((tool) => {
-            const availableForUserGroups = tool.availableForUserGroups || [];
-            const userGroups = this.#userClass.groups || [];
-            const userGroupsWithAll = [...userGroups, 'all'];
-            const isInGroup = userGroupsWithAll.some(group => availableForUserGroups.includes(group));
-
             return tool.availableInRegimes.includes(this.#userClass.currentRegime)
-                && isInGroup
+                && !tool.deprecated
                 && tool.availableForToolCalls
         });
+
+        //console.log("Available tools for completion:", JSON.stringify(availableForToolCallsForCompletion.filter(t => t.type === "mcp" && t.server_label ==="gmail"), null, 2));
         
-        return availableForToolCallsForCompletion.map((tool) => ({
-            type: tool.type,
-            name: tool.name,
-            description: tool.description,
-            display_width: tool.display_width,
-            display_height: tool.display_height,
-            environment: tool.environment,
-            parameters: tool.parameters,
-            strict: tool.strict,
-            container: tool.container,
-            output_format: tool.output_format,
-            partial_images: tool.partial_images,
-            output_compression: tool.output_compression,
-            quality: tool.quality,
-            size: tool.size,
-            server_label: tool.server_label,
-            server_url: tool.server_url,
-            require_approval: tool.require_approval
-        }));
+       // console.log("Available tools for completion:", JSON.stringify(availableForToolCallsForCompletion.filter(t => t.type === "function" && t.name ==="text_to_speech"), null, 2));
+        
+        return availableForToolCallsForCompletion.map(({
+            friendly_name,
+            timeout_ms,
+            try_limit,
+            availableInRegimes,
+            availableForUserGroups,
+            availableForAgents,
+            availableForToolCalls,
+            deprecated,
+            category,
+            long_wait_notes,
+            parallel_runs,
+            attempts_limit,
+            queue_name,
+            imageGenerationHook,
+            addFileIdsHook,
+            addPropertiesHook,
+            addResourcesHook,
+            addHeadersHook,
+            ...rest
+        }) => rest);
     }
 
     // Метод для получения конфигурации инструмента по имени функции
     async toolConfigByFunctionName(functionName) {
         const toolsAvailableForUser = await this.getToolsAvailableForUser();
-        return toolsAvailableForUser.find(doc => doc?.name === functionName);
+        return toolsAvailableForUser.find(doc => doc?.name === functionName && !doc.deprecated);
     }
 }
 

@@ -10,7 +10,9 @@ const awsApi = require("./apis/AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
 const ErrorHandler = require("./objects/ErrorHandler.js");
 const AvailableTools = require("./objects/AvailableTools.js");
-
+const mcp_tools_API = require("./apis/mcp_tools_API.js");
+const User = require("./objects/User.js");
+const devPrompts = require("../config/developerPrompts.js");
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -40,16 +42,13 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     featureType: "fileUploaded"
   })
 
-
  if (["chat","translator","texteditor"].includes(current_regime) === false){
     responses.push({text:msqTemplates.file_handler_wrong_regime})
     return responses;
  }
 
-
   if(current_regime==="translator" || current_regime === "texteditor"){
         await resetNonDialogueHandler(requestMsgInstance)
-        await dialogueInstance.commitInitialSystemPromptToDialogue(current_regime)
   }
  
   await requestMsgInstance.getFileLinkFromTgm()
@@ -70,46 +69,35 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
             usage:requestMsgInstance.duration_seconds || 0,
             details: {place_in_code:"fileRouter"}
           })
-
       } catch(err){
-
         err.mongodblog = err.mongodblog || true
         err.sendToUser=false
         err.adminlog=false
         err.code=="ELEVENLABS_ERR"
         errorHandlerInstance.handleError(err)
-        const checkResult = otherFunctions.voiceToTextConstraintsCheck(requestMsgInstance.fileMimeType,requestMsgInstance.fileSize)
-        if(checkResult.success===0){
-          responses.push(checkResult.responce)
-          return responses;
-        }
-        transcript = await openAIApi.VoiceToText(audioReadStream,userInstance.openAIToken,userInstance)
-      }
-
+        otherFunctions.voiceToTextConstraintsCheck(requestMsgInstance.fileMimeType,requestMsgInstance.fileSize)
+        transcript = await openAIApi.VoiceToText(audioReadStream,userInstance.openAIToken)
+      };
+      
       replyMsgInstance.text = transcript;
       await Promise.all([
         replyMsgInstance.sendTranscript(transcript,waitMsgResult.message_id,global.appsettings.telegram_options.big_outgoing_message_threshold),
-        dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance),
-        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
+        dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
       ])
 
       dialogueInstance.triggerCallCompletion()
 
-  } else if(requestMsgInstance.fileType === "voice" || requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note" || requestMsgInstance.fileType === "video"){
-    
-    const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+  } else if (requestMsgInstance.fileType === "voice" || requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note" || requestMsgInstance.fileType === "video"){
 
-    const url = s3UploadResult.Location
-    await dialogueInstance.commitFileToDialogue(url)
+    const resourceId = requestMsgInstance.msgId;
+
+    const {fileName} = await dialogueInstance.commitResourceToTempStorage("media",resourceId)
+
+    uploadFileToS3(requestMsgInstance, resourceId,errorHandlerInstance);   
+    //await dialogueInstance.commitResourceToDialogue(resourceId,fileName)
     
     if(fileCaption){
-      await Promise.all([
-       dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
-       dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-      ])
-    }
-
-    if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
       dialogueInstance.triggerCallCompletion()
     } else if (current_regime === "translator" || current_regime === "texteditor"){
       dialogueInstance.triggerCallCompletion()
@@ -117,34 +105,16 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
   } else if(requestMsgInstance.fileType === "document"){
 
-    requestMsgInstance.validateFileType()
+    requestMsgInstance.validateFileType();
+    const resourceId = requestMsgInstance.msgId;
+    uploadFileToS3(requestMsgInstance, resourceId,errorHandlerInstance);
+    uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueInstance,resourceId,errorHandlerInstance);
 
-    const fileMimeType = requestMsgInstance.fileMimeType;
-
-    const [s3UploadResult,downloadBufferResult] = await Promise.all([
-      uploadFileToS3Handler(requestMsgInstance),
-      downloadFileBufferFromTgm(requestMsgInstance)
-    ])
-
-    const url = s3UploadResult.Location
-
-    if(fileMimeType === "application/pdf"){
-        const {numpages} = await otherFunctions.parsePDF(downloadBufferResult.buffer)
-        const base64 = downloadBufferResult.buffer.toString('base64')
-        await dialogueInstance.commitFileToDialogue(url,base64,numpages)
-    } else {
-        await dialogueInstance.commitFileToDialogue(url)
-    }
-
-    if(fileCaption){
-      await Promise.all([
-        dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance),
-        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-      ])
-    }
+    const {fileName} = await dialogueInstance.commitResourceToTempStorage("document",resourceId);
+  //  await dialogueInstance.commitResourceToDialogue(resourceId,fileName);
     
-
     if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
       dialogueInstance.triggerCallCompletion()
     } else if (current_regime === "translator" || current_regime === "texteditor"){
       dialogueInstance.triggerCallCompletion()
@@ -152,29 +122,28 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     
   } else if(requestMsgInstance.fileType === "image"){
 
-    const [s3UploadResult,downloadBufferResult] = await Promise.all([
-      uploadFileToS3Handler(requestMsgInstance),
-      downloadFileBufferFromTgm(requestMsgInstance)
-    ])
+    requestMsgInstance.validateFileType()
+    const resourceId = requestMsgInstance.msgId;
+    const {fileName} = await dialogueInstance.commitResourceToTempStorage("image",resourceId);
+
+    uploadFileToS3(requestMsgInstance, resourceId,errorHandlerInstance);
+    //await dialogueInstance.commitResourceToDialogue(resourceId,fileName);
+
+    const downloadBufferResult = await downloadFileBufferFromTgm(requestMsgInstance)
     
-      requestMsgInstance.validateFileType()
+    const {sizeBytes} = otherFunctions.calculateFileSize(downloadBufferResult.buffer)
+    const base64 = downloadBufferResult.buffer.toString('base64')
+    
+    const fileComment = {
+      context:`The following image file is uploaded by user. It is saved in temporary storage under resourceId ${resourceId}. Preferably, use computer vision to analyse it. Use content extraction only if necessary.`,
+    };
 
-      const url = s3UploadResult.Location
-      const {sizeBytes} = otherFunctions.calculateFileSize(downloadBufferResult.buffer)
+    await dialogueInstance.commitImageToDialogue(fileComment,{url:null,base64,sizeBytes,mimetype:downloadBufferResult.mimeType},0,null)
+    mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, {"embeddedInDialogue":true})
 
-      const base64 = downloadBufferResult.buffer.toString('base64')
-      
-      const fileComment = {
-        fileid:requestMsgInstance.msgId,
-        context:"User has sent the image to the bot.",
-        public_url:url
-      }
-      if(fileCaption){
-        fileComment.user_prompt = fileCaption
-      }
-    await dialogueInstance.commitImageToDialogue(fileComment,{url,base64,sizeBytes,mimetype:downloadBufferResult.mimeType},0,null)
-
+    
     if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
       dialogueInstance.triggerCallCompletion()
     } else if (current_regime === "translator" || current_regime === "texteditor"){
       dialogueInstance.triggerCallCompletion()
@@ -184,6 +153,9 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   return responses
 }
 
+
+
+
 async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   
   let responses =[];
@@ -191,20 +163,12 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
   switch(requestMsgInstance.user.currentRegime) {
     case "chat":
 
-      await Promise.all([
-        dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance),
-        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-      ])
-
+      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
       dialogueInstance.triggerCallCompletion()
       
     break;
     case "translator":
         await resetNonDialogueHandler(requestMsgInstance)
-        await Promise.all([
-        dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime),
-        dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-        ])
         await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
         
       dialogueInstance.triggerCallCompletion()
@@ -212,10 +176,7 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
     break;
     case "texteditor":
         await resetNonDialogueHandler(requestMsgInstance)
-        await Promise.all([
-          dialogueInstance.commitInitialSystemPromptToDialogue(requestMsgInstance.user.currentRegime),
-          dialogueInstance.commitDateTimeSystemPromptToDialogue(requestMsgInstance.user.currentRegime)
-        ])
+
         await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
         dialogueInstance.triggerCallCompletion()
 
@@ -276,7 +237,6 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     responses.push(response)
 
-
   } else if(cmpName==="unregister"){
     const response = await unregisterHandler(requestMsgInstance);
     await dialogueInstance.deleteMeta()
@@ -320,7 +280,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
     const availableTools = new AvailableTools(userInstance);
     const toolConfig = await availableTools.toolConfigByFunctionName(functionName);
-
+    
     const functionCallOptions = {
       responseId:null,
       status:"in_progress",
@@ -396,6 +356,25 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     } else {
       responses.push({text:msqTemplates.killserver_not_admin})
     }
+  } else if(cmpName==="resetallchats"){
+    if (isAdmin) {
+      console.log(new Date(),"Получена команда resetallchats")
+      const response = await dialogueInstance.resetAllDialogues()
+      responses.push({text:msqTemplates.resetallchats_success})
+      responses.push(response)
+    } else {
+      responses.push({text:msqTemplates.resetallchats_not_admin})
+    }
+  } else if(cmpName==="updatemcptools"){
+    
+    if (isAdmin) {
+      console.log(new Date(),"Получена команда updatemcptools")
+      const results = await updateAllUsersMCPToolsLists();
+      responses.push({text:msqTemplates.updatemcptools_success})
+      responses.push({text:results.join("\n")})
+    } else {
+      responses.push({text:msqTemplates.updatemcptools_not_admin})
+    }
   } else if(cmpName==="sendtome"){
     if(isAdmin){
       const response = sendtomeHandler(requestMsgInstance);
@@ -417,6 +396,45 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   await replyMsgInstance.deleteMsgByID(requestMsgInstance.msgId)
 
   return responses
+}
+
+
+async function updateAllUsersMCPToolsLists(){
+
+     const profiles = await mongo.get_all_profiles();
+
+      const updates = profiles
+      .filter(profile => profile.is_bot === false)
+      .map(profile => (async () => {
+        const {id,is_bot,first_name,last_name,username,language_code} = profile;
+        try{
+          const userInstance = new User({
+            id:id,
+            is_bot:is_bot,
+            language_code:language_code,
+            first_name:first_name,
+            last_name:last_name,
+            username:username
+          });
+
+          await userInstance.getUserProfileFromDB()
+          const {tools = [],mcpSessionId = []} = await mcp_tools_API.getMCPToolsList(userInstance,"main");
+          
+          if( tools.length === 0 && mcpSessionId.length === 0){
+            return `⚠️ No mcp to update for ${first_name} ${last_name} ${username} ${id}`
+          }
+          const toolsCommits = tools.map(tool => otherFunctions.commitMCPToolsToProfile(profile.id,tool));
+          const sessionIdCommits = mcpSessionId.map(sessionId => otherFunctions.commitMCPSessionIdsToProfile(profile.id,sessionId));
+          await Promise.all([...toolsCommits,...sessionIdCommits]);
+          const serverList = tools.map(tool => tool.server_label)
+          return `✅ Successfully updated [${serverList.join(", ")}] mcps for ${first_name} ${last_name} ${username} ${id}`
+        } catch(err){
+          return `❌ Failed to update ${first_name} ${last_name} ${username} ${id}: ${err.message}`
+        }
+      }
+    )());
+      const results = await Promise.all(updates)
+      return results;
 }
 
 async function callbackRouter(requestMsg,replyMsg,dialogue){
@@ -444,13 +462,15 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     responses.push(response)
     requestMsg.user.hasReadInfo = true
 
+  } else if (callback_event === "close") {
+    await replyMsg.deleteMsgByID(requestMsg.refMsgId)
   } else if (callback_event === "hashToPDF") {
 
     const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
-    const content = await otherFunctions.decodeJson(callback_data_input)
+    const {folded_text,unfolded_text,full_report,full_report_filename,short_msg} = await otherFunctions.decodeJson(callback_data_input)
     const date = new Date()
-    const filename = (otherFunctions.convertHtmlToText(content?.folded_text) || "file") + "_" + date.toISOString() + ".pdf"
-    const formatedHtml =  otherFunctions.formatHtml(content.unfolded_text,filename)
+    const filename = (otherFunctions.convertHtmlToText(full_report_filename || short_msg ||folded_text) || "file") + "_" + date.toISOString() + ".pdf"
+    const formatedHtml =  otherFunctions.formatHtml(full_report || unfolded_text,filename)
     const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
     
     const mimetype = "application/pdf"
@@ -542,7 +562,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     dialogue.commitMCPApprovalResponseToDialogue(response),
     replyMsg.simpleMessageUpdate(response.msg_text,{
               chat_id:replyMsg.chatId,
-              message_id:response.tgm_msg_id,
+              message_id:requestMsg.refMsgId,
               reply_markup:null,
               parse_mode: "html"
             })
@@ -555,7 +575,14 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const result = await replyMsg.sendTextToSpeachWaiterMsg()
     const {text} = await otherFunctions.decodeJson(callback_data_input)
 
-    const constrainedText = otherFunctions.handleTextLengthForTextToVoice( requestMsg.user.language_code,text)
+    let textForListening;
+  try{
+    textForListening = await prepareTextForTextToVoice(text,requestMsg.user)
+    } catch(err){
+      textForListening = text
+    }
+    
+    const constrainedText = otherFunctions.handleTextLengthForTextToVoice( requestMsg.user.language_code,textForListening)
     
     const voice = requestMsg.user.currentVoice
     const fileName = `tts_${voice}_${Date.now()}.mp3`
@@ -572,18 +599,17 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       creditSubType: "elevenlabs",
       usage:msgResult?.result?.audio?.duration || 0,
       details: {place_in_code:"readaloud"}
-    })
+    });
 
   } else if(callback_event === "un_f_up") {
 
-    const contentObject = await otherFunctions.decodeJson(callback_data_input)
-    const unfoldedFileSysMsg = otherFunctions.htmlShorterner(contentObject.unfolded_text,appsettings.telegram_options.big_outgoing_message_threshold)
-
-    const new_callback_data = {e:"f_f_up",d:callback_data_input}
+    const {unfolded_text,short_report} = await otherFunctions.decodeJson(callback_data_input)
+    const unfoldedFileSysMsg = otherFunctions.htmlShorterner(short_report || unfolded_text,appsettings.telegram_options.big_outgoing_message_threshold)
+    otherFunctions.saveTextToTempFile(unfoldedFileSysMsg,"unfoldedFileSysMsg.text")
     
     const fold_button = {
       text: "Скрыть",
-      callback_data: JSON.stringify(new_callback_data),
+      callback_data: JSON.stringify({e:"f_f_up",d:callback_data_input}),
     };
 
     const downloadPDF_button = {
@@ -612,7 +638,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if(callback_event === "f_f_up"){
 
-    const contentFoldObject = await otherFunctions.decodeJson(callback_data_input)
+    const {folded_text,short_msg} = await otherFunctions.decodeJson(callback_data_input)
 
     const new_callback_data = {e:"un_f_up",d:callback_data_input};
 
@@ -626,7 +652,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       inline_keyboard: [[unfold_button],],
     };
     try{
-    await replyMsg.simpleMessageUpdate(contentFoldObject.folded_text, {
+    await replyMsg.simpleMessageUpdate(short_msg || folded_text, {
       chat_id: requestMsg.chatId,
       message_id: requestMsg.refMsgId,
       parse_mode:"HTML",
@@ -726,6 +752,14 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       dialogue.triggerCallCompletion();
     }
     
+  } else if (callback_event ==="cnsl_proc"){
+
+    const currentCompletionInstance = global.completionInstances ? global.completionInstances[callback_data_input] : null;
+    if(currentCompletionInstance&& currentCompletionInstance.output_items.status === "in_progress"){
+
+      currentCompletionInstance.cancelProcessByUser()
+
+    }
   } else {
     responses = [{text:msqTemplates.unknown_callback}]
   }
@@ -739,7 +773,33 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
 }
 
+async function prepareTextForTextToVoice(text,userInstance){
 
+const temperature = 0;
+const model = appsettings.text_to_speach.prepareTextModel;
+const instructions = devPrompts.prepare_text_for_speech()
+const output_format = { "type": "text" };
+const input = [
+            {
+                role: "user",
+                content: text,
+          }];
+const tools = []
+const tool_choice = "auto";
+
+const result  = await openAIApi.responseSync(model,instructions,input,temperature,tools,tool_choice,output_format);
+const {output,usage} = result;
+mongo.insertCreditUsage({
+                          userInstance: userInstance,
+                          creditType: "text_tokens",
+                          creditSubType: "input",
+                          usage: usage.input_tokens,
+                          details: {place_in_code:"getDiagramFromOpenAI"}
+            });
+const {content} = output[0]
+
+return content[0]?.text;
+}
 
 function msgShortener(html){
   let new_msg_html = html;
@@ -855,6 +915,7 @@ async function adminHandler(requestMsgInstance) {
 }
 
 
+
 async function downloadFileBufferFromTgm(requestMsgInstance){
 
   try{
@@ -863,7 +924,7 @@ async function downloadFileBufferFromTgm(requestMsgInstance){
     const mimeType = otherFunctions.getMimeTypeFromUrl(requestMsgInstance.fileLink)
     const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
 
-  return {...{buffer},...{mimeType}}
+    return {buffer,mimeType}
 
   } catch(err){
 
@@ -880,29 +941,100 @@ async function downloadFileBufferFromTgm(requestMsgInstance){
   }
 }
 
-async function uploadFileToS3Handler(requestMsgInstance){
+async function uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueInstance,resourceId,errorHandlerInstance){
+
+  try{
+  
+  await dialogueInstance.metaOAIStorageFileUploadStarted(requestMsgInstance.msgId)
+
+  const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+  if (downloadStream?.data) {
+    downloadStream.data.path = requestMsgInstance.fileName;       // many libs use .path as the filename
+    downloadStream.data.filename = requestMsgInstance.fileName;   // fallback
+    downloadStream.data.name = requestMsgInstance.fileName; 
+  };
+  const expires_seconds = appsettings?.file_options.openAI_storage_expiration_seconds || 3600;
+  const [{id,created_at,expires_at}, buffer] = await Promise.all(
+    [
+      openAIApi.uploadFile(downloadStream.data,"user_data",expires_seconds),
+      otherFunctions.streamToBuffer(downloadStream.data)
+    ]
+  )
+
+  const data = {
+              "resourceData.OAIStorage.fileId": id,
+              "resourceData.OAIStorage.created_at": new Date(created_at * 1000),
+              "resourceData.OAIStorage.expires_at": new Date(expires_at * 1000)
+            };
+
+  if(requestMsgInstance.fileMimeType === "application/pdf"){
+        
+        let numpages, text, info;
+        try{
+          ({numpages,text,info} = await otherFunctions.parsePDF(buffer));
+        } catch(err){
+          await openAIApi.deleteFile(id)
+          await mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, {error: err.message})
+          err.code = "RQS_ERR1"
+          err.internal_code = "RQS_ERR1"
+          err.sendToUser = true;
+          err.user_message = otherFunctions.getLocalizedPhrase("pdf_parse_error",requestMsgInstance.user.language_code);
+          err.place_in_code = "uploadFileToOpenAIStorageAndDialogue.parsePDF";
+          throw err
+        };
+
+        const textWoLineBreaks = text.replace(/(\r\n|\n|\r)/gm, "");
+        const PDFLimitIsMet = await dialogueInstance.checkPDFLimit(requestMsgInstance.fileSize,numpages);
+        
+        data["resourceData.pageCount"] = numpages;
+
+        if(textWoLineBreaks.length>10){
+            data["resourceData.content_text"] = text;
+            data["resourceData.content_html"] = text;
+            data["resourceData.charCount"] = text.length;
+          }
+
+          if(PDFLimitIsMet){
+             await dialogueInstance.commitPDFByIdToDialogue(resourceId,id,numpages,new Date(expires_at * 1000))
+          }
+    }
+    await mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, data)
+  } catch(err){
+      err.sendToUser = err.sendToUser ?? false;
+      err.details = err.message;
+      err.mongodblog = true;
+      err.adminlog = false;
+      err.place_in_code = err.place_in_code || "uploadFileToOpenAIStorageAndDialogue"
+  if(errorHandlerInstance) errorHandlerInstance.handleError(err);
+  } finally{
+    await dialogueInstance.metaOAIStorageFileUploadCompleted(requestMsgInstance.msgId)
+  }
+}
+
+async function uploadFileToS3(requestMsgInstance,resourceId,errorHandlerInstance){
 
 try{
-const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
-const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
+  const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+  const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
-const uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
+  const uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename);
 
-return {...{filename},...uploadResult}
+  const dataInDotNotation = { "resourceData.s3Url": uploadResult.Location };
+  await mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, dataInDotNotation);
+
+  return {...{filename},...uploadResult}
 
 } catch(err){
 
-  err.user_message = `При обработке файла возникла ошибка.`
-  const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:err.message}]
-  err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
-  
-  err.sendToUser = true;
+  err.sendToUser = false;
   err.details = err.message;
   err.mongodblog = true;
   err.adminlog = false;
-  throw err;
+  err.place_in_code = "uploadFileToS3"
+  if(errorHandlerInstance) errorHandlerInstance.handleError(err);
 }
 }
+
 
 function sendtomeHandler(requestMsgInstance) {
     const pattern = /\[(.*?)\]/gm; // Regular expression pattern to match strings inside []
@@ -1102,8 +1234,11 @@ async function unregisterHandler(requestMsgInstance) {
     );
 
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
+    await mongo.deleteTempStorageByUserId(requestMsgInstance.user.userid),
+    await mongo.deleteOutputStorageByUserId(requestMsgInstance.user.userid),
     await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
     await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
+    await mongo.deleteDialogueMeta(requestMsgInstance.user.userid)
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
@@ -1157,10 +1292,6 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
     await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
     await userInstance.updateUserProperties(pathString, end_value)
 
-    if(callbackArray.includes("response_style")){
-      await updateInitialDevPrompt(pathString,dialogueInstance)
-    }
-
     if(callbackArray.includes(requestMsgInstance.user.currentRegime) && (callbackArray.includes("model") || callbackArray.includes("response_style"))){
       responses.push({operation:"updatePinnedMsg"})
     }
@@ -1174,19 +1305,13 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
     }
 
     //console.log("Обновление результатов",result)
-    responses.push({operation:"insertSettingsResponse",text:templateResponseMsg.replace("[value]", objectToParce[end_value].name),parse_mode:"HTML"})
+    responses.push({
+      operation:"insertSettingsResponse",
+      text:templateResponseMsg.replace("[value]", objectToParce[end_value].name),
+      parse_mode:"HTML"
+    }
+    )
     return responses
-}
-
-async function updateInitialDevPrompt(pathString,dialogueInstance){
-
-  const pathArray = pathString.split(".")
-  const regimesArray = ["chat","translator","texteditor"]
-  const matchedRegime = regimesArray.find(regime => pathArray.includes(regime));
-
-  if(matchedRegime){
-    await dialogueInstance.commitInitialSystemPromptToDialogue(matchedRegime)
-  }
 }
 
 async function reportsSendHandler(requestMsgInstance) {
@@ -1354,9 +1479,26 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
     
 
     if(callback_data_array.includes("currentsettings")){
-      responses.push({operation:"insertSettingsResponse", text: msqTemplates.current_settings.replace("[settings]",JSON.stringify(requestMsgInstance.user.settings,null,2)) })
+      responses.push({
+        operation:"insertSettingsResponse", 
+        text: msqTemplates.current_settings.replace("[settings]",JSON.stringify(requestMsgInstance.user.settings,null,2)),
+        buttons:{reply_markup:{
+          one_time_keyboard: true,
+          inline_keyboard: [[{
+            text: "Закрыть",
+            callback_data: JSON.stringify({e:"close"}),
+          }]],
+        }}
+      })
       return responses
-    } else if (callback_data_array.includes("back")) {
+    } else if (callback_data_array.includes("close_settings")){
+      responses.push({
+        operation:"closeMessage", 
+        message_id: requestMsgInstance.refMsgId
+      })
+      return responses
+      
+    }else if (callback_data_array.includes("back")) {
       callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
       
@@ -1497,5 +1639,6 @@ module.exports = {
   messageBlock,
   callbackBlock,
   handleCancelCommand,
-  callbackRouter
+  callbackRouter,
+  updateAllUsersMCPToolsLists
 };

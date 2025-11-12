@@ -29,9 +29,9 @@ let options = {
 if(process.env.WEBHOOK_ENABLED==="true"){
     options["webHook"] = {
         port: process.env.WEBHOOK_PORT
-    }
+    };
     options["polling"] = false
-}
+};
 
 global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, options);
 
@@ -62,6 +62,7 @@ await telegramRouter.UpdateGlobalVariables() //обновляем глобаль
 telegramRouter.GetLibrariesFromAPIs() //получаем список моделей OAI
 
 telegramRouter.router(global.bot) //включаем роутер
+console.log("Server Instance ID:", global.serverInstanceId)
 console.timeEnd('Server startup');
 }
 

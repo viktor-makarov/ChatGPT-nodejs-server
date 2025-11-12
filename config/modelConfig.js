@@ -55,18 +55,22 @@ module.exports = {
     "pdf_input_limit_bites": 33_554_432,
     "pdf_input_limit_pages": 100,
     "canUseTool":true,
+    "reasoning": {
+        "effort": "medium",
+  //      "summary": "auto",
+    },
     "canUseTemperature":true,
     "canUseReasoning":true,
     "includeUsage":[
         "message.input_image.image_url",
-        "reasoning.encrypted_content",
-        "code_interpreter_call.outputs"
+        "code_interpreter_call.outputs",
+        "reasoning.encrypted_content"
     ],
-    "timeout_ms":120000,
+    "timeout_ms":360000,
     "long_wait_notes": [
         {time_ms:30000,comment:"Сервер отвечает дольше обычного ...🤔"},
-        {time_ms:60000,comment:"Надо еще подождать ... ☕️"},
-        {time_ms:90000,comment:"Ждем еще 30 секунд и отменяем запрос ... 🙈"}
+        {time_ms:180000,comment:"Надо еще подождать ... ☕️"},
+        {time_ms:300000,comment:"Ждем еще 60 секунд и отменяем запрос ... 🙈"}
     ],
 },
 "gpt-5":{
@@ -78,13 +82,17 @@ module.exports = {
     "image_input_limit_count": 500,
     "pdf_input_limit_bites": 33_554_432,
     "pdf_input_limit_pages": 100,
+    "reasoning": {
+        "effort": "medium",
+    //    "summary": "auto",
+    },
     "canUseTool":true,
     "canUseTemperature":true,
     "canUseReasoning":true,
     "includeUsage":[
         "message.input_image.image_url",
-        "reasoning.encrypted_content",
-        "code_interpreter_call.outputs"
+        "code_interpreter_call.outputs",
+        "reasoning.encrypted_content"
     ],
     "timeout_ms":120000,
     "long_wait_notes": [

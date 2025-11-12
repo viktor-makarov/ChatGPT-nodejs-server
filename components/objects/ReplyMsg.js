@@ -120,15 +120,6 @@ async getUrlByTgmFileId(fileId){
   return await this.#botInstance.getFileLink(fileId)
 }
 
-async insertFunctionUsage(object){
-
-  try{
-  await mongo.insertFunctionUsagePromise(object)
-  } catch(err){
-    this.#errorHandlerInstance.handleError(err);
-  }
-}
-
 async getDetailsByTgmFileId(fileId){
   const result =  await this.#botInstance.getFile(fileId)
   console.log("File details:", result)
@@ -136,14 +127,11 @@ async getDetailsByTgmFileId(fileId){
 }
 
 async sendStatusMsg(){
-   const result = await this.sendToNewMessage("...")
+  const text = otherFunctions.getLocalizedPhrase(`status_msg`,this.#user.language)
+   const result = await this.sendToNewMessage(text)
    return result
 }
 
-async sendStatusMsg(){
-   const result = await this.sendToNewMessage("...")
-   return result
-}
 
 
 
@@ -371,7 +359,6 @@ async updateMessageReplyMarkup(msgId,reply_markup){
 
 async editMessageCaption(caption, msgId, parse_mode) {
 
-
   let options = {
     chat_id: this.#chatId,
     message_id: msgId,
@@ -411,10 +398,6 @@ async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,par
       
       return result.data;
 }
-
-
-
-
 
 async sendToNewMessage(text,reply_markup,parse_mode,add_options){
 

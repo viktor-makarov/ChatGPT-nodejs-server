@@ -33,6 +33,267 @@ const temp_reply_markup_collection = global.mongoConnection.model(global.appsett
 const temp_resource_storage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_temp_resource_storage,scheemas.tempResourceStorageSheema);
 const output_document_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_output_documents,scheemas.outputDocumentSheema);
 
+async function dropOutputDocumentCollection() {
+  try {
+    const collName = output_document_collection.collection.name;
+    const nativeDb = output_document_collection.db.db; // native MongoDB Db
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await output_document_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found" };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropOutputDocumentCollection";
+    throw err;
+  }
+}
+
+async function deleteOutputStorageByUserId(user_id){
+
+  try {
+    return await output_document_collection.deleteMany({ userid: user_id });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteOutputStorageByUserId";
+    throw err;
+  }
+}
+
+async function deleteOutputStorageByUserIdAndAgent(user_id, agent){
+
+  try {
+    return await output_document_collection.deleteMany({ userid: user_id, agent: agent });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteOutputStorageByUserIdAndAgent";
+    throw err;
+  }
+}
+
+async function insertContentToOutputStorage(filename,user_id,agent,content){
+
+  try {
+
+    const result = await output_document_collection.updateOne(
+      { filename: filename, userid: user_id, agent: agent },
+      { $push: { content } },  // Adds content to the content array
+      { upsert: true, new: true }
+    )
+
+    return result;
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "insertContentToOutputStorage";
+      throw err;
+  }
+};
+
+
+async function getContentByFilename(filename,user_id){
+
+  try {
+    const result = await output_document_collection
+    .find({ userid: user_id, filename: filename}, { _id: 0})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getContentByFilename";
+      throw err;
+  }
+}
+
+async function dropTempResourceStorageCollection() {
+  try {
+    const collName = temp_resource_storage_collection.collection.name;
+    const nativeDb = temp_resource_storage_collection.db.db; // native MongoDB Db
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await temp_resource_storage_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found" };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropTempResourceStorageCollection";
+    throw err;
+  }
+}
+
+async function getNotExtractedResourcesShort(user_id,agent){
+
+  try {
+    const result = await temp_resource_storage_collection
+    .find({ 
+      userid: user_id, 
+      agent: agent, 
+      extracted: false,
+      error: { $exists: false}
+    }, { _id: 0, resourceId: 1, "resourceData.fileName": 1,"resourceData.url": 1, "resourceData.fileSize": 1})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getNotExtractedResourcesShort";
+      throw err;
+  }
+}
+
+async function getExtractedResourcesShort(user_id,agent){
+
+  try {
+    const result = await temp_resource_storage_collection
+    .find({ 
+      userid: user_id, 
+      agent: agent, 
+      extracted: true,
+      error: { $exists: false} 
+    }, { _id: 0, resourceId: 1, "resourceData.fileName": 1,"resourceData.url": 1, "resourceData.fileSize": 1})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getExtractedResourcesShort";
+      throw err;
+  }
+}
+
+
+async function getOAIStorageFiles(user_id,agent){
+
+  console.log("Fetching OAI storage files for user:", user_id, "and agent:", agent);
+  try {
+    const result = await temp_resource_storage_collection
+    .find(
+      { 
+      userid: user_id, 
+      agent: agent,
+      "resourceData.OAIStorage.fileId": { $exists: true, $ne: null } 
+      }, 
+      { _id: 0, resourceId: 1, "resourceData.OAIStorage.fileId": 1, "resourceData.OAIStorage.expires_at": 1 }
+    )
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getOAIStorageFiles";
+      throw err;
+  }
+}
+
+
+
+
+
+async function getResourcesById(resource_ids){
+  try {
+    const result = await temp_resource_storage_collection
+    .find({ resourceId: { $in: resource_ids } }, { _id: 0})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getResourceById";
+      throw err;
+  }
+}
+
+async function saveResourceToTempStorage(userid, agent,resourceId, resourceType, extracted, embeddedInDialogue, createdAt, resourceData){
+
+  try {
+    return await temp_resource_storage_collection.updateOne(
+      { userid: userid, resourceId: resourceId },
+      { 
+        userid,
+        agent,
+        resourceId,
+        resourceType,
+        extracted,
+        embeddedInDialogue,
+        createdAt,
+        resourceData
+      },
+      { upsert: true }
+    );
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveResourceToTempStorage";
+      throw err;
+  }
+};
+
+
+
+async function removeOAIDataInTempStorage(user_id, fileids, dataDotNotation){
+
+  try {
+    const filter = { userid: user_id, "resourceData.OAIStorage.fileId": { $in: fileids }};
+    const $unset = dataDotNotation;
+    return await temp_resource_storage_collection.updateMany(
+      filter,
+      { $unset },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateDataInTempStorage";
+    throw err;
+  }
+}
+
+async function updateDataInTempStorage(user_id, resourceId, dataDotNotation){
+
+  try {
+    const $set = dataDotNotation;
+    return await temp_resource_storage_collection.updateOne(
+      { userid: user_id, resourceId: resourceId },
+      { $set },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateDataInTempStorage";
+    throw err;
+  }
+}
+
+async function deleteTempStorageByUserId(user_id){
+
+  try {
+    return await temp_resource_storage_collection.deleteMany({ userid: user_id });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteTempStorageByUserId";
+    throw err;
+  }
+}
+
+async function deleteTempStorageByUserIdAndAgent(user_id, agent){
+
+  try {
+    return await temp_resource_storage_collection.deleteMany({ userid: user_id, agent: agent });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteTempStorageByUserIdAndAgent";
+    throw err;
+  }
+}
+
+
 
 async function saveTempReplyMarkup(user_id, message_id, reply_markup){
 
@@ -101,6 +362,9 @@ async function addCorrectionToInstructions(domain, type, newInstruction){
 }
 
 async function saveNewTestDiagram(object){
+
+  if(process.env.DEPLOYMENT !== "dev") return;
+
   try {
     const newTestDiagram = new test_diagram_collection(object);
     return await newTestDiagram.save();
@@ -234,6 +498,29 @@ async function addFunctionToQueue(queue_name,function_id,max_concurrent){
 
 }
 
+async function dropDialogueMetaCollection() {
+  try {
+    const collName = dialog_meta_collection.collection.name;
+    const nativeDb = dialog_meta_collection.db.db; // native MongoDB Db
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await dialog_meta_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found" };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropDialogueMetaCollection";
+    throw err;
+  }
+}
+
+
 async function createDialogueMeta(object){
   try {
     const newDialogieMetaObject = new dialog_meta_collection(object);
@@ -268,6 +555,21 @@ async function updateDialogueMeta(userid,object){
     throw err;
   }
 }
+
+async function updateDotNotationDialogueMeta(userid,object){
+  try {
+    return await dialog_meta_collection.updateOne(
+      { userid: userid },
+      { $set: object },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateDialogueMeta";
+    throw err;
+  }
+}
+
 
 async function resetAllInProgressDialogueMeta(){
   try {
@@ -491,6 +793,7 @@ async function insertFunctionUsagePromise(obj){
       username: obj.userInstance.user_username,
       model:obj.userInstance.currentModel,
       tool_function:obj.tool_function,
+      tool_call: obj.tool_call,
       tool_reply:obj.tool_reply,
       call_duration:obj.call_duration,
       success:obj.success
@@ -602,6 +905,29 @@ async function insertTokenUsage(obj){
     throw err;
   }
 };
+
+
+async function dropDialogCollection() {
+  const collName = dialog_collection.collection.name;
+  const nativeDb = dialog_collection.db.db; // native MongoDB Db
+  try {
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await dialog_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found", collection: collName };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropDialogCollection";
+    throw err;
+  }
+}
 
 async function updateCompletionInDb(obj){
   try {
@@ -767,7 +1093,6 @@ async function insertFunctionObject(obj){
 
 const upsertCompletionPromise = async (CompletionObject) => {
   try {
-
     return await dialog_collection.updateOne(
       { sourceid: CompletionObject.sourceid },
       CompletionObject,
@@ -780,6 +1105,17 @@ const upsertCompletionPromise = async (CompletionObject) => {
   }
 };
 
+
+async function getUniqueUserIdsFromDialogs(){
+  try {
+    const uniqueUserIds = await dialog_collection.distinct("userid");
+    return uniqueUserIds;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getUniqueUserIdsFromDialogs";
+    throw err;
+  }
+}
 
 async function  updateToolCallResult(result){
   try {
@@ -828,6 +1164,21 @@ const upsertProfilePromise = async (msg) => {
   }
 };
 
+async function updateProfile(user_id, dataDotNotation){
+
+  try {
+    const $set = dataDotNotation;
+    return await telegram_profile_collection.updateOne(
+      { id: user_id},
+      { $set },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateProfile";
+    throw err;
+  }
+}
 
 async function registerUser(requestMsgInstance,token) {
   try {
@@ -1000,8 +1351,7 @@ async function getLastCompletion(userid, regime) {
     err.place_in_code = "getLastCompletion";
     throw err;
   }
-}
-
+};
 
 const getDialogueFromDB = async (userid, regime) => {
 
@@ -1044,6 +1394,7 @@ const getDialogueFromDB = async (userid, regime) => {
           code_container_id: 1,
           code: 1,
           outputs: 1,
+          expires_at: 1
         }
       )
       .lean()
@@ -1086,7 +1437,7 @@ async function update_elevenlabs_models_list(model_list) {
   
   const operations = model_list.map(model => ({
     updateOne: {
-      filter: { modelId: model.modelId },
+      filter: { model_id: model.model_id },
       update: model,
       upsert: true
     }
@@ -1192,6 +1543,8 @@ const setDefaultVauesForNonExiting = async () => {
     let totalModified = 0;
     let totalMatched = 0;
     
+    const newProfile = new telegram_profile_collection().toObject();
+ 
     // Process profiles in batches
     for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
       const batch = profiles.slice(i, i + BATCH_SIZE);
@@ -1199,7 +1552,6 @@ const setDefaultVauesForNonExiting = async () => {
       
       for (const profile of batch) {
         // Create a new profile document with default values
-        const newProfile = new telegram_profile_collection().toObject();
         
         // Remove _id from new profile to avoid conflicts
         delete newProfile._id;
@@ -1207,7 +1559,6 @@ const setDefaultVauesForNonExiting = async () => {
         // Merge the existing profile data with default values
         // This preserves existing data while adding any missing default fields
         const mergedProfile = { ...newProfile, ...profile };
-        
         // Add to bulk operations
         bulkOps.push({
           replaceOne: {
@@ -1709,7 +2060,33 @@ async function deleteMsgFromDialogById (requestMsgInstance){
   }
 };
 
+async function deleteMsgFromDialogByResponseId (userid, responseId){
 
+  try {
+    const filter = { userid: userid, responseId: responseId };
+    const res = await dialog_collection.deleteMany(filter);
+    return res;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteMsgFromDialogByResponseId";
+    throw err;
+  }
+};
+
+async function deleteMsgFromDialogByFileId (userid, fileId){
+
+  try {
+
+    const filter = { userid: userid, "content.file_id": { $in: fileId }};
+    console.log(`Deleting messages with filter: ${JSON.stringify(filter)}`);
+    const res = await dialog_collection.deleteMany(filter);
+    return res;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteMsgFromDialogByFileId";
+    throw err;
+  }
+};
 
 const deleteDialogByUserPromise = (userid, regime) => {
 
@@ -1845,5 +2222,27 @@ module.exports = {
   getSelfCorrectedInstructions,
   saveTempReplyMarkup,
   getTempReplyMarkup,
-  deleteTempReplyMarkup
+  deleteTempReplyMarkup,
+  saveResourceToTempStorage,
+  deleteTempStorageByUserId,
+  updateDataInTempStorage,
+  getNotExtractedResourcesShort,
+  getResourcesById,
+  getExtractedResourcesShort,
+  getContentByFilename,
+  insertContentToOutputStorage,
+  deleteOutputStorageByUserId,
+  getOAIStorageFiles,
+  deleteTempStorageByUserIdAndAgent,
+  deleteOutputStorageByUserIdAndAgent,
+  getUniqueUserIdsFromDialogs,
+  dropDialogCollection,
+  dropTempResourceStorageCollection,
+  dropOutputDocumentCollection,
+  dropDialogueMetaCollection,
+  updateProfile,
+  deleteMsgFromDialogByFileId,
+  updateDotNotationDialogueMeta,
+  removeOAIDataInTempStorage,
+  deleteMsgFromDialogByResponseId
 };

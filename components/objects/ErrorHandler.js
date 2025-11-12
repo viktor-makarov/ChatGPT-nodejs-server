@@ -3,6 +3,9 @@ const msqTemplates = require("../../config/telegramMsgTemplates");
 const otherFunctions = require("../common_functions");
 const { APIError,APIConnectionTimeoutError } = require("openai");
 
+
+
+
 class ErrorHandler {
 
 #replyMsgInstance;
@@ -22,26 +25,40 @@ class ErrorHandler {
     this.#userInstance = replyMsgInstance.user;
   }
 
-  applyDefaults(err){
-    err = err || {}
-    err.mongodblog = err.mongodblog ?? true //Log to MongoDB by default
+  static async handleInternalError(err){
 
-    return err
-  }
+    try{
+    err = applyDefaults(err);
+    const error_to_log  = createErrorObjectForMongo(err);
+    if(err.mongodblog){
+        const doc = await mongo.insert_error_logPromise(error_to_log)
+        err.mongodblog_id = doc._id
+    } else {
+        err.mongodblog_id = "was not logged to mongodb - as it was not required"  
+    }
+
+    //Log to console
+    if(err.consolelog){
+        console.log(new Date(),"Error:","Internal code: ",err.internal_code,"Original code:", err.code,"Message: ",err.message,"\nLog id in mongo db: ",err.mongodblog_id,"\nStack: ",err.stack)
+    }
+    } catch(error){
+        console.log(new Date(),"(1) Error in error handling function (Static).", "Syntax problem:",error)
+    }
+  };
 
 async handleError(err){
 
-  err = this.applyDefaults(err)
+  err = applyDefaults(err)
 
 try{
-console.log("Error occurred:", err)
+//console.log("Error occurred:", err)
 
 err.userid = this.#userid;
 err = await this.enrichErrorObject(err)
 
 
 //Log to mongodb
-const error_to_log  = this.createErrorObjectForMongo(err);
+const error_to_log  = createErrorObjectForMongo(err);
 if(err.mongodblog){
     const doc = await mongo.insert_error_logPromise(error_to_log)
     err.mongodblog_id = doc._id
@@ -58,7 +75,7 @@ if(err.consolelog){
 if(err.sendToUser){
     err.sendToUserText = "❗️" + " " + (err.user_message || msqTemplates.error_strange)
     let reply_markup = null;
-    if(err.mongodblog){
+    if(err.mongodblog && err.details){
     const detailsHtml = `<pre>Код ошибки: ${err.internal_code}. Запись в логе _id=<code>${err.mongodblog_id}</code></pre>\n\nПодробности:<pre><code class="json">${JSON.stringify(err.details,null,4)}</code></pre>`
     reply_markup = await this.replyMarkupForDetails(detailsHtml,err.sendToUserText)
     }
@@ -103,6 +120,11 @@ if( this.#replyMsgInstance.user.isAdmin && err.adminlog && err.mongodblog){
     const admin_msg_result = await this.#replyMsgInstance.simpleSendNewMessage(sendToAdminText,replyMarkap,"html",add_options)
 }
 
+if(err.trigger_completion && this.#dialogueInstance){
+    this.#dialogueInstance.triggerCallCompletion();
+    err.triggerCallCompletion = false;
+}
+
 } catch(error){
 
     console.log(new Date(),"(1) Error in error handling function (Main).", "Syntax problem:",error)
@@ -128,6 +150,8 @@ async enrichErrorObject(err){
         const {message,type,param,code} = error;
 
         if(type==="invalid_request_error"){
+
+            const fileids = (message.match(/^Files\s*\[([^\]]+)\]\s*were not found$/i)?.[1].match(/file-[A-Za-z0-9]+/g)) || [];
 
             if(code==="context_length_exceeded"){
                 const contentWindowPattern = new RegExp(/input exceeds the context window of this model/);
@@ -178,7 +202,21 @@ async enrichErrorObject(err){
                 err.mongodblog = false
                 err.adminlog = false
 
-            }else {
+            } else if(message.includes("You've exceeded the rate limit")){
+                err.internal_code = "OAI_ERR_400"
+                err.user_message = otherFunctions.getLocalizedPhrase("rate_limit_exceeded",this.#userLanguageCode);
+                err.mongodblog = false
+                err.adminlog = false
+
+            } else if(fileids.length > 0){
+                err.internal_code = "OAI_ERR_404"
+                err.user_message = msqTemplates.OAI_ERR_404
+                err.mongodblog = true
+                err.adminlog = false
+                err.trigger_completion = true
+                await mongo.deleteMsgFromDialogByFileId(this.#userid, fileids);
+                await mongo.removeOAIDataInTempStorage(this.#userid, fileids, {"resourceData.OAIStorage":""});
+            } else {
                 err.internal_code = "OAI_ERR_400"
                 err.user_message = msqTemplates.OAI_ERR_400
                 err.details = error
@@ -188,10 +226,22 @@ async enrichErrorObject(err){
         } else if(type==="server_error"){
            
           err.internal_code = "OAI_ERR_500"
-          err.user_message = msqTemplates.OAI_ERR_500
-          err.details = error
+          err.user_message = err.user_message ?? msqTemplates.OAI_ERR_500
           err.mongodblog = true
 
+        } else if(type==="external_connector_error"){
+           
+          if(message.includes("MCP server") && message.includes("401")){
+            err.internal_code = "OAI_ERR_401"
+            err.user_message = msqTemplates.OAI_ERR_MCP
+            err.details = error
+            err.mongodblog = true
+          } else {
+            err.internal_code = "OAI_ERR_401"
+            err.user_message = msqTemplates.OAI_ERR_500
+            err.details = error
+            err.mongodblog = true
+          }
         } else {
 
             err.internal_code = "OAI_ERR99"
@@ -271,24 +321,6 @@ async enrichErrorObject(err){
     return err
 }
 
-createErrorObjectForMongo(error){
-    const errorObject = {
-        error: {
-          original_code: error.code,
-          internal_code: error.internal_code,
-          message: otherFunctions.wireHtml(error.message),
-          message_from_response:otherFunctions.wireHtml(error.message_from_response),
-          stack: otherFunctions.wireHtml(error.stack),
-          details:otherFunctions.wireHtml(JSON.stringify(error.details,null,4)),
-          place_in_code: otherFunctions.wireHtml(error.place_in_code),
-          user_message: otherFunctions.wireHtml(error.user_message),
-        },
-        userid:error.userid
-      }
-
-    return errorObject
-}
-
 async replyMarkupForDetails(unfoldedtext,foldedText){
 let infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedtext,folded_text:foldedText})
 
@@ -305,5 +337,28 @@ const replyMarkup = {
 
 }
 
+function applyDefaults(err){
+    err = err || {}
+    err.mongodblog = err.mongodblog ?? true //Log to MongoDB by default
+    return err
+  };
+
+function createErrorObjectForMongo(error){
+    const errorObject = {
+        error: {
+          original_code: error.code,
+          internal_code: error.internal_code,
+          message: otherFunctions.wireHtml(error.message),
+          message_from_response:otherFunctions.wireHtml(error.message_from_response),
+          stack: otherFunctions.wireHtml(error.stack),
+          details:otherFunctions.wireHtml(JSON.stringify(error.details,null,4)),
+          place_in_code: otherFunctions.wireHtml(error.place_in_code),
+          user_message: otherFunctions.wireHtml(error.user_message),
+        },
+        userid:error.userid
+      }
+
+    return errorObject
+}
 
 module.exports = ErrorHandler;

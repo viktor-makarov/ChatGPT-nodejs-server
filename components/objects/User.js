@@ -107,6 +107,10 @@ class User{
         return this.#userid
     }
 
+    get mcp(){
+        return this.#fullProfile?.mcp || { auth: {}, tools: {} }
+    }
+
     get is_bot(){
         return this.#is_bot
     }
@@ -216,6 +220,8 @@ class User{
         this.#showSystemMsgs = this.#settings[value]?.sysmsg       
         this.#currentRegime = value
     };
+
+    
 };
 
 module.exports = User;

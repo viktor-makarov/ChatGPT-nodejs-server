@@ -35,6 +35,7 @@ class AsyncQueue {
         err.details = {
             task: task.toString(),
             tasksInQueue: this._tasks.length,
+            msgRequest: err?.response?.request?.body,
             originalStack: err.stack
         };
         this._errorHandlerInstance.handleError(err);
