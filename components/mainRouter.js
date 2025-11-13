@@ -30,10 +30,6 @@ async function UpdateGlobalVariables() {
 
     setInterval(telegramCmdHandler.updateAllUsersMCPToolsLists,appsettings.mcp_options.tools_update_interval_ms);
     console.log(new Date(), "Success! MCP Tools update interval set to" ,appsettings.mcp_options.tools_update_interval_ms,"ms");
-
-    
-    
-
 }
 
 async function GetLibrariesFromAPIs() {
@@ -56,7 +52,6 @@ async function GetLibrariesFromAPIs() {
         throw new Error(`Default voice ${appsettings.text_to_speach.default_voice_name} not found in ElevenLabs voices list`);
     }
     console.log(new Date(),`Success! ElevenLabs voices updated: ${write_elevenlabs_voices}`)
-
 };
 
 async function setBotParameters(botInstance) {

@@ -171,10 +171,8 @@ async function getExtractedResourcesShort(user_id,agent){
   }
 }
 
-
 async function getOAIStorageFiles(user_id,agent){
 
-  console.log("Fetching OAI storage files for user:", user_id, "and agent:", agent);
   try {
     const result = await temp_resource_storage_collection
     .find(
@@ -192,11 +190,7 @@ async function getOAIStorageFiles(user_id,agent){
       err.place_in_code = "getOAIStorageFiles";
       throw err;
   }
-}
-
-
-
-
+};
 
 async function getResourcesById(resource_ids){
   try {

@@ -1247,7 +1247,8 @@ class AvailableTools {
 
     async getMCPToolsForCompletion(agent) {
         const toolsAvailableForCompletion = await this.getToolsAvailableForUser(agent);
-        const mcpTools = toolsAvailableForCompletion.filter(tool => tool.type === "mcp" 
+        const mcpTools = toolsAvailableForCompletion
+        .filter(tool => tool.type === "mcp" && !tool.connector_id
         && !tool.deprecated
         && tool.availableForToolCalls)
         return mcpTools.map((tool) => ({

@@ -81,8 +81,7 @@ const options = {
     stream: true,
     store:false,
     background: false
-}
-
+};
 
 const includeUsage = modelConfig[model].includeUsage
 

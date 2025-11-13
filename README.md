@@ -1,117 +1,65 @@
-# README #
+# ChatGPT Node.js Telegram Bot
 
-This is a Telegram chatbot that utilizes the OpenAI API. The chatbot is built on Node.js using the node-telegram-bot-api module and employs mongodb as its database.
+Production chatbot (v1.0.6) with multi‑provider AI, tool calling, MCP servers, media handling, document generation and admin/reporting.
 
-## Main features ##
+## Core Features
+* Streaming OpenAI responses (multi models incl. GPT‑4.1, GPT‑5, O‑series, reasoning where supported).
+* Regimes: `chat`, `translator`, `texteditor` (each adjusts system prompts + dialogue handling).
+* Voice / video / audio / image / document ingestion; auto transcription (ElevenLabs primary, OpenAI fallback) ≤25MB.
+* Long message stitching (>4000 chars) and pinned header updates per regime/model.
+* Function/tool calling pipeline (dynamic tool availability, per‑user filtering, hooks for resources & auth).
+* Midjourney image generation + custom actions (Discord API) and OpenAI image generation.
+* Text‑to‑speech (ElevenLabs + OpenAI) and speech‑to‑text.
+* Document & file utilities: content extraction, PDF/HTML compile, Excel creation, multi‑part document assembly, save from temp storage.
+* Admin broadcast (/sendtoall, /senttome), reports (/reports), dynamic tools refresh (/updatemcptools), dialogue resets, server control.
+* Usage / tokens / credits / errors / function calls logging in MongoDB.
 
-* The chatbot has main mode: "chat".
-* Additionally, the chatbot offers a voice-to-text mode where users can send audio files (with a maximum size of 25 Mb) and receive the text transcribed, thanks to the Whisper technology from OpenAI.
-* Users can send tasks to the chatbot using both text messages and voice messages. The voice messages are first transcribed using the Whisper technology from OpenAI. In addition to voice messages, users can also send Telegram video notes and other audio and video recordings, as long as they are within 25 Mb.
-* Users can regenerate completions using an inline keyboard button.
-* Users also can modify request settings using the /settings command, enabling them to choose the temperature and model parameters. 
-* Markdown formatting is applied to completions.
-* It also includes an admin mode with advanced options, such as sending messages to all users with /senttome and /sendtoall commands and generating usage reports with /reports command.
-* The chatbot handles user registration through a registration_key specified in the config. Also admin privileges can be obtained by submitting an admin_key.
-* It effectively handles OpenAI's replies in stream mode, so users start receiving replies soon after the request.
-* The chatbot can process incoming and outgoing messages as one message, even if they exceed 4000 characters.
-* The chatbot logs errors, user registration events, and token usage to its database which enables the admin to request respective reports.
+## Tool Categories (Selected)
+Hosted: image_generation, code_interpreter, computer_use_preview, web_search_preview.
+Custom functions: web_search, web_browser & manage_browser_tabs (real browser automation via Puppeteer), fetch_url_content (text + screenshots), extract_content, generate_document, save_to_document, create_excel_file, create_mermaid_diagram, currency_converter, get_currency_rates, text_to_speech, Midjourney (imagine/custom), knowledge base, user guide, admin analytics (errors / functions / users activity).
+MCP servers: deepwiki, github, gmail (session + approval flow, tool listing, per‑user auth & session persistence).
 
+## Architecture Overview
+Request flow: Telegram event → `RequestMsg` → auth / regime routing (`msgRouter`) → dialogue mutation (`Dialogue`) → tool decisions (`AvailableTools`) → completion streaming (`openAI_API.responseStream`) → chunked send via `ReplyMsg`.
+Dialogue assembly: system prompts (base + datetime + MCP tools) + prior user/assistant/tool entries filtered (limits, reasoning, images, search contexts).
+Queues: `AsyncQueue` for serialized long‑running tool calls (e.g. Midjourney). Retry / timeout metadata stored in dialogue.
+Storage: MongoDB (users, dialogues, completions, logs, models, voices), S3 (incoming media), OpenAI File Storage (ephemeral user_data), temp local files (debug snapshots). Images / docs optionally embedded as base64 for OpenAI.
 
+## Environment Variables (Essential Subset)
+Telegram: `TELEGRAM_BOT_TOKEN` (+ `_PROD`).
+OpenAI: `OPENAI_API_KEY`, `OAI_URL`.
+Mongo: `MONGODB_CONNECTION` (+ `_PROD` / `_DEV`).
+Auth Keys: `REGISTRATION_KEY(_PROD)`, `ADMIN_KEY(_PROD)`.
+ElevenLabs: `ELEVENLABS_API_TOKEN`.
+Midjourney / Discord: `DISCORD_SERVER_ID`, `DISCORD_CHANNEL_ID`, `DISCORD_SALAI_TOKEN`, `DISCORD_URL` (optional), `HUGGINGFACE_TOKEN`.
+AWS / S3: `S3_BUCKET_NAME`, `S3_STORAGE_INCOMINGFILES_FOLDER`.
+MCP: tokens per server (stored in user profile, injected dynamically).
 
-## ISSUES ##
-* Incorrect token count of prompts. The chatbot uses the stream functionality of the OpenAI API to receive responses token by token, allowing users to receive responses quickly. However, this functionality does not provide a token count for the prompt or completion. Therefore, we need to implement our own counting method. Counting tokens for completions is straightforward, as each token is receoved separately. The main issue arises with the prompt. According to OpenAI documentation, we use the `gpt-3-encoder` tokenizer. However, if we send a request in a language other than English, it is internally translated into English on API side for further processing, including token counting. Unfortunately, we cannot apply the same trick and must tokenize the initial language, resulting in a different token count. For example, for Russian, the number of tokens is about 2.5 times higher than would be for it's English version. In conclusion, the token count for non-English prompts is always incorrect.
+## Setup (Dev)
+1. Create `.env` with required vars (see list above) + dev Mongo connection.
+2. Start Mongo (docker or local) and optional S3 bucket.
+3. `npm install` then `npm start` (runs `bin/www_prod.js` logic in dev if `PROD_RUN` not set).
+4. Use `/start` with registration key, then `/settings` to adjust model/temperature.
 
+## Setup (Prod)
+1. Rename `docker-compose.yml.prod` → `docker-compose.yml` and set env vars.
+2. (Optional) Enable Mongo auth; update connection string; restart.
+3. Build or use published image `truvoruwka/chatbot_open_ai:1.0.6`.
 
-## TO DO ##
-* Fix the issue of inaccurate token count specifically in relation to prompts.
-* Conduct thorough testing of the recently introduced functions feature.
+## Testing
+```
+npm test   # Runs MCP integration tests
+```
 
-## How do I get set up for production? ##
+## Known Limitations
+Non‑English prompt token counts approximate (stream API lacks prompt usage; tokenizer mismatch after internal translation).
 
-### Prerequisites ###
-* Register on OpenAI to obtain your OpenAI API key.
-* Create a chatbot on Telegram and obtain your Telegram Bot Token.
-* Generate two random keys for the REGISTRATION_KEY and ADMIN_KEY.
-* Ensure that Docker and Docker Compose are installed on your machine.
+## Release Notes (Summary)
+1.0.0 Initial release.
+1.0.3 DB connection leak fix + security logs.
+1.0.6 Expanded tool set (MCP, Midjourney, Excel, diagrams, doc pipeline), reasoning models, improved logging & S3 flow.
 
-### Run chatbot ###
-* Clone the repository to your local machine
-* Rename `docker-compose.yml.prod` to `docker-compose.yml`.
-* Create a `.env` file in the root of the project and set the values for for `TELEGRAM_BOT_TOKEN_PROD`,`OPENAI_API_KEY`, `REGISTRATION_KEY_PROD`,  `ADMIN_KEY_PROD` and `MONGODB_CONNECTION_PROD`.
-* Set up external ports for MongoDB so that you could connect to it from external tools like Compass.
-* Start Docker Compose to run the chatbot. In this case you will be set up with my docker container, stored at DockerHub. If you wish to adjust the config files to your requrements - refer to the the development section.
-* Verify the functionality of your Telegram chatbot.
-* Connect to your mongodb instanse and create a user that the chatbot will connect to the database with and grant nesessary permissions to it.
-* In your `docker-compose.yml`, add ```command: [--auth]``` to the chatbot-mongo-db service. In `.env`, adjust the variable `MONGODB_CONNECTION_PROD` to include authentication credentials of the newly created user.
-* Restart docker-compose. Now you have secured your MongoDB from unauthorized access.
+## License & Contribution
+MIT (`LICENSE.txt`). Fork → branch → PR with concise description + relevant tests.
 
-## How do I get set up for development? ##
-
-### Prerequisites ###
-
-Before starting the development process, make sure you have the following prerequisites
-
-* Node.js and NPM installed on your machine
-* All the requirements mentioned in the production setup section are met
-* Create an additional Telegram chatbot for development purposes, as you cannot use the same chatbot for both production and development environments.
-
-### Run development environment ###
-
-Follow these steps to start the development process:
-
-* Create or add to `.env` file in the root of the project the values for `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `REGISTRATION_KEY`, `ADMIN_KEY` and `MONGODB_CONNECTION_DEV`. They will be used in development mode. So, in your `.env` will live environmental parameters both for dev and prod, but in isolated variables.
-* Rename `config/main_config.yml.prod` to `config/main_config.yml` and adjust if needed.
-* *(Optional)* Read and adjust the other files in the `config` folder according to your specific requirements.
-* Restart Docker Compose to initiate the development MongoDB by executing:```docker-compose restart```
-* Once the development MongoDB is up and running, you can start the project live and confirm its functionality by running the following command:
-```npm start```
-* After all you changes, build a new image and put it into production by adjusting the docker-compuse.yml `image` parameter.
-
-## Contribution guidelines ##
-
-Welcome to the project! We appreciate your interest and value your contributions. To ensure a smooth collaboration experience, please follow these guidelines when making contributions.
-
-### Issue Reporting ###
-
-- Before submitting a new issue, please search through existing issues to check if the same or a similar issue has already been reported.
-- Use the github issue template provided to accurately describe the problem or bug you encountered.
-- Include relevant details such as operating system, browser version, and steps to reproduce the issue.
-
-#### Pull Requests ###
-
-- Fork the repository and create a new branch for your feature or bug fix.
-- Provide a clear and concise description of the changes made in the pull request.
-- Include relevant tests if applicable.
-- Review your own changes before submitting the pull request.
-
-### License ###
-
-- This project is destributed under MIT License. It requires including the original license and copyright notice in derivative works.
-- By contributing to this project, you agree to license your contributions under the project's chosen license.
-
-Please note that project maintainers reserve the right to refuse or remove contributions that do not adhere to these project goals.
-
-Thank you for your contributions and happy coding!
-
-## Release notes ##
-
-### Version 1.0.0 - Initial Release - July 09, 2023
-
-#### Features
-
-* The chatbot main mode "chat".
-* Users can send tasks to the chatbot using both text messages and voice messages. The voice messages are first transcribed using the Whisper technology from OpenAI. In addition to voice messages, users can also send Telegram video notes and other audio and video recordings, as long as they do not exceed 25 Mb in size.
-* The chatbot also offers a voice-to-text mode where users can send audio files (with a maximum size of 25 Mb) and receive the corresponding text, thanks to the Whisper technology from OpenAI.
-* It also includes an admin mode with advanced options, such as sending messages to all users with /senttome and /sendtoall commands and generating usage reports with /reports command.
-* The chatbot handles user registration through a registration_key specified in the config. Admin privileges can be obtained by submitting an admin_key.
-* It effectively handles OpenAI's replies in stream mode, so users start receiving replies soon after the request.
-* The chatbot can process incoming and outgoing messages as one message, even if they exceed 4000 characters.
-* Users can regenerate completions using an inline keyboard button.
-* Markdown formatting is applied to completions.
-* The chatbot logs errors, user registration events, and token usage to its database which enables the admin to request respective reports.
-* Users can modify request settings using the /settings command, enabling them to choose the temperature and model parameters. 
-
-### Version 1.0.3 - Bug fix - October 08, 2023
-* The bug which caused too many connections to database to be created and further caused the machine to be down.
-* added logs of unsuccessful login attempts
-* Minor bug fixes
+Русская инструкция: `user_manual_ru.html`.

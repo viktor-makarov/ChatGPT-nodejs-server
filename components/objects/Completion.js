@@ -158,7 +158,6 @@ class Completion extends EventEmitter {
 
   async cancelProcessByUser() {
 
-
     this.#responseStream.controller.abort();
     clearInterval(this.#output_items.intervalTimerId);
     this.#output_items.generalTimer.stop_lap();
@@ -1330,7 +1329,7 @@ class Completion extends EventEmitter {
               toolType = "ищу в Bing";
           };
           this.#output_items[output_index].friendlyName = "Интернет поиск";
-          this.#output_items[output_index].details = `{toolType} ...`;
+          this.#output_items[output_index].details = `${toolType} ...`;
           this.#output_items[output_index].timeoutTimerId = setTimeout(() => this.cancelEventByTimeout(appsettings.other_options?.web_search_tool_timeout_ms || 120000, output_index), appsettings.other_options?.web_search_tool_timeout_ms || 120000);
         },
         "finalCommit": async (completedEvent) => {
@@ -1378,8 +1377,6 @@ class Completion extends EventEmitter {
     setStatusMsgAsUsed(statusMsg) {
       statusMsg = null;
     }
-
-
 
   async createFunctionCall(event) {
 

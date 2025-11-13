@@ -14,22 +14,10 @@ async function getMCPToolsList(userInstance,agent){
     const temperature = 0;
 
     const availableToolsInstance = new AvailableTools(userInstance);
-    const tools = await availableToolsInstance.getMCPToolsForCompletion(agent);
+    let tools = await availableToolsInstance.getMCPToolsForCompletion(agent);
+    
+    
     if (tools.length === 0) return [];
-    const tool_choice = "required";
-    const output_format = { "type": "text" };
-    const truncation = null;
-
-    const response = await openAIApi.responseSync(
-        model,
-        instructions,
-        input,
-        temperature,
-        tools,
-        tool_choice,
-        output_format,
-        truncation)
-
 
     const mcpInitResults = tools
     .filter(tool => tool.server_url)
@@ -44,7 +32,32 @@ async function getMCPToolsList(userInstance,agent){
         
     })());
 
-    const initResults = await Promise.all(mcpInitResults)
+    const initResults = await Promise.all(mcpInitResults);
+
+    tools = tools.map(tool => {
+        const {headers,server_label} = tool;
+        const initResult = initResults.find(r => r.server_label === server_label);
+        if (initResult && initResult.mcp_session_id){
+            if (!tool.headers) tool.headers = {};
+            tool.headers['mcp-session-id'] = initResult.mcp_session_id;
+        }
+        return tool
+    });
+    
+    const tool_choice = "required";
+    const output_format = { "type": "text" };
+    const truncation = null;
+
+    const response = await openAIApi.responseSync(
+        model,
+        instructions,
+        input,
+        temperature,
+        tools,
+        tool_choice,
+        output_format,
+        truncation)
+
     const { output } = response;
     const toolsList = output.filter(item => item.type === 'mcp_list_tools')
     
