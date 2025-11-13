@@ -1,0 +1,253 @@
+
+@media print {
+    /* Page setup for A4 */
+    @page {
+        size: A4;
+        margin: 15mm 20mm 15mm 20mm;
+    }
+
+    @page wide {
+        size: A4 landscape;
+        margin: 15mm 20mm 15mm 20mm;
+    }
+      /* Body adjustments for print */
+    body {
+        font-size: 10pt !important;
+        line-height: 1.4 !important;
+        color: #000 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: none !important;
+        background: white !important;
+    }
+    
+    /* Prevent page breaks inside critical elements */
+    pre, blockquote, table, figure {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }      /* SVG handling for proper page distribution */
+    svg {
+        max-width: 100% !important;
+        max-height: 200pt !important;
+        height: auto !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+        display: block !important;
+        margin: 10pt 0 !important;
+        width: auto !important;
+    }
+    
+    /* Container for SVG elements with intelligent sizing */
+   
+    /* Small to medium diagrams - try to fit on current page */
+ 
+    
+    /* Mermaid specific adjustments */
+    .mermaid svg {
+        background: white;
+        padding: 5pt;
+        box-sizing: border-box;
+    }
+
+    .mermaid {
+        page-break-inside: avoid;
+        break-inside: avoid;
+        margin: 12pt 0;
+        overflow: visible;
+        max-width: 100%;
+    }
+
+    
+    /* Better heading spacing for PDF */
+    h1, h2, h3, h4, h5, h6 {
+        page-break-after: avoid;
+        break-after: avoid;
+        margin-top: 16pt;
+        margin-bottom: 8pt;
+        font-weight: bold;
+        color: #000;
+    }
+    
+    h1 { 
+        font-size: 16pt; 
+        page-break-before: auto;
+    }
+    h2 { 
+        font-size: 14pt; 
+        margin-top: 20pt;
+    }
+    h3 { font-size: 12pt; }
+    h4 { font-size: 11pt; }
+    h5 { font-size: 10pt; }
+    h6 { font-size: 10pt; }
+    
+    /* Code block adjustments for print */
+    pre {
+        background: #f8f8f8 !important;
+        border: 1pt solid #ccc;
+        padding: 8pt;
+        font-size: 9pt;
+        overflow: visible;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 8pt 0;
+        page-break-inside: avoid;
+    }
+    
+    code {
+        background: #f0f0f0 !important;
+        padding: 1pt 3pt;
+        font-size: 10pt;
+        color: #000;
+        border-radius: 2pt;
+    }
+      /* Table adjustments for PDF - preserve existing border-collapse behavior */
+    table {
+        font-size: 0.9rem !important;
+        width: 100% !important;
+        /* Keep existing border-collapse and spacing for consistency */
+        border-collapse: collapse !important;
+        margin: 8pt 0 !important;
+        page-break-inside: auto;
+        break-inside: auto;
+    }
+    
+    table thead {
+        background: #f0f0f0 !important;
+        font-weight: bold;
+        display: table-header-group;
+    }
+    table tfoot {
+        display: table-footer-group;
+    }
+    
+    table tbody tr:nth-child(even) {
+        background-color: #f8f8f8 !important;
+    }
+    
+    table th, 
+    table td {
+        border: 1pt solid #666;
+        padding: 4pt 6pt;
+        text-align: left;
+        vertical-align: top;
+        white-space: normal;           /* разрешаем переносы */
+        overflow-wrap: anywhere;       /* перенос длинных слов/URL */
+   /*     word-break: break-word; */
+        hyphens: auto;
+    }
+    
+    /* Disable table container scrolling for print */
+    .table-container {
+        width: 100% !important;
+        margin: 8pt 0 !important;
+        overflow: visible !important;
+        font-size: inherit !important;
+        }
+
+    td, th {
+
+        font-size: 0.9em; /* Уменьшение шрифта */
+        }
+
+
+        table tr { 
+            page-break-inside: avoid; 
+            break-inside: avoid-page; 
+        }
+
+    /* ≥5 столбцов → «плотная» (аналог .table--dense) */
+    table:has(> thead > tr > *:nth-child(n+5)),
+    table:has(> tbody > tr:first-child > *:nth-child(n+5)) {
+        /* ничего не ломаем у мелких таблиц */
+    }
+    table:has(> thead > tr > *:nth-child(n+5)) th,
+    table:has(> tbody > tr:first-child > *:nth-child(n+5)) td {
+        padding: 2pt 4pt;
+        font-size: 8pt;
+    }
+
+    /* ≥7 столбцов → «очень плотная» + фиксированная раскладка (аналог .table--tiny + .table--fixed) */
+    table:has(> thead > tr > *:nth-child(n+7)),
+    table:has(> tbody > tr:first-child > *:nth-child(n+7)) {
+        table-layout: fixed;
+    }
+    table:has(> thead > tr > *:nth-child(n+7)) th,
+    table:has(> tbody > tr:first-child > *:nth-child(n+7)) td {
+        padding: 1pt 3pt;
+        font-size: 7.5pt;
+    }
+    
+    table:has(> thead > tr > *:nth-child(n+10)),
+    table:has(> tbody > tr:first-child > *:nth-child(n+10)) {
+      page: wide;
+    }
+
+    
+    /* Blockquote adjustments */
+    blockquote {
+        background: none !important;
+        border-left: 2pt solid #666;
+        padding: 4pt 0 4pt 10pt;
+        margin: 6pt 0;
+        font-style: italic;
+        color: #333;
+        page-break-inside: avoid;
+    }
+    
+    /* Link handling for print */
+    a {
+        color: #000 !important;
+        text-decoration: underline;
+    }
+
+    
+    /* Image handling */
+    img {
+        max-width: 100%;
+        height: auto;
+        page-break-inside: avoid;
+        margin: 8pt auto;
+        display: block;
+    }
+    
+    /* List adjustments */
+    ul, ol {
+        margin: 6pt 0;
+        padding-left: 15pt;
+    }
+    
+    li {
+        margin: 2pt 0;
+        page-break-inside: avoid;
+    }
+    
+    /* Horizontal rule */
+    hr {
+        border: none;
+        border-top: 1pt solid #666;
+        margin: 12pt 0;
+        page-break-after: avoid;
+    }
+    
+    /* Force page breaks where needed */
+    .page-break {
+        page-break-before: always;
+        break-before: page;
+    }
+    
+    /* Avoid page breaks after short elements */
+    p, li, blockquote {
+        orphans: 2;
+        widows: 2;
+    }
+    
+    /* Special handling for complex diagrams */
+
+    
+    /* If content is too wide, force it to fit */
+    * {
+        max-width: 100% !important;
+        box-sizing: border-box;
+    }
+}

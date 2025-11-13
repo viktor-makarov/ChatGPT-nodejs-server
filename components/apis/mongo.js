@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const scheemas = require("./mongo_Schemas.js");
 const moment = require("moment-timezone");
+const { error } = require("console");
 const fs = require("fs").promises;
 
 //Models
@@ -9,6 +10,7 @@ const error_log_collection = global.mongoConnection.model(global.appsettings.mon
 const reg_log_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_reg_log,scheemas.RegistrationLogSheema);
 const token_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_tokens_log,scheemas.TokensLogSheema);
 const function_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_functions_log,scheemas.FunctionUsageLogSheema);
+const feature_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_feature_log,scheemas.FeatureUsageLogSheema);
 const dialog_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_dialogs,scheemas.TelegramDialogSheema);
 const dialog_meta_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_dialogue_meta,scheemas.DialogMetaSheema);
 const function_queue_collection = global.mongoConnection.model(global.appsettings.mongodb_names.col_function_queue,scheemas.FunctionQueueSheema);
@@ -17,6 +19,426 @@ const telegram_model_collection = global.mongoConnection.model(global.appsetting
 const mdj_image_msg = global.mongoConnection.model(global.appsettings.mongodb_names.coll_mdj_image,scheemas.MdjImages);
 const hash_storage = global.mongoConnection.model(global.appsettings.mongodb_names.coll_hash_storage,scheemas.HashStorage);
 const knowledge_base_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_knowledge_base,scheemas.KnowledgeBaseSheema);
+const credits_usage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_creadits_usage,scheemas.CreditsUsageLogSheema);
+
+const elevenlabs_voices_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_elevenlabs_voices,scheemas.VoicesElevenLabsSheema);
+const elevenlabs_models_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_elevenlabs_models,scheemas.ModelsElevenLabsSheema);
+
+const exchange_rates_international_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_exchange_rates_international,scheemas.ExchangeRates);
+const response_events_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_response_events,scheemas.ResponseEventsSheema);
+const test_diagram_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_test_diagram_log,scheemas.TestDiagramSheema);
+const self_corrected_instructions_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_self_corrected_instructions,scheemas.SelfCorrectedInstructionsSheema);
+const temp_reply_markup_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_temp_reply_markup,scheemas.TempReplyMarkupSheema);
+
+const temp_resource_storage_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_temp_resource_storage,scheemas.tempResourceStorageSheema);
+const output_document_collection = global.mongoConnection.model(global.appsettings.mongodb_names.coll_output_documents,scheemas.outputDocumentSheema);
+
+async function dropOutputDocumentCollection() {
+  try {
+    const collName = output_document_collection.collection.name;
+    const nativeDb = output_document_collection.db.db; // native MongoDB Db
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await output_document_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found" };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropOutputDocumentCollection";
+    throw err;
+  }
+}
+
+async function deleteOutputStorageByUserId(user_id){
+
+  try {
+    return await output_document_collection.deleteMany({ userid: user_id });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteOutputStorageByUserId";
+    throw err;
+  }
+}
+
+async function deleteOutputStorageByUserIdAndAgent(user_id, agent){
+
+  try {
+    return await output_document_collection.deleteMany({ userid: user_id, agent: agent });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteOutputStorageByUserIdAndAgent";
+    throw err;
+  }
+}
+
+async function insertContentToOutputStorage(filename,user_id,agent,content){
+
+  try {
+
+    const result = await output_document_collection.updateOne(
+      { filename: filename, userid: user_id, agent: agent },
+      { $push: { content } },  // Adds content to the content array
+      { upsert: true, new: true }
+    )
+
+    return result;
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "insertContentToOutputStorage";
+      throw err;
+  }
+};
+
+
+async function getContentByFilename(filename,user_id){
+
+  try {
+    const result = await output_document_collection
+    .find({ userid: user_id, filename: filename}, { _id: 0})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getContentByFilename";
+      throw err;
+  }
+}
+
+async function dropTempResourceStorageCollection() {
+  try {
+    const collName = temp_resource_storage_collection.collection.name;
+    const nativeDb = temp_resource_storage_collection.db.db; // native MongoDB Db
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await temp_resource_storage_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found" };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropTempResourceStorageCollection";
+    throw err;
+  }
+}
+
+async function getNotExtractedResourcesShort(user_id,agent){
+
+  try {
+    const result = await temp_resource_storage_collection
+    .find({ 
+      userid: user_id, 
+      agent: agent, 
+      extracted: false,
+      error: { $exists: false}
+    }, { _id: 0, resourceId: 1, "resourceData.fileName": 1,"resourceData.url": 1, "resourceData.fileSize": 1})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getNotExtractedResourcesShort";
+      throw err;
+  }
+}
+
+async function getExtractedResourcesShort(user_id,agent){
+
+  try {
+    const result = await temp_resource_storage_collection
+    .find({ 
+      userid: user_id, 
+      agent: agent, 
+      extracted: true,
+      error: { $exists: false} 
+    }, { _id: 0, resourceId: 1, "resourceData.fileName": 1,"resourceData.url": 1, "resourceData.fileSize": 1})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getExtractedResourcesShort";
+      throw err;
+  }
+}
+
+async function getOAIStorageFiles(user_id,agent){
+
+  try {
+    const result = await temp_resource_storage_collection
+    .find(
+      { 
+      userid: user_id, 
+      agent: agent,
+      "resourceData.OAIStorage.fileId": { $exists: true, $ne: null } 
+      }, 
+      { _id: 0, resourceId: 1, "resourceData.OAIStorage.fileId": 1, "resourceData.OAIStorage.expires_at": 1 }
+    )
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getOAIStorageFiles";
+      throw err;
+  }
+};
+
+async function getResourcesById(resource_ids){
+  try {
+    const result = await temp_resource_storage_collection
+    .find({ resourceId: { $in: resource_ids } }, { _id: 0})
+    .lean()
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "getResourceById";
+      throw err;
+  }
+}
+
+async function saveResourceToTempStorage(userid, agent,resourceId, resourceType, extracted, embeddedInDialogue, createdAt, resourceData){
+
+  try {
+    return await temp_resource_storage_collection.updateOne(
+      { userid: userid, resourceId: resourceId },
+      { 
+        userid,
+        agent,
+        resourceId,
+        resourceType,
+        extracted,
+        embeddedInDialogue,
+        createdAt,
+        resourceData
+      },
+      { upsert: true }
+    );
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveResourceToTempStorage";
+      throw err;
+  }
+};
+
+
+
+async function removeOAIDataInTempStorage(user_id, fileids, dataDotNotation){
+
+  try {
+    const filter = { userid: user_id, "resourceData.OAIStorage.fileId": { $in: fileids }};
+    const $unset = dataDotNotation;
+    return await temp_resource_storage_collection.updateMany(
+      filter,
+      { $unset },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateDataInTempStorage";
+    throw err;
+  }
+}
+
+async function updateDataInTempStorage(user_id, resourceId, dataDotNotation){
+
+  try {
+    const $set = dataDotNotation;
+    return await temp_resource_storage_collection.updateOne(
+      { userid: user_id, resourceId: resourceId },
+      { $set },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateDataInTempStorage";
+    throw err;
+  }
+}
+
+async function deleteTempStorageByUserId(user_id){
+
+  try {
+    return await temp_resource_storage_collection.deleteMany({ userid: user_id });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteTempStorageByUserId";
+    throw err;
+  }
+}
+
+async function deleteTempStorageByUserIdAndAgent(user_id, agent){
+
+  try {
+    return await temp_resource_storage_collection.deleteMany({ userid: user_id, agent: agent });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteTempStorageByUserIdAndAgent";
+    throw err;
+  }
+}
+
+
+
+async function saveTempReplyMarkup(user_id, message_id, reply_markup){
+
+  try {
+    const object = {userid:user_id,messageId:message_id,replyMarkup:reply_markup};
+    const newReplyMarkup = new temp_reply_markup_collection(object);
+    return await newReplyMarkup.save();
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveTempReplyMarkup";
+      throw err;
+  }
+};
+
+async function getTempReplyMarkup(user_id) {
+
+  try {
+    const result = await temp_reply_markup_collection.find({ user_id: user_id }, { _id: 0, __v: 0 }).lean()
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getTempReplyMarkup";
+    throw err;
+  }
+}
+
+async function deleteTempReplyMarkup(user_id){
+
+  try {
+    return await temp_reply_markup_collection.deleteMany({ userid: user_id });
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteTempReplyMarkup";
+    throw err;
+  }
+}
+
+async function getSelfCorrectedInstructions(domain, type) {
+  try {
+    const result = await self_corrected_instructions_collection.findOne(
+      { domain: domain, type: type },
+      { _id: 0, __v: 0 }
+    ).lean();
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getSelfCorrectedInstructions";
+    throw err;
+  }
+}
+
+async function addCorrectionToInstructions(domain, type, newInstruction){
+  try {
+    const result = await self_corrected_instructions_collection.updateOne(
+      { domain: domain, type: type },
+      { $push: { instructions: newInstruction } },
+      { upsert: true }
+    );
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "addCorrectionToInstructions";
+    throw err;
+  }
+}
+
+async function saveNewTestDiagram(object){
+
+  if(process.env.DEPLOYMENT !== "dev") return;
+
+  try {
+    const newTestDiagram = new test_diagram_collection(object);
+    return await newTestDiagram.save();
+
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveNewTestDiagram";
+      throw err;
+  }
+}
+
+
+
+async function getEventsList() {
+
+  try {
+    const result = await response_events_collection.distinct('eventType');
+    return result;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getEventsList";
+    throw err;
+  }
+}
+
+async function saveNewEvent(event){
+  try {
+    const result = await response_events_collection.updateOne(
+      { eventType: event.type },
+      { $setOnInsert: { event: event } },
+      { upsert: true }
+    );
+    
+    // Return null if document already existed (no insertion happened)
+    if (result.upsertedCount === 0) {
+      return null;
+    }
+    
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveNewEvent";
+      throw err;
+  }
+}
+
+async function getExchangeRateInternational(time_last_update_unix){
+
+  try {
+    return await exchange_rates_international_collection.findOne({ time_last_update_unix: time_last_update_unix }, { _id: 0, __v: 0 }).lean()
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getExchangeRateInternational";
+    throw err;
+  }
+}
+
+
+async function saveExchangeRateInternational(object){
+  try {
+    const result = await exchange_rates_international_collection.updateOne(
+      { time_last_update_unix: object.time_last_update_unix },
+      { $setOnInsert: object },
+      { upsert: true }
+    );
+    
+    // Return null if document already existed (no insertion happened)
+    if (result.upsertedCount === 0) {
+      return null;
+    }
+    
+    return result;
+  } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "saveExchangeRateInternational";
+      throw err;
+  }
+}
+
+
 
 async function getFunctionQueueByName(queue_name){
 
@@ -24,6 +446,7 @@ async function getFunctionQueueByName(queue_name){
     return await function_queue_collection.findOne({ name: queue_name }, { _id: 0, __v: 0 }).lean()
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getFunctionQueueByName";
     throw err;
   }
 }
@@ -34,6 +457,7 @@ async function removeFunctionFromQueue(function_id){
     return await function_queue_collection.deleteOne({ function_id: function_id });
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "removeFunctionFromQueue";
     throw err;
   }
 
@@ -60,6 +484,7 @@ async function addFunctionToQueue(queue_name,function_id,max_concurrent){
 
   } catch(err){
     err.code = "MONGO_ERR";
+    err.place_in_code = "addFunctionToQueue";
     throw err;
   } finally {
     session.endSession();
@@ -67,21 +492,46 @@ async function addFunctionToQueue(queue_name,function_id,max_concurrent){
 
 }
 
+async function dropDialogueMetaCollection() {
+  try {
+    const collName = dialog_meta_collection.collection.name;
+    const nativeDb = dialog_meta_collection.db.db; // native MongoDB Db
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await dialog_meta_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found" };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropDialogueMetaCollection";
+    throw err;
+  }
+}
+
+
 async function createDialogueMeta(object){
   try {
     const newDialogieMetaObject = new dialog_meta_collection(object);
     return await newDialogieMetaObject.save();
   } catch (err) {
       err.code = "MONGO_ERR";
+      err.place_in_code = "createDialogueMeta";
       throw err;
   }
 }
 
 async function deleteDialogueMeta(userid){
   try {
-    return await dialog_meta_collection.deleteOne({ userid: userid });
+    return await dialog_meta_collection.deleteMany({ userid: userid });
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "deleteDialogueMeta";
     throw err;
   }
 }
@@ -95,9 +545,25 @@ async function updateDialogueMeta(userid,object){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateDialogueMeta";
     throw err;
   }
 }
+
+async function updateDotNotationDialogueMeta(userid,object){
+  try {
+    return await dialog_meta_collection.updateOne(
+      { userid: userid },
+      { $set: object },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateDialogueMeta";
+    throw err;
+  }
+}
+
 
 async function resetAllInProgressDialogueMeta(){
   try {
@@ -108,6 +574,7 @@ async function resetAllInProgressDialogueMeta(){
     return result.modifiedCount || 0
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "resetAllInProgressDialogueMeta";
     throw err;
   }
 }
@@ -117,6 +584,7 @@ async function readDialogueMeta(userid){
     return  await dialog_meta_collection.findOne({ userid: userid },{ _id: 0,__v:0}).lean()
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "readDialogueMeta";
     throw err;
   }
 };
@@ -133,6 +601,7 @@ async function getKwgItemBy(id){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getKwgItemBy";
     throw err;
   }
 };
@@ -151,6 +620,7 @@ async function getKwgItemsForUser(user){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getKwgItemsForUser";
     throw err;
   }
 };
@@ -159,7 +629,7 @@ async function getKwgItemsForUser(user){
 
 async function saveHash(hash,json){
   try {
-
+    
     return await hash_storage.updateOne(
       { hash: hash },
       {hash:hash,
@@ -169,6 +639,7 @@ async function saveHash(hash,json){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "saveHash";
     throw err;
   }
 };
@@ -191,6 +662,7 @@ async function getJsonBy(hash){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getJsonBy";
     throw err;
   }
 };
@@ -224,6 +696,7 @@ async function insert_mdj_msg(msg,userInstance){
 
 } catch (err) {
   err.code = "MONGO_ERR";
+  err.place_in_code = "insert_mdj_msg";
   throw err;
 }
 };
@@ -237,6 +710,7 @@ async function get_mdj_msg_byId(msgId){
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "get_mdj_msg_byId";
     throw err;
   }
 };
@@ -251,6 +725,7 @@ async function insert_details_logPromise(object,place_in_code) {
     return await newLog.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_details_logPromise";
     throw err;
   }
 }
@@ -263,6 +738,7 @@ async function insert_error_logPromise(errorJSON) {
     return await newLog.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_error_logPromise";
     throw err;
   }
 }
@@ -295,7 +771,7 @@ async function insert_reg_eventPromise(
     return await newRegEvent.save();
   } catch (err) {
     err.code = "MONGO_ERR";
-
+    err.place_in_code = "insert_reg_eventPromise";
     throw err;
   }
 }
@@ -311,27 +787,73 @@ async function insertFunctionUsagePromise(obj){
       username: obj.userInstance.user_username,
       model:obj.userInstance.currentModel,
       tool_function:obj.tool_function,
+      tool_call: obj.tool_call,
       tool_reply:obj.tool_reply,
       call_duration:obj.call_duration,
-      call_number:obj.call_number,
       success:obj.success
     });
 
     return await newFunctionUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insertFunctionUsagePromise";
 
+  }
+};
+
+async function insertFeatureUsage(obj){
+  try {
+
+    const newFeatureUsage = new feature_collection({
+      userid: obj.userInstance.userid,
+      userFirstName: obj.userInstance.user_first_name,
+      userLastName: obj.userInstance.user_last_name,
+      username: obj.userInstance.user_username,
+      feature:obj.feature,
+      regime:obj?.regime,
+      featureType:obj.featureType
+    });
+
+    return await newFeatureUsage.save();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "insertFeatureUsage";
     throw err;
   }
 };
 
-const queryTockensLogsByAggPipeline = async (agg_pipeline) => {
+async function insertCreditUsage(obj){
+  try {
+
+    const newCreditUsage = new credits_usage_collection({
+      userid: obj.userInstance.userid,
+      userFirstName: obj.userInstance.user_first_name,
+      userLastName: obj.userInstance.user_last_name,
+      username: obj.userInstance.user_username,
+      creditType:obj.creditType,
+      creditSubType:obj.creditSubType,
+      usage:obj.usage,
+      details:obj.details,
+    });
+
+    return await newCreditUsage.save();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "insertCreditUsage";
+    throw err;
+  }
+};
+
+
+
+
+const queryTokensLogsByAggPipeline = async (agg_pipeline) => {
   try {
 
     return await token_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
-
+    err.place_in_code = "queryTokensLogsByAggPipeline";
     throw err;
   }
 };
@@ -342,6 +864,7 @@ const queryLogsErrorByAggPipeline = async (agg_pipeline) => {
     return await error_log_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "queryLogsErrorByAggPipeline";
     throw err;
   }
 };
@@ -351,13 +874,13 @@ const functionsUsageByAggPipeline = async (agg_pipeline) => {
     return await function_collection.aggregate(agg_pipeline)
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "functionsUsageByAggPipeline";
     throw err;
   }
 };
 
 async function insertTokenUsage(obj){
   try {
-
     const newTokenUsage = new token_collection({
       userid: obj.userInstance.userid,
       userFirstName: obj.userInstance.user_first_name,
@@ -372,9 +895,33 @@ async function insertTokenUsage(obj){
     return await newTokenUsage.save();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insertTokenUsage";
     throw err;
   }
 };
+
+
+async function dropDialogCollection() {
+  const collName = dialog_collection.collection.name;
+  const nativeDb = dialog_collection.db.db; // native MongoDB Db
+  try {
+    const collections = await nativeDb.listCollections({ name: collName }).toArray();
+    const exists = collections.length > 0;
+    if (!exists) {
+      return { dropped: false, reason: "Collection does not exist", collection: collName };
+    }
+    await dialog_collection.collection.drop();
+    return { dropped: true, collection: collName };
+  } catch (err) {
+    // Handle "NamespaceNotFound" gracefully if thrown by Mongo
+    if (err?.codeName === "NamespaceNotFound" || /ns not found/i.test(err?.message || "")) {
+      return { dropped: false, reason: "Collection not found", collection: collName };
+    }
+    err.code = "MONGO_ERR";
+    err.place_in_code = "dropDialogCollection";
+    throw err;
+  }
+}
 
 async function updateCompletionInDb(obj){
   try {
@@ -388,9 +935,28 @@ async function updateCompletionInDb(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateCompletionInDb";
     throw err;
   }
 };
+
+async function addTokensUsage(sourceid,numberOfTokens){
+
+  try {
+    const filter = { sourceid: sourceid }
+    const updateBody = {tokens:numberOfTokens}
+
+    return await dialog_collection.findOneAndUpdate(
+      filter,
+      updateBody
+    );
+
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "addTokensUsage";
+    throw err;
+  }
+}
 
 
 async function updateManyEntriesInDbById(obj){
@@ -405,6 +971,7 @@ async function updateManyEntriesInDbById(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateManyEntriesInDbById";
     throw err;
   }
 };
@@ -423,13 +990,27 @@ async function addMsgIdToToolCall(obj){
 
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "addMsgIdToToolCall";
     throw err;
   }
 };
 
 
+async function getExtractedTextByReff(content_reff){
+  try {
 
-
+    const filter = { "fullContent.reff": { $in: content_reff}}
+    
+    return await dialog_collection.find(
+      filter
+      ,{"fullContent": 1}
+    ).lean();
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getExtractedTextByReff";
+    throw err;
+  }
+}
 
 async function getUploadedFilesBySourceId(sourceid_list){
   try {
@@ -438,17 +1019,17 @@ async function getUploadedFilesBySourceId(sourceid_list){
     
     return await dialog_collection.find(
       filter
-      ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,fileName:1,_id:0}
+      ,{sourceid: 1,fileUrl: 1,fileMimeType: 1,fileName:1,fileSizeBytes:1,fileDurationSeconds:1,_id:0}
     ).lean();
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getUploadedFilesBySourceId";
     throw err;
   }
 }
 
 async function upsertPrompt(promptObj){
   try {
-
     return await dialog_collection.updateOne(
       { sourceid: promptObj.sourceid, role: promptObj.role },
       promptObj,
@@ -456,8 +1037,10 @@ async function upsertPrompt(promptObj){
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "upsertPrompt";
     throw err;
   }
+
 };
 
 async function updateInputMsgTokenUsage(documentId,tokens){
@@ -471,6 +1054,7 @@ async function updateInputMsgTokenUsage(documentId,tokens){
     
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateInputMsgTokenUsage";
     throw err;
   }
 };
@@ -486,7 +1070,7 @@ const updatePromptTokens = async (promptObject) => {
 };
 
 
-async function insertToolCallResult(obj){
+async function insertFunctionObject(obj){
   try {
     const newMessage = new dialog_collection(obj);
 
@@ -495,6 +1079,7 @@ async function insertToolCallResult(obj){
     return result
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insertFunctionObject";
     throw err;
   }
 };
@@ -502,7 +1087,6 @@ async function insertToolCallResult(obj){
 
 const upsertCompletionPromise = async (CompletionObject) => {
   try {
-
     return await dialog_collection.updateOne(
       { sourceid: CompletionObject.sourceid },
       CompletionObject,
@@ -510,36 +1094,48 @@ const upsertCompletionPromise = async (CompletionObject) => {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "upsertCompletionPromise";
     throw err;
   }
 };
 
 
+async function getUniqueUserIdsFromDialogs(){
+  try {
+    const uniqueUserIds = await dialog_collection.distinct("userid");
+    return uniqueUserIds;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "getUniqueUserIdsFromDialogs";
+    throw err;
+  }
+}
+
 async function  updateToolCallResult(result){
   try {
-
-    const  {tool_call_id, content, duration, success} = result
+    const  {content, status,duration, success, fullContent,sourceid} = result
 
     return await dialog_collection.updateOne(
-      { sourceid: tool_call_id },
+      { sourceid: sourceid },
       { 
         $set: {
-          "tool_reply.content": content,
-          "tool_reply.duration": duration,
-          "tool_reply.success": success
+          "content": content,
+          "duration": duration,
+          "success": success,
+          "status": status,
+          "fullContent": fullContent
         }
       }
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateToolCallResult";
     throw err;
   }
 };
 
 const upsertProfilePromise = async (msg) => {
   try {
-
-
     const newProfile = {
       id: msg.from.id,
       id_chat: msg.chat.id,
@@ -557,10 +1153,26 @@ const upsertProfilePromise = async (msg) => {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "upsertProfilePromise";
     throw err;
   }
 };
 
+async function updateProfile(user_id, dataDotNotation){
+
+  try {
+    const $set = dataDotNotation;
+    return await telegram_profile_collection.updateOne(
+      { id: user_id},
+      { $set },
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "updateProfile";
+    throw err;
+  }
+}
 
 async function registerUser(requestMsgInstance,token) {
   try {
@@ -581,6 +1193,43 @@ async function registerUser(requestMsgInstance,token) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "registerUser";
+    throw err;
+  }
+}
+
+async function registerBotUser(botInfo){
+  try {
+    const newProfile = {
+      $set: {
+        id: botInfo.id,
+        id_chat: botInfo.id,
+        is_bot: botInfo.is_bot,
+        first_name: botInfo.first_name,
+        last_name: botInfo.last_name,
+        username: botInfo.username,
+        language_code: botInfo.language_code,
+        "permissions.registered": true,
+        "permissions.readInfo": true,
+        plan: "free",
+        token: "00000000000000000000000000",
+        active: true
+      },
+      // Only set these fields if they don't already exist
+      $setOnInsert: {
+        "permissions.registeredDTUTC": Date.now(),
+        "permissions.readInfoDTUTC": Date.now()
+      }
+    };
+
+    return await telegram_profile_collection.updateOne(
+      { id: botInfo.id },
+      newProfile,
+      { upsert: true }
+    );
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "registerBotUser";
     throw err;
   }
 }
@@ -598,6 +1247,7 @@ async function insert_blank_profile(newToken){
     return await newBlankProfile.save();
   } catch (err) {
       err.code = "MONGO_ERR";
+      err.place_in_code = "insert_blank_profile";
       throw err;
   }
 }
@@ -621,6 +1271,7 @@ const insert_profilePromise = async (msg) => {
       return err.keyValue;
     } else {
       err.code = "MONGO_ERR";
+      err.place_in_code = "insert_profilePromise";
       throw err;
     }
   }
@@ -631,6 +1282,7 @@ const updateOnePromise = async (model, filter, update, options) => {
     return await model.updateOne(filter, update, options);
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "updateOnePromise";
     throw err;
   }
 };
@@ -650,18 +1302,20 @@ const getDocByTgmBtnsFlag = async (userid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getDocByTgmBtnsFlag";
     throw err;
   }
 };
 
-const getDialogueByUserId = async (userid, regime) => {
 
+const getDocByTgmRegenerateBtnFlag = async (userid, regime) => {
+  
   try {
-    const filter = { userid: userid, regime: regime };
+    const filter = { userid: userid, regime: regime,telegramMsgRegenerateBtns: true };
     const result = await dialog_collection
       .find(
         filter,
-        { role: 1, sourceid: 1,createdAtSourceDT_UTC: 1, name: 1, content: 1, content_latex_formula: 1, tool_calls: 1, tool_reply: 1, tokens: 1, telegramMsgId:1, telegramMsgBtns:1, completion_version:1,fileName:1,fileUrl:1,fileCaption:1,fileAIDescription:1}
+        { telegramMsgId: 1,sourceid:1,telegramMsgReplyMarkup:1}
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
@@ -669,10 +1323,10 @@ const getDialogueByUserId = async (userid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getDocByTgmRegenerateBtnFlag";
     throw err;
   }
 };
-
 
 
 async function getLastCompletion(userid, regime) {
@@ -688,19 +1342,54 @@ async function getLastCompletion(userid, regime) {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getLastCompletion";
     throw err;
   }
-}
+};
 
-
-const getDialogueForCompletion = async (userid, regime) => {
+const getDialogueFromDB = async (userid, regime) => {
 
   try {
     const filter = { userid: userid, regime: regime };
     const result = await dialog_collection
       .find(
         filter,
-        { role: 1, content: 1, tool_calls: 1, tool_reply: 1,completion_version:1}
+        { role: 1, 
+          content: 1, 
+          status: 1, 
+          type: 1, 
+          function_name: 1, 
+          respoonseId: 1,
+          tool_call_id:1,
+          function_arguments:1,
+          tokens:1,
+          image_size_bites:1,
+          image_input:1,
+          includeInSearch:1,
+          mcp_tool_call_id:1,
+          mcp_tools:1,
+          mcp_server_label:1,
+          mcp_error:1,
+          mcp_approval_request_id:1,
+          mcp_call_name:1,
+          mcp_call_arguments:1,
+          mcp_approval_response_id:1,
+          mcp_call_approve:1,
+          mcp_call_user_response_reason:1,
+          mcp_call_id:1,
+          mcp_call_error:1,
+          mcp_call_output:1,
+          image_id:1,
+          image_result_base64: 1,
+          reasoning_id:1,
+          reasoning_encrypted_content:1,
+          reasoning_summary: 1,
+          code_id: 1,
+          code_container_id: 1,
+          code: 1,
+          outputs: 1,
+          expires_at: 1
+        }
       )
       .lean()
    //   .sort({ _id: "asc" }) сортировка по id начала сбоить. Берем сообщения в том порядке, как они в базе.
@@ -708,9 +1397,11 @@ const getDialogueForCompletion = async (userid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getDialogueFromDB";
     throw err;
   }
 };
+
 
 async function update_models_listPromise(model_list) {
   if (model_list.length === 0) {
@@ -731,6 +1422,44 @@ async function update_models_listPromise(model_list) {
   return model_list.length;
 }
 
+
+async function update_elevenlabs_models_list(model_list) {
+  if (model_list.length === 0) {
+    const error = new Error("ElevenLabs model list is empty");
+    throw error;
+  }
+  
+  const operations = model_list.map(model => ({
+    updateOne: {
+      filter: { model_id: model.model_id },
+      update: model,
+      upsert: true
+    }
+  }));
+  
+  await elevenlabs_models_collection.bulkWrite(operations);
+  return model_list.length;
+}
+
+async function update_elevenlabs_voices_list(voices_list) {
+  if (voices_list.length === 0) {
+    const error = new Error("ElevenLabs voices list is empty");
+    throw error;
+  }
+  
+  const operations = voices_list.map(voice => ({
+    updateOne: {
+      filter: { voice_id: voice.voice_id },
+      update: voice,
+      upsert: true
+    }
+  }));
+  
+  await elevenlabs_voices_collection.bulkWrite(operations);
+  return voices_list.length;
+}
+
+
 async function insert_permissions_migrationPromise(msg) {
   try {
 
@@ -743,6 +1472,7 @@ async function insert_permissions_migrationPromise(msg) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_permissions_migrationPromise";
     throw err;
   }
 }
@@ -760,6 +1490,7 @@ async function insert_adminRolePromise(requestMsgInstance) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_adminRolePromise";
     throw err;
   }
 }
@@ -776,6 +1507,7 @@ async function insert_read_sectionPromise(requestMsgInstance) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_read_sectionPromise";
     throw err;
   }
 }
@@ -792,6 +1524,7 @@ async function insert_read_section_migrationPromise(msg) {
     );
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "insert_read_section_migrationPromise";
     throw err;
   }
 }
@@ -804,6 +1537,8 @@ const setDefaultVauesForNonExiting = async () => {
     let totalModified = 0;
     let totalMatched = 0;
     
+    const newProfile = new telegram_profile_collection().toObject();
+ 
     // Process profiles in batches
     for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
       const batch = profiles.slice(i, i + BATCH_SIZE);
@@ -811,7 +1546,6 @@ const setDefaultVauesForNonExiting = async () => {
       
       for (const profile of batch) {
         // Create a new profile document with default values
-        const newProfile = new telegram_profile_collection().toObject();
         
         // Remove _id from new profile to avoid conflicts
         delete newProfile._id;
@@ -819,7 +1553,6 @@ const setDefaultVauesForNonExiting = async () => {
         // Merge the existing profile data with default values
         // This preserves existing data while adding any missing default fields
         const mergedProfile = { ...newProfile, ...profile };
-        
         // Add to bulk operations
         bulkOps.push({
           replaceOne: {
@@ -843,14 +1576,15 @@ const setDefaultVauesForNonExiting = async () => {
     return { modifiedCount: totalModified, matchedCount: totalMatched, processedCount };
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "setDefaultVauesForNonExiting";
     throw err;
   }
 };
 
 async function replaceProfileValues(dry_run = true) {
 
-  const replacemant_lists = require("../config/replacement_lists.js");
-  const func = require("./other_func.js")
+  const replacemant_lists = require("../../config/replacement_lists.js");
+  const func = require("../common_functions.js")
 
   const replacementList = replacemant_lists.profile
 
@@ -1165,6 +1899,7 @@ const getCompletionById = async (sourceid, regime) => {
     return result;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "getCompletionById";
     throw err;
   }
 };
@@ -1207,6 +1942,7 @@ async function UpdateSettingPromise(requestMsgInstance, pathString, value){
     return res;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "UpdateSettingPromise";
     throw err;
   }
 };
@@ -1225,6 +1961,7 @@ async function updateCurrentRegimeSetting(requestMsgInstance){
       if (!err.code) { // Only override code if it's not already set
           err.code = "MONGO_ERR";
       }
+      err.place_in_code = "updateCurrentRegimeSetting";
       throw err;
   }
 };
@@ -1312,11 +2049,38 @@ async function deleteMsgFromDialogById (requestMsgInstance){
     return res;
   } catch (err) {
     err.code = "MONGO_ERR";
+    err.place_in_code = "deleteMsgFromDialogById";
     throw err;
   }
 };
 
+async function deleteMsgFromDialogByResponseId (userid, responseId){
 
+  try {
+    const filter = { userid: userid, responseId: responseId };
+    const res = await dialog_collection.deleteMany(filter);
+    return res;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteMsgFromDialogByResponseId";
+    throw err;
+  }
+};
+
+async function deleteMsgFromDialogByFileId (userid, fileId){
+
+  try {
+
+    const filter = { userid: userid, "content.file_id": { $in: fileId }};
+    console.log(`Deleting messages with filter: ${JSON.stringify(filter)}`);
+    const res = await dialog_collection.deleteMany(filter);
+    return res;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    err.place_in_code = "deleteMsgFromDialogByFileId";
+    throw err;
+  }
+};
 
 const deleteDialogByUserPromise = (userid, regime) => {
 
@@ -1339,6 +2103,8 @@ const deleteDialogByUserPromise = (userid, regime) => {
         }
       });
     } catch (err) {
+      err.code = "MONGO_ERR";
+      err.place_in_code = "deleteDialogByUserPromise";
       reject(err);
     }
   });
@@ -1361,7 +2127,8 @@ const delete_profile_by_id_arrayPromise = (profileIdArray) => {
         }
       );
     } catch (err) {
-
+      err.code = "MONGO_ERR";
+      err.place_in_code = "delete_profile_by_id_arrayPromise";
       reject(err);
     }
   });
@@ -1394,19 +2161,18 @@ module.exports = {
   profileMigrationScript,
   insert_permissions_migrationPromise,
   insert_read_section_migrationPromise,
-  queryTockensLogsByAggPipeline,
+  queryTokensLogsByAggPipeline,
   mongooseVersion,
   queryLogsErrorByAggPipeline,
   insert_details_logPromise,
   insertFunctionUsagePromise,
   getUserProfileByid,
   deleteMsgFromDialogById,
-  getDialogueByUserId,
   upsertPrompt,
   updateInputMsgTokenUsage,
   updateCurrentRegimeSetting,
   updateCompletionInDb,
-  insertToolCallResult,
+  insertFunctionObject,
   addMsgIdToToolCall,
   insert_blank_profile,
   getUserProfileByToken,
@@ -1427,10 +2193,50 @@ module.exports = {
   replaceProfileValues,
   resetAllInProgressDialogueMeta,
   updateToolCallResult,
-  getDialogueForCompletion,
+  getDialogueFromDB,
   getDocByTgmBtnsFlag,
   getLastCompletion,
   getFunctionQueueByName,
   addFunctionToQueue,
-  removeFunctionFromQueue
+  removeFunctionFromQueue,
+  getExtractedTextByReff,
+  registerBotUser,
+  insertFeatureUsage,
+  update_elevenlabs_models_list,
+  update_elevenlabs_voices_list,
+  insertCreditUsage,
+  getExchangeRateInternational,
+  saveExchangeRateInternational,
+  getDocByTgmRegenerateBtnFlag,
+  saveNewEvent,
+  getEventsList,
+  addTokensUsage,
+  saveNewTestDiagram,
+  addCorrectionToInstructions,
+  getSelfCorrectedInstructions,
+  saveTempReplyMarkup,
+  getTempReplyMarkup,
+  deleteTempReplyMarkup,
+  saveResourceToTempStorage,
+  deleteTempStorageByUserId,
+  updateDataInTempStorage,
+  getNotExtractedResourcesShort,
+  getResourcesById,
+  getExtractedResourcesShort,
+  getContentByFilename,
+  insertContentToOutputStorage,
+  deleteOutputStorageByUserId,
+  getOAIStorageFiles,
+  deleteTempStorageByUserIdAndAgent,
+  deleteOutputStorageByUserIdAndAgent,
+  getUniqueUserIdsFromDialogs,
+  dropDialogCollection,
+  dropTempResourceStorageCollection,
+  dropOutputDocumentCollection,
+  dropDialogueMetaCollection,
+  updateProfile,
+  deleteMsgFromDialogByFileId,
+  updateDotNotationDialogueMeta,
+  removeOAIDataInTempStorage,
+  deleteMsgFromDialogByResponseId
 };

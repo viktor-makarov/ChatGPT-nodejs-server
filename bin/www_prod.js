@@ -12,14 +12,15 @@ global.appsettings = yaml.load(yamlFileContent);
 async function startServer(){
 console.time('Server startup');
 console.log(new Date(),"Telegram bot is launching...")
-const mongoClient = require("../components/mongoClient")
+const mongoClient = require("../components/apis/mongoClient")
 global.mongoConnection = await mongoClient.connectToMongo()
-const chromeBrowser = require("../components/chromeBrowser")
+const chromeBrowser = require("../components/apis/chromeBrowser")
 global.chromeBrowserHeadless = await chromeBrowser.launchBrowserHeadless()
+
 //const mdjCLient = require("../components/midjourneyClient")
 //await mdjCLient.initClient()
 const TelegramBot = require('node-telegram-bot-api');
-const telegramRouter = require("../routerTelegram")
+const telegramRouter = require("../components/mainRouter")
 
 let options = {
     polling:true
@@ -28,9 +29,9 @@ let options = {
 if(process.env.WEBHOOK_ENABLED==="true"){
     options["webHook"] = {
         port: process.env.WEBHOOK_PORT
-    }
+    };
     options["polling"] = false
-}
+};
 
 global.bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, options);
 
@@ -58,8 +59,10 @@ global.bot.setWebHook(webHookUrl)
 //telegramRouter.MdjAccountInfo()
 await telegramRouter.setBotParameters(global.bot) //задаем параметры бота
 await telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
-await telegramRouter.GetModelsFromAPI() //получаем список моделей
+telegramRouter.GetLibrariesFromAPIs() //получаем список моделей OAI
+
 telegramRouter.router(global.bot) //включаем роутер
+console.log("Server Instance ID:", global.serverInstanceId)
 console.timeEnd('Server startup');
 }
 
@@ -67,7 +70,7 @@ startServer()
 process.on('uncaughtException', async (error) => {
     console.error(new Date(), "Uncaught Exception:", error);
     try {
-        const mongoClient = require("../components/mongo")
+        const mongoClient = require("../components/apis/mongo")
         const modifiedCount = await mongoClient.resetAllInProgressDialogueMeta()
         console.log(new Date(), "resetAllInProgressDialogueMeta result:", modifiedCount);
         if(global.chromeBrowserHeadless){

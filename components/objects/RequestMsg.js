@@ -1,6 +1,6 @@
 const modelSettings = require("../../config/telegramModelsSettings");
 const msqTemplates = require("../../config/telegramMsgTemplates");
-const otherFunctions = require("../other_func");
+const otherFunctions = require("../common_functions");
 const axios = require("axios");
 const mime = require('mime-types');
 const { Readable } = require("stream");
@@ -38,25 +38,25 @@ class RequestMsg{
 #fileExtention;
 #fileMimeType;
 #fileId;
+#duration_seconds;
 #fileUniqueId;
 #fileSize;
-#voiceToTextFoleSizeLimit = modelSettings.voicetotext.filesize_limit_mb * 1024 * 1024;
-#voiceToTextAllowedMimeTypes = modelSettings.voicetotext.mime_types;
 #fileLink;
 
-#msgIdsForDbCompletion =[];
+#msgIdsFromRequest =[];
 
 constructor(obj) {
-   // console.log(obj.requestMsg)
+    //console.log(obj.requestMsg)
  
     this.#user = obj.userInstance
     this.#botInstance = obj.botInstance
+
     if(obj.requestMsg.data){
 
         this.#callbackId = obj.requestMsg.id;
         this.#callback_dataRaw = obj.requestMsg.data
         this.#inputType = "callback_query"
-
+        
         this.#refMsgId = obj.requestMsg.message.message_id
         
         this.#refRawMsg = obj.requestMsg.message
@@ -71,12 +71,19 @@ constructor(obj) {
         this.#chatId = obj.requestMsg.message.chat.id
         this.#fromId = obj.requestMsg.from.id
 
-    } else {
+    } else if(obj.requestMsg.pinned_message) {
+        this.#inputType = "pinned_message"
+        this.#chatId = obj.requestMsg.chat.id
+        this.#fromId = obj.requestMsg.from.id
+        this.#msgId = obj.requestMsg.message_id
+        this.#msgTS = obj.requestMsg.date
+        
+       } else {
 
         this.#chatId = obj.requestMsg.chat.id
         this.#fromId = obj.requestMsg.from.id
         this.#msgId = obj.requestMsg.message_id
-        this.#msgIdsForDbCompletion.push(obj.requestMsg.message_id)
+        this.#msgIdsFromRequest.push(obj.requestMsg.message_id)
         this.#msgTS = obj.requestMsg.date
 
         if(obj.requestMsg.text){
@@ -102,31 +109,54 @@ constructor(obj) {
         } else if(obj.requestMsg.audio){ 
             this.#inputType = "file"
             this.#fileType = "audio"
+            this.#duration_seconds = obj.requestMsg?.audio?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileMimeType = obj.requestMsg.audio.mime_type
             this.#fileId = obj.requestMsg.audio.file_id
             this.#fileUniqueId = obj.requestMsg.audio.file_unique_id
             this.#fileSize = obj.requestMsg.audio.file_size
+            this.#fileCaption = obj.requestMsg?.caption;
             
         } else if(obj.requestMsg.voice){ 
             this.#inputType = "file"
-            this.#fileType = "audio"
+            this.#fileType = "voice"
+            this.#duration_seconds = obj.requestMsg?.voice?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileMimeType = obj.requestMsg.voice.mime_type
             this.#fileId = obj.requestMsg.voice.file_id
             this.#fileUniqueId = obj.requestMsg.voice.file_unique_id
             this.#fileSize = obj.requestMsg.voice.file_size
+            this.#fileCaption = obj.requestMsg?.caption;
             
         } else if(obj.requestMsg.video_note){ 
             this.#inputType = "file"
             this.#fileType = "video_note"
+            this.#duration_seconds = obj.requestMsg?.video_note?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileMimeType = "video_note"
             this.#fileId = obj.requestMsg.video_note.file_id
             this.#fileUniqueId = obj.requestMsg.video_note.file_unique_id
             this.#fileSize = obj.requestMsg.video_note.file_size    
+            this.#fileCaption = obj.requestMsg?.caption;
+
+        } else if(obj.requestMsg.video){ 
+            this.#inputType = "file"
+            this.#fileType = "video"
+            this.#fileName = obj.requestMsg.video?.file_name
+            this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
+            this.#duration_seconds = obj.requestMsg?.video?.duration
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
+            this.#fileMimeType = obj.requestMsg.video.mime_type
+            this.#fileId = obj.requestMsg.video.file_id
+            this.#fileUniqueId = obj.requestMsg.video.file_unique_id
+            this.#fileSize = obj.requestMsg.video.file_size    
+            this.#fileCaption = obj.requestMsg?.caption;
             
         } else if(obj.requestMsg.photo){
             
             this.#inputType = "file"
             this.#fileType = "image"
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             const photoParts = obj.requestMsg.photo
             const lastPart = photoParts.at(-1)
             this.#fileId = lastPart.file_id
@@ -139,7 +169,7 @@ constructor(obj) {
             
             this.#inputType = "file"
             this.#fileType = "document"
-
+            this.#isForwarded = obj.requestMsg?.forward_from ? true : false;
             this.#fileName = obj.requestMsg.document?.file_name
             this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
             this.#fileMimeType = obj.requestMsg.document?.mime_type
@@ -178,25 +208,9 @@ extractFileNameFromURL(fileLink){
     return parts[parts.length-1]
 }
 
-voiceToTextConstraintsCheck(){
 
-if(!this.#voiceToTextAllowedMimeTypes.includes(this.#fileMimeType)){
- return {success:0,response:{text:msqTemplates.audiofile_format_limit_error}}
-}
-
-if(this.#fileSize > this.#voiceToTextFoleSizeLimit){
-
-    return {success:0,response:{text:msqTemplates.audiofile_format_limit_error.replace(
-        "[size]",
-        modelSettings.voicetotext.filesize_limit_mb.toString()
-      )}}
-}
-
- return {success:1}
-}
 
 authenticateRequest(){
-
 
     const commandName = this.#commandName
     const callback_event = this.#callback_event
@@ -212,7 +226,7 @@ authenticateRequest(){
         return {passed:true}
     }
 
-    if(callback_event && callback_event === "pdf_download"){
+    if(callback_event && callback_event === "manualToPDF"){
         return {passed:true}
     }
 
@@ -235,14 +249,18 @@ authenticateRequest(){
 
 guideHandler() {
 
-    const callback_data = {e:"pdf_download"}
+    const callback_data1 = {e:"manualToPDF"}
+    const callback_data2 = {e:"manualToHTML"}
     return {
       text: msqTemplates.info,
       parse_mode:"html",
       buttons:{
       reply_markup: {
         inline_keyboard: [
-          [{ text: "Скачать PDF", callback_data: JSON.stringify(callback_data) }],
+          [
+            { text: "PDF", callback_data: JSON.stringify(callback_data1) },
+            { text: "🌐", callback_data: JSON.stringify(callback_data2) }
+          ],
         ],
       },
     }
@@ -263,60 +281,62 @@ acceptHandler(){
     };
 
   }
-  
 
-textToSpeechConstraintsCheck(){
-    if(this.#text>appsettings.telegram_options.text_to_speach_limit){
-        return {success:0,response:{text:msqTemplates.texttospeech_length_error.replace("[limit]",appsettings.telegram_options.text_to_speach_limit)}}
-    }
- return {success:1}
+async getChat(){
+    return await this.#botInstance.getChat(this.#chatId)
+}
 
+async getChatMember(){
+    return await this.#botInstance.getChatMember(this.#chatId,this.#user.userid)
 }
 
 async getFileLinkFromTgm(){
     
     try{
+    
     this.#fileLink = await this.#botInstance.getFileLink(this.#fileId)
     } catch(err){
-        this.#uploadFileError = err.message
-        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог, т.к. он имеет слишком большой размер.`
-        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[uploadFileError]",filler:this.#uploadFileError}]
-        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",this.#user.language_code,placeholders)
-        return null
+
+        const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[uploadFileError]",filler:err.message}]
+        err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",this.#user.language_code,placeholders)
+
+        if(err.message && err.message.includes("file is too big")){
+            err.user_message = `Размер файла превышает 20 MB. Сократите размер и повторите попытку.`
+            err.sendToUser = true;
+            err.mongodblog = false
+            err.adminlog = false
+        } else {
+            err.user_message = `При обработке файла возникла неизвестная ошибка.`
+            err.sendToUser = true;
+            err.mongodblog = true
+            err.details = {error_message: err.message}
+        }
+
+        throw err;
     }
     this.#fileName = this.#fileName ? this.#fileName : otherFunctions.extractFileNameFromURL(this.#fileLink)
     this.#fileExtention = otherFunctions.extractFileExtention(this.#fileName)
     this.#fileMimeType = this.#fileMimeType ? this.#fileMimeType : mime.lookup(this.#fileName)
     
+    if (this.#fileMimeType && this.#fileMimeType.startsWith("image/")) {
+        this.#fileType = "image" //Ensure correct file type
+    };
+
     return this.#fileLink
 };
 
-isAllowedFileType(){
+validateFileType(){
     const prohibitedMimeTypes = appsettings.file_options.prohibited_mime_types
 
     if(prohibitedMimeTypes.includes(this.#fileMimeType)){
-        this.#uploadFileError = `Files with mime types ${prohibitedMimeTypes.join(", ")} are not allowed to upload to the dialogue}`
-        this.#unsuccessfullFileUploadUserMsg = `❌ Файл <code>${this.#fileName}</code> не может быть добавлен в наш диалог. К сожалению, файлы <code>${prohibitedMimeTypes.join(", ")}</code> не обрабатываются.`
+        let err = new Error(`Files with mime types ${prohibitedMimeTypes.join(", ")} are not allowed to upload to the dialogue}`)
+        err.user_message = `К сожалению, файлы <code>${prohibitedMimeTypes.join(", ")}</code> не обрабатываются.`
         const placeholders = [{key:"[fileName]",filler:this.#fileName},{key:"[prohibitedMimeTypes]",filler:prohibitedMimeTypes.join(", ")}]
-        this.#unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_unsupported_format",this.#user.language_code,placeholders)
-        return false
-    } else {
-        return true
-    }
-}
-
-extentionNormaliser(filename,mimeType){
-
-    const mimeTypeArray = mimeType.split("/")
-    const mimeSybtype = mimeTypeArray.pop()
-    let fileNameArray = filename.split(".")
-    const fileExtention = fileNameArray.pop()
-    const fileBaseName =  fileNameArray.join(".")
-
-    if(mimeSybtype==="ogg"&&fileExtention==="oga"){
-        return fileBaseName+"."+mimeSybtype
-    } else {
-        return filename
+        err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_unsupported_format",this.#user.language_code,placeholders)
+        err.sendToUser = true;
+        err.mongodblog = false;
+        err.adminlog = false;
+        throw err;
     }
 }
 
@@ -329,10 +349,11 @@ async audioReadableStreamFromTelegram(){
     const fileData = Buffer.from(response.data, "binary");  
     var audioReadStream = Readable.from(fileData);
     const fileLinkParts = this.#fileLink.split("/")
-    const fileName = this.extentionNormaliser(fileLinkParts[fileLinkParts.length-1],this.#fileMimeType)
+    const fileName = otherFunctions.extentionNormaliser(fileLinkParts[fileLinkParts.length-1],this.#fileMimeType)
     audioReadStream.path = fileName;
     return audioReadStream
 };
+
 
 print(){
     console.log(
@@ -373,6 +394,10 @@ get fileType(){
     return this.#fileType
 }
 
+get isForwarded(){
+    return this.#isForwarded
+}
+
 get uploadFileError(){
     return this.#uploadFileError
 }
@@ -407,8 +432,12 @@ get user(){
     return this.#user;
 }
 
-get msgIdsForDbCompletion() {
-    return this.#msgIdsForDbCompletion
+get duration_seconds(){
+   return this.#duration_seconds
+}
+
+get msgIdsFromRequest() {
+    return this.#msgIdsFromRequest
 }
 
 get msg(){

@@ -1,4 +1,4 @@
-const mongo = require("../mongo");
+const mongo = require("../apis/mongo");
 
 
 class User{
@@ -13,6 +13,7 @@ class User{
     #active;
     #prefered_name;
     #response_style;
+    #image_choice;
     #plan;
     #groups;
     #currentRegime;
@@ -25,6 +26,8 @@ class User{
     #currentVoice
     #settings
     #openAIToken
+    #pinnedHeaderAllowed
+    #showDetails
 
     constructor(userInfo) {
         this.#userid = userInfo.id;
@@ -48,6 +51,7 @@ class User{
         this.#currentModel = this.#settings[this.#currentRegime]?.model
         this.#active = result[0]?.active
         this.#plan = result[0]?.plan
+        this.#pinnedHeaderAllowed = this.#settings?.pinnedHeaderAllowed
         this.#groups = result[0]?.permissions?.groups
         this.#showSystemMsgs = this.#settings[this.#currentRegime]?.sysmsg
         this.#isRegistered = result[0]?.permissions?.registered
@@ -55,6 +59,8 @@ class User{
         this.#isAdmin = this.#groups?.includes("admin")
         this.#prefered_name = this.#settings[this.#currentRegime]?.prefered_name;
         this.#response_style = this.#settings[this.#currentRegime]?.response_style ?? "neutral";
+        this.#image_choice = this.#settings[this.#currentRegime]?.image_choice ?? "auto";
+        this.#showDetails = this.#settings?.showDetails ?? false;
 
     } else {
         this.#active = false;
@@ -65,8 +71,44 @@ class User{
     return result
     };
 
+    async updateUserProperties(pathString, value){
+        const pathArray = pathString.split(".")
+        const parameter = pathArray.pop()
+
+        switch (parameter) {
+            case "model":
+                if(pathArray.includes(this.#currentRegime)){
+                    this.#currentModel = value;
+                    this.#settings[this.#currentRegime].model = value;
+                }
+                break;
+            case "temperature":
+                if(pathArray.includes(this.#currentRegime)){
+                    this.#currentTemperature = value;
+                    this.#settings[this.#currentRegime].temperature = value;
+                }
+                break;
+            case "response_style":
+                if(pathArray.includes(this.#currentRegime)){
+                this.#response_style = value;
+                this.#settings[this.#currentRegime].response_style = value;
+                }
+                break;
+
+            case "pinnedHeaderAllowed":
+                this.#pinnedHeaderAllowed = Boolean(value);
+                this.#settings[this.#currentRegime].response_style
+                break;
+
+        }
+    }
+
     get userid(){
         return this.#userid
+    }
+
+    get mcp(){
+        return this.#fullProfile?.mcp || { auth: {}, tools: {} }
     }
 
     get is_bot(){
@@ -92,7 +134,15 @@ class User{
     get response_style(){
         return this.#response_style
     }
-    
+
+    get image_choice(){
+        return this.#image_choice
+    }
+
+    get showDetails(){
+        return this.#showDetails
+    }
+
     get openAIToken(){
 
         return this.#openAIToken
@@ -144,6 +194,14 @@ class User{
         return this.#settings
     }
 
+    get pinnedHeaderAllowed(){
+        return this.#pinnedHeaderAllowed
+    }
+
+    set pinnedHeaderAllowed(value){
+        this.#pinnedHeaderAllowed = value
+    }
+
     set isRegistered(value){
         this.#isRegistered = value
     }
@@ -162,6 +220,8 @@ class User{
         this.#showSystemMsgs = this.#settings[value]?.sysmsg       
         this.#currentRegime = value
     };
+
+    
 };
 
 module.exports = User;

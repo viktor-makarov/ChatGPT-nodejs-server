@@ -1,13 +1,18 @@
-const mongo = require("./mongo");
-const msqTemplates = require("../config/telegramMsgTemplates");
-const modelSettings = require("../config/telegramModelsSettings");
+const mongo = require("./apis/mongo.js");
+const msqTemplates = require("../config/telegramMsgTemplates.js");
+const modelSettings = require("../config/telegramModelsSettings.js");
 const reports = require("../config/telegramReportsConfig.js");
-const otherFunctions = require("./other_func");
-const modelConfig = require("../config/modelConfig");
-const openAIApi = require("./openAI_API.js");
-const awsApi = require("./AWS_API.js")
+const otherFunctions = require("./common_functions.js");
+const modelConfig = require("../config/modelConfig.js");
+const openAIApi = require("./apis/openAI_API.js");
+const elevenLabsApi = require("./apis/elevenlabs_API.js");
+const awsApi = require("./apis/AWS_API.js")
 const FunctionCall  = require("./objects/FunctionCall.js");
-const toolsCollection  = require("./objects/toolsCollection.js");
+const ErrorHandler = require("./objects/ErrorHandler.js");
+const AvailableTools = require("./objects/AvailableTools.js");
+const mcp_tools_API = require("./apis/mcp_tools_API.js");
+const User = require("./objects/User.js");
+const devPrompts = require("../config/developerPrompts.js");
 
 async function messageBlock(requestInstance){
   let responses =[];
@@ -23,173 +28,157 @@ async function callbackBlock(){
 
 async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
   let responses = [];
+
+  const errorHandlerInstance = new ErrorHandler({replyMsgInstance: replyMsgInstance, dialogueInstance: dialogueInstance});
   
   const current_regime = requestMsgInstance.user.currentRegime
+  const userInstance = requestMsgInstance.user;
+  const fileCaption =  requestMsgInstance.fileCaption
 
-  if(current_regime === "voicetotext"){
-        if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
-          const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
-          if(checkResult.success===0){
-            responses.push(checkResult.response)
-            return
-          }
-          const result = await replyMsgInstance.sendAudioListenMsg()
-          const transcript = await openAIApi.VoiceToText(requestMsgInstance)
-          replyMsgInstance.text = transcript;
-          await replyMsgInstance.simpleMessageUpdate(transcript,
-            {
-            chat_id:replyMsgInstance.chatId,
-            message_id:result.message_id
+  mongo.insertFeatureUsage({
+    userInstance: requestMsgInstance.user,
+    feature: requestMsgInstance.fileType,
+    regime: current_regime,
+    featureType: "fileUploaded"
+  })
+
+ if (["chat","translator","texteditor"].includes(current_regime) === false){
+    responses.push({text:msqTemplates.file_handler_wrong_regime})
+    return responses;
+ }
+
+  if(current_regime==="translator" || current_regime === "texteditor"){
+        await resetNonDialogueHandler(requestMsgInstance)
+  }
+ 
+  await requestMsgInstance.getFileLinkFromTgm()
+
+  if (requestMsgInstance.fileType === "voice" && !requestMsgInstance.isForwarded && requestMsgInstance.duration_seconds < 300){
+      const waitMsgResult = await replyMsgInstance.sendAudioListenMsg()
+      const audioReadStream = await requestMsgInstance.audioReadableStreamFromTelegram()
+
+      let transcript;
+      try {
+          const api_result = await elevenLabsApi.speechToText(audioReadStream)
+          const {text} = api_result
+          transcript = text;
+          mongo.insertCreditUsage({
+            userInstance: requestMsgInstance.user,
+            creditType: "speech_to_text",
+            creditSubType: "elevenlabs",
+            usage:requestMsgInstance.duration_seconds || 0,
+            details: {place_in_code:"fileRouter"}
           })
-        } else {
-          responses.push({text:msqTemplates.file_type_cannot_be_converted_to_text})
-        }
-    } else if(current_regime ==="texttospeech"){
-      responses.push({text:msqTemplates.file_is_not_handled_in_the_regime})
-
-    } else if (current_regime === "chat" || current_regime === "translator" || current_regime === "texteditor"){
+      } catch(err){
+        err.mongodblog = err.mongodblog || true
+        err.sendToUser=false
+        err.adminlog=false
+        err.code=="ELEVENLABS_ERR"
+        errorHandlerInstance.handleError(err)
+        otherFunctions.voiceToTextConstraintsCheck(requestMsgInstance.fileMimeType,requestMsgInstance.fileSize)
+        transcript = await openAIApi.VoiceToText(audioReadStream,userInstance.openAIToken)
+      };
       
+      replyMsgInstance.text = transcript;
+      await Promise.all([
+        replyMsgInstance.sendTranscript(transcript,waitMsgResult.message_id,global.appsettings.telegram_options.big_outgoing_message_threshold),
+        dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
+      ])
 
-      if(current_regime==="translator"){
-        await resetTranslatorDialogHandler(requestMsgInstance)
-        const devPrompt = otherFunctions.getLocalizedPhrase("translator_prompt",requestMsgInstance.user.language_code)
-        await dialogueInstance.commitDevPromptToDialogue(devPrompt)
-      } else if (current_regime === "texteditor"){
-        await resetTexteditorDialogHandler(requestMsgInstance)
-        const devPrompt = otherFunctions.getLocalizedPhrase("texteditor_prompt",requestMsgInstance.user.language_code)
-        await dialogueInstance.commitDevPromptToDialogue(devPrompt)
-      }
+      dialogueInstance.triggerCallCompletion()
 
-      if(requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note"){
-        const checkResult = requestMsgInstance.voiceToTextConstraintsCheck()
-        if(checkResult.success===0){
-          responses.push(checkResult.responce)
-          return responses;
-      }
-        const result = await replyMsgInstance.sendAudioListenMsg()
-        const transcript = await openAIApi.VoiceToText(requestMsgInstance)
-        replyMsgInstance.text = transcript;
-        await replyMsgInstance.simpleMessageUpdate(transcript,
-          {
-          chat_id:replyMsgInstance.chatId,
-          message_id:result.message_id
-        })
-        await dialogueInstance.commitPromptToDialogue(transcript,requestMsgInstance)
-        dialogueInstance.emit('callCompletion')
+  } else if (requestMsgInstance.fileType === "voice" || requestMsgInstance.fileType === "audio" || requestMsgInstance.fileType === "video_note" || requestMsgInstance.fileType === "video"){
 
-      } else if(requestMsgInstance.fileType === "document"){
-        
-        const fileCaption =  requestMsgInstance.fileCaption
+    const resourceId = requestMsgInstance.msgId;
 
-        await requestMsgInstance.getFileLinkFromTgm()
+    const {fileName} = await dialogueInstance.commitResourceToTempStorage("media",resourceId)
 
-        const isAllowedFileType = requestMsgInstance.isAllowedFileType()
+    uploadFileToS3(requestMsgInstance, resourceId,errorHandlerInstance);   
+    //await dialogueInstance.commitResourceToDialogue(resourceId,fileName)
+    
+    if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+      dialogueInstance.triggerCallCompletion()
+    } else if (current_regime === "translator" || current_regime === "texteditor"){
+      dialogueInstance.triggerCallCompletion()
+    }
 
-        const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
+  } else if(requestMsgInstance.fileType === "document"){
 
-        if(s3UploadResult.success === 0 || !isAllowedFileType){
-          //Add info to the dialogue and notify user about problems with the file upload
-          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
+    requestMsgInstance.validateFileType();
+    const resourceId = requestMsgInstance.msgId;
+    uploadFileToS3(requestMsgInstance, resourceId,errorHandlerInstance);
+    uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueInstance,resourceId,errorHandlerInstance);
 
-        } else {
+    const {fileName} = await dialogueInstance.commitResourceToTempStorage("document",resourceId);
+  //  await dialogueInstance.commitResourceToDialogue(resourceId,fileName);
+    
+    if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+      dialogueInstance.triggerCallCompletion()
+    } else if (current_regime === "translator" || current_regime === "texteditor"){
+      dialogueInstance.triggerCallCompletion()
+    }
+    
+  } else if(requestMsgInstance.fileType === "image"){
 
-            const url = s3UploadResult.Location
-            const devPrompt = await dialogueInstance.commitFileToDialogue(url)
-           // await dialogueInstance.sendSuccessFileMsg(devPrompt)
-            if(fileCaption){
-              await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
-            }
-        }
+    requestMsgInstance.validateFileType()
+    const resourceId = requestMsgInstance.msgId;
+    const {fileName} = await dialogueInstance.commitResourceToTempStorage("image",resourceId);
 
-        if(fileCaption){
-          dialogueInstance.emit('callCompletion')
-        } else if (current_regime === "translator" || current_regime === "texteditor"){
-          dialogueInstance.emit('callCompletion')
-        }
-        
-      } else if(requestMsgInstance.fileType === "image"){
+    uploadFileToS3(requestMsgInstance, resourceId,errorHandlerInstance);
+    //await dialogueInstance.commitResourceToDialogue(resourceId,fileName);
 
-        const fileCaption =  requestMsgInstance.fileCaption
+    const downloadBufferResult = await downloadFileBufferFromTgm(requestMsgInstance)
+    
+    const {sizeBytes} = otherFunctions.calculateFileSize(downloadBufferResult.buffer)
+    const base64 = downloadBufferResult.buffer.toString('base64')
+    
+    const fileComment = {
+      context:`The following image file is uploaded by user. It is saved in temporary storage under resourceId ${resourceId}. Preferably, use computer vision to analyse it. Use content extraction only if necessary.`,
+    };
 
-        await requestMsgInstance.getFileLinkFromTgm()
+    await dialogueInstance.commitImageToDialogue(fileComment,{url:null,base64,sizeBytes,mimetype:downloadBufferResult.mimeType},0,null)
+    mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, {"embeddedInDialogue":true})
 
-        const s3UploadResult = await uploadFileToS3Handler(requestMsgInstance)
-        
-        const isAllowedFileType = requestMsgInstance.isAllowedFileType()
-
-        if(s3UploadResult.success === 0 || !isAllowedFileType){
-          //Add info to the dialogue and notify user about problems with the file upload
-          await dialogueInstance.commitDevPromptToDialogue(requestMsgInstance.unsuccessfullFileUploadSystemMsg);
-          await replyMsgInstance.simpleSendNewMessage(requestMsgInstance.unsuccessfullFileUploadUserMsg,null,"html",null)
-
-        } else {
-
-             const url = s3UploadResult.Location
-
-            const fileComment = {
-              fileid:requestMsgInstance.msgId,
-              context:"User has sent the image to the bot.",
-              public_url:url
-            }
-            if(fileCaption){
-              fileComment.user_prompt = fileCaption
-            }
-            await dialogueInstance.commitImageToDialogue(url,fileComment)
-        }
-
-        if(fileCaption){
-          dialogueInstance.emit('callCompletion')
-        } else if (current_regime === "translator" || current_regime === "texteditor"){
-          dialogueInstance.emit('callCompletion')
-        }
-      }
-      
-    } else {
-          responses.push({text:msqTemplates.file_handler_wrong_regime})
-      }
+    
+    if(fileCaption){
+      await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
+      dialogueInstance.triggerCallCompletion()
+    } else if (current_regime === "translator" || current_regime === "texteditor"){
+      dialogueInstance.triggerCallCompletion()
+    }
+  }
 
   return responses
 }
 
+
+
+
 async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
+  
   let responses =[];
 
   switch(requestMsgInstance.user.currentRegime) {
-    case "voicetotext":
-      responses.push({text:msqTemplates.error_voicetotext_doesnot_process_text})
-    break;   
-    case "texttospeech":
-      const checkResult = requestMsgInstance.textToSpeechConstraintsCheck()
-      if(checkResult.success===0){
-        responses.push(checkResult.response)
-        break;
-      }
-
-      const result = await replyMsgInstance.sendTextToSpeachWaiterMsg()
-      await openAIApi.TextToVoice(requestMsgInstance);
-      await replyMsgInstance.deleteMsgByID(result.message_id)
-      
-    break;
     case "chat":
+
       await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-      dialogueInstance.emit('callCompletion')
+      dialogueInstance.triggerCallCompletion()
       
     break;
     case "translator":
-      await resetTranslatorDialogHandler(requestMsgInstance)
-      const devePrompt = otherFunctions.getLocalizedPhrase("translator_prompt",requestMsgInstance.user.language_code)
-      await dialogueInstance.commitDevPromptToDialogue(devePrompt)
-      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-      dialogueInstance.emit('callCompletion')
+        await resetNonDialogueHandler(requestMsgInstance)
+        await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+        
+      dialogueInstance.triggerCallCompletion()
 
     break;
     case "texteditor":
-      await resetTexteditorDialogHandler(requestMsgInstance)
-      const devPrompt = otherFunctions.getLocalizedPhrase("texteditor_prompt",requestMsgInstance.user.language_code)
-      await dialogueInstance.commitDevPromptToDialogue(devPrompt)
-      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-      dialogueInstance.emit('callCompletion')
+        await resetNonDialogueHandler(requestMsgInstance)
+
+        await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+        dialogueInstance.triggerCallCompletion()
 
     break;
     }
@@ -200,9 +189,18 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
 async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgInstance){
 
   const cmpName = requestMsgInstance.commandName
-  const isRegistered = requestMsgInstance.user.isRegistered
-  const isAdmin = requestMsgInstance.user.isAdmin
+  const userInstance = requestMsgInstance.user;
+  const isRegistered = userInstance.isRegistered
+  const isAdmin = userInstance.isAdmin
+  
   let responses =[];
+
+  mongo.insertFeatureUsage({
+    userInstance: userInstance,
+    feature: cmpName,
+    regime: userInstance.currentRegime,
+    featureType: "command"
+  })
 
   if(cmpName==="start"){
 
@@ -230,7 +228,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
           responses.push({ text: msqTemplates.already_used_code })
         break;
       };
-      requestMsgInstance.user.isRegistered =true
+      userInstance.isRegistered =true
     }
 
   }  else if(cmpName==="resetchat" || cmpName==="Перезапустить диалог"){
@@ -254,76 +252,75 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     responses.push(response)
     
   } else if(cmpName==="settings"){
-    let response = await settingsOptionsHandler(requestMsgInstance);
-    responses.push(response)
-
-  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor" || cmpName==="voicetotext" || cmpName==="texttospeech"){
+    const settingsResponse = await settingsOptionsHandler(requestMsgInstance);
+    responses = [...responses,...settingsResponse]
+    
+  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor"){
    
-    requestMsgInstance.user.currentRegime = cmpName
+    const previousRegime = userInstance.currentRegime;
+    userInstance.currentRegime = cmpName
    
-    let response = await changeRegimeHandlerPromise({
+    responses = await regimeCommandHandle({
       newRegime:cmpName,
+      previousRegime:previousRegime,
       requestMsgInstance:requestMsgInstance,
       dialogueInstance:dialogueInstance
     });
 
-    if(cmpName==="chat"){
-      response.buttons = {
-        reply_markup: {
-          keyboard: [['Перезапустить диалог']],
-          resize_keyboard: true,
-          one_time_keyboard: false
-        }
-      }
-    } else {
-      response.buttons = {
-        reply_markup: {
-          remove_keyboard: true,
-        }
-      }
-    }
-
-    responses.push(response)
-
   } else if(cmpName==="imagine"){
 
+
+    const statusMsg = await replyMsgInstance.sendStatusMsg()
     const prompt = getPromptFromMsg(requestMsgInstance)
 
     if(prompt){
 
     const functionName = "imagine_midjourney"
-    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogueInstance.userInstance)
     const functionArguments = {prompt}    
 
-    const toolCallExtended = {
+    const availableTools = new AvailableTools(userInstance);
+    const toolConfig = await availableTools.toolConfigByFunctionName(functionName);
+    
+    const functionCallOptions = {
+      responseId:null,
+      status:"in_progress",
       tool_call_id:requestMsgInstance.msgId,
       tool_call_index:0,
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
-      tool_config
+      tool_config:toolConfig
     };
 
     const functionInstance = new FunctionCall({
-      functionCall:toolCallExtended,
+      functionCall:functionCallOptions,
       replyMsgInstance:replyMsgInstance,
       dialogueInstance:dialogueInstance,
       requestMsgInstance:requestMsgInstance,
-      tokensLimitPerCall:0
+      tokensLimitPerCall:0,
+      statusMsg:statusMsg
     });
 
     const outcome = await functionInstance.router();
 
     if(outcome.success === 1){
-    const placeholders = [{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
+    const placeholders = [{key:"[btnsDsc]",filler:outcome.buttonsDescription}]
     
     const fileComment = {
       midjourney_prompt:outcome?.supportive_data?.midjourney_prompt,
       public_url:outcome.supportive_data?.image_url,
-      context:otherFunctions.getLocalizedPhrase("imagine",requestMsgInstance.user.language_code,placeholders)
+      context:otherFunctions.getLocalizedPhrase("imagine",userInstance.language_code,placeholders)
     }
+    
+    await dialogueInstance.commitImageToDialogue(fileComment,{
+      url:outcome.supportive_data?.image_url,
+      base64:outcome.supportive_data?.base64,
+      sizeBytes:outcome.supportive_data?.size_bites,
+      mimetype:outcome.supportive_data?.mimetype
+    },0,null)
 
-    await dialogueInstance.commitImageToDialogue(outcome.supportive_data?.image_url,fileComment)
+  } else {
+      dialogueInstance.triggerCallCompletion();
     }
     
     } else {
@@ -359,6 +356,25 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     } else {
       responses.push({text:msqTemplates.killserver_not_admin})
     }
+  } else if(cmpName==="resetallchats"){
+    if (isAdmin) {
+      console.log(new Date(),"Получена команда resetallchats")
+      const response = await dialogueInstance.resetAllDialogues()
+      responses.push({text:msqTemplates.resetallchats_success})
+      responses.push(response)
+    } else {
+      responses.push({text:msqTemplates.resetallchats_not_admin})
+    }
+  } else if(cmpName==="updatemcptools"){
+    
+    if (isAdmin) {
+      console.log(new Date(),"Получена команда updatemcptools")
+      const results = await updateAllUsersMCPToolsLists();
+      responses.push({text:msqTemplates.updatemcptools_success})
+      responses.push({text:results.join("\n")})
+    } else {
+      responses.push({text:msqTemplates.updatemcptools_not_admin})
+    }
   } else if(cmpName==="sendtome"){
     if(isAdmin){
       const response = sendtomeHandler(requestMsgInstance);
@@ -376,7 +392,49 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   } else {
     responses.push({text:msqTemplates.unknown_command})
   }
-   return responses
+
+  await replyMsgInstance.deleteMsgByID(requestMsgInstance.msgId)
+
+  return responses
+}
+
+
+async function updateAllUsersMCPToolsLists(){
+
+     const profiles = await mongo.get_all_profiles();
+
+      const updates = profiles
+      .filter(profile => profile.is_bot === false)
+      .map(profile => (async () => {
+        const {id,is_bot,first_name,last_name,username,language_code} = profile;
+        try{
+          const userInstance = new User({
+            id:id,
+            is_bot:is_bot,
+            language_code:language_code,
+            first_name:first_name,
+            last_name:last_name,
+            username:username
+          });
+
+          await userInstance.getUserProfileFromDB()
+          const {tools = [],mcpSessionId = []} = await mcp_tools_API.getMCPToolsList(userInstance,"main");
+          
+          if( tools.length === 0 && mcpSessionId.length === 0){
+            return `⚠️ No mcp to update for ${first_name} ${last_name} ${username} ${id}`
+          }
+          const toolsCommits = tools.map(tool => otherFunctions.commitMCPToolsToProfile(profile.id,tool));
+          const sessionIdCommits = mcpSessionId.map(sessionId => otherFunctions.commitMCPSessionIdsToProfile(profile.id,sessionId));
+          await Promise.all([...toolsCommits,...sessionIdCommits]);
+          const serverList = tools.map(tool => tool.server_label)
+          return `✅ Successfully updated [${serverList.join(", ")}] mcps for ${first_name} ${last_name} ${username} ${id}`
+        } catch(err){
+          return `❌ Failed to update ${first_name} ${last_name} ${username} ${id}: ${err.message}`
+        }
+      }
+    )());
+      const results = await Promise.all(updates)
+      return results;
 }
 
 async function callbackRouter(requestMsg,replyMsg,dialogue){
@@ -384,9 +442,18 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   const callback_event = requestMsg.callback_event;
   const callback_data_input = requestMsg.callback_data;
+  const callbackExecutionStart = new Date();
 
-  replyMsg.sendTypingStatus()
-  replyMsg.answerCallbackQuery(requestMsg.callbackId)
+  try{
+    replyMsg.sendTypingStatus()
+    replyMsg.answerCallbackQuery(requestMsg.callbackId)
+
+    mongo.insertFeatureUsage({
+    userInstance: requestMsg.user,
+    feature: callback_event,
+    regime: requestMsg.user.currentRegime,
+    featureType: "button"
+  })
 
   if (callback_event === "info_accepted"){
 
@@ -395,13 +462,15 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     responses.push(response)
     requestMsg.user.hasReadInfo = true
 
-  } else if (callback_event === "dwnld_hash") {
+  } else if (callback_event === "close") {
+    await replyMsg.deleteMsgByID(requestMsg.refMsgId)
+  } else if (callback_event === "hashToPDF") {
 
     const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
-    const content = await otherFunctions.decodeJson(callback_data_input)
+    const {folded_text,unfolded_text,full_report,full_report_filename,short_msg} = await otherFunctions.decodeJson(callback_data_input)
     const date = new Date()
-    const filename = (content?.folded_text || "file") + "_" + date.toISOString() + ".pdf"
-    const formatedHtml =  otherFunctions.formatHtml(content.unfolded_text,filename)
+    const filename = (otherFunctions.convertHtmlToText(full_report_filename || short_msg ||folded_text) || "file") + "_" + date.toISOString() + ".pdf"
+    const formatedHtml =  otherFunctions.formatHtml(full_report || unfolded_text,filename)
     const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
     
     const mimetype = "application/pdf"
@@ -410,11 +479,49 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     await  replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
-  } else if (callback_event === "pdf_download"){
+  } else if (callback_event === "manualToPDF"){
 
+    const msgSent = await replyMsg.sendUserManualWaiterMsg()
     await pdfdownloadHandler(replyMsg);
+    await replyMsg.deleteMsgByID(msgSent.message_id)
 
-  } else if (callback_event === "regenerate"){
+  } else if (callback_event === "manualToHTML"){
+
+    const msgSent = await replyMsg.sendUserManualWaiterMsg()
+    await htmldownloadHandler(replyMsg);
+    await replyMsg.deleteMsgByID(msgSent.message_id)
+
+  } else if (callback_event === "respToPDF"){
+
+    const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
+    const {text} = await otherFunctions.decodeJson(callback_data_input)
+   
+    const filename = `file_${String(requestMsg.refMsgId)}.pdf`
+    const formatedHtml = otherFunctions.markdownToHtml(text,filename)
+    const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
+    const mimetype = "application/pdf"
+    const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
+    otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+    await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+    await replyMsg.deleteMsgByID(msgSent.message_id)
+
+  } else if (callback_event === "respToHTML"){
+
+    const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
+    const {text} = await otherFunctions.decodeJson(callback_data_input)
+   
+    const filename = `file_${String(requestMsg.refMsgId)}.html`
+    const formatedHtml = await otherFunctions.markdownToHtmlPure(text,filename)
+    
+    const filebuffer = otherFunctions.generateTextBuffer(formatedHtml)
+    const mimetype = "application/octet-stream"
+    const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
+    otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
+    const caption = otherFunctions.getLocalizedPhrase("pdf_html_caption",requestMsg.user.language_code)
+    await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype,{caption})
+    await replyMsg.deleteMsgByID(msgSent.message_id)
+
+  } /*else if (callback_event === "regenerate"){
 
     if(requestMsg.user.currentRegime != callback_data_input){
       responses.push(checkResult.response)
@@ -426,64 +533,88 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     
     dialogue.regenerateCompletionFlag = true
 
-    dialogue.emit('callCompletion')
-  } else if (callback_event === "choose_ver"){
+    dialogue.triggerCallCompletion()
+  }*/ else if (callback_event === "choose_ver"){
 
     const doc = await dialogue.getLastCompletionDoc()
     await replyMsg.deleteMsgsByIDs(doc?.telegramMsgId)
 
-    
     const choosenVersionIndex = callback_data_input
-    const choosenContent = doc.content[choosenVersionIndex-1]
-    const choosenContentFormulas = doc.content_latex_formula[choosenVersionIndex-1]
+    
+    const choosenContent = doc.content[choosenVersionIndex-1].text
     const totalVersionsCount = doc.content.length;
-    await replyMsg.sendChoosenVersion(choosenContent,choosenContentFormulas,choosenVersionIndex,totalVersionsCount)
+    const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenVersionIndex,totalVersionsCount)
+    const msgIds = sentResult.map(result => result.message_id)
     
     await mongo.updateCompletionInDb({
       filter: {telegramMsgId:{"$in":doc.telegramMsgId}},
       updateBody:{
-        telegramMsgId:replyMsg.msgIdsForDbCompletion,
+        telegramMsgId:msgIds,
         completion_version:choosenVersionIndex
       }
     })
 
-  } else if (callback_event === "latex_formula"){
+  } else if (callback_event === "mcp_req"){
 
-    const msgSent = await replyMsg.sendLatexFormulaWaiterMsg()
-    const lastdoc = await dialogue.getLastCompletionDoc()
-    
-    const letexObject = lastdoc.content_latex_formula[lastdoc.completion_version-1]
-    let pngBuffer;
-    pngBuffer  = await otherFunctions.generateCanvasPNG(letexObject);
-    
-    await replyMsg.simpleSendNewImage({
-      imageBuffer:pngBuffer,
-      fileName: `Формулы.png`,
-      contentType: 'image/png',
-      caption:`Формулы для ${lastdoc.completion_version} версии ответа`
-    })
-    await replyMsg.deleteMsgByID(msgSent.message_id)
+    const response = await otherFunctions.decodeJson(callback_data_input)
 
-  } else if (callback_event === "readaloud"){
+    await Promise.all([
+    dialogue.commitMCPApprovalResponseToDialogue(response),
+    replyMsg.simpleMessageUpdate(response.msg_text,{
+              chat_id:replyMsg.chatId,
+              message_id:requestMsg.refMsgId,
+              reply_markup:null,
+              parse_mode: "html"
+            })
+    ])
+
+    dialogue.triggerCallCompletion()
+
+} else if (callback_event === "readaloud"){
 
     const result = await replyMsg.sendTextToSpeachWaiterMsg()
-    await openAIApi.TextToVoice(requestMsg);
+    const {text} = await otherFunctions.decodeJson(callback_data_input)
+
+    let textForListening;
+  try{
+    textForListening = await prepareTextForTextToVoice(text,requestMsg.user)
+    } catch(err){
+      textForListening = text
+    }
+    
+    const constrainedText = otherFunctions.handleTextLengthForTextToVoice( requestMsg.user.language_code,textForListening)
+    
+    const voice = requestMsg.user.currentVoice
+    const fileName = `tts_${voice}_${Date.now()}.mp3`
+    
+    const readableStream = await elevenLabsApi.textToVoiceStream(constrainedText,voice)
+
+    const msgResult = await replyMsg.sendAudio(readableStream,fileName);
+
     await replyMsg.deleteMsgByID(result.message_id)
+
+    mongo.insertCreditUsage({
+      userInstance: requestMsg.user,
+      creditType: "text_to_speech",
+      creditSubType: "elevenlabs",
+      usage:msgResult?.result?.audio?.duration || 0,
+      details: {place_in_code:"readaloud"}
+    });
 
   } else if(callback_event === "un_f_up") {
 
-    const contentObject = await otherFunctions.decodeJson(callback_data_input)
-    const unfoldedFileSysMsg = msgShortener(contentObject.unfolded_text)
-    
-    const new_callback_data = {e:"f_f_up",d:callback_data_input}
+    const {unfolded_text,short_report} = await otherFunctions.decodeJson(callback_data_input)
+    const unfoldedFileSysMsg = otherFunctions.htmlShorterner(short_report || unfolded_text,appsettings.telegram_options.big_outgoing_message_threshold)
+    otherFunctions.saveTextToTempFile(unfoldedFileSysMsg,"unfoldedFileSysMsg.text")
     
     const fold_button = {
       text: "Скрыть",
-      callback_data: JSON.stringify(new_callback_data),
+      callback_data: JSON.stringify({e:"f_f_up",d:callback_data_input}),
     };
+
     const downloadPDF_button = {
-      text: "Отчет о выполнии в PDF",
-      callback_data: JSON.stringify({e:"dwnld_hash",d:callback_data_input}),
+      text: "Отчет о выполнении в PDF",
+      callback_data: JSON.stringify({e:"hashToPDF",d:callback_data_input}),
     };
 
     const reply_markup = {
@@ -507,7 +638,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if(callback_event === "f_f_up"){
 
-    const contentFoldObject = await otherFunctions.decodeJson(callback_data_input)
+    const {folded_text,short_msg} = await otherFunctions.decodeJson(callback_data_input)
 
     const new_callback_data = {e:"un_f_up",d:callback_data_input};
 
@@ -521,7 +652,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       inline_keyboard: [[unfold_button],],
     };
     try{
-    await replyMsg.simpleMessageUpdate(contentFoldObject.folded_text, {
+    await replyMsg.simpleMessageUpdate(short_msg || folded_text, {
       chat_id: requestMsg.chatId,
       message_id: requestMsg.refMsgId,
       parse_mode:"HTML",
@@ -536,20 +667,12 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if (callback_event === "settings"){
     try{
-      const response = await settingsOptionsHandler(
+      const settingsResponses = await settingsOptionsHandler(
         requestMsg,
         dialogue
       );
+      responses = [...responses,...settingsResponses]
 
-      if(response.operation ==="update"){
-      await replyMsg.simpleMessageUpdate(response.text, {
-        chat_id: requestMsg.chatId,
-        message_id: requestMsg.refMsgId,
-        reply_markup: response?.buttons?.reply_markup,
-      })
-    } else if(response.operation ==="insert"){
-      responses.push(response)
-    }
     } catch(err){
       console.log(err)
       throw err
@@ -573,33 +696,36 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if(callback_event === "mdjbtn"){
 
+    const statusMsg = await replyMsg.sendStatusMsg()
+
     const jsonDecoded = await otherFunctions.decodeJson(requestMsg.callback_data)
     
     const functionName = "custom_midjourney"
-    const tool_config = await toolsCollection.toolConfigByFunctionName(functionName,dialogue.userInstance)
     const functionArguments = {
-      buttonPushed : jsonDecoded.label,
-      msgId: jsonDecoded.id,
-      customId: jsonDecoded.custom,
-      content: jsonDecoded.content,
-      flags: jsonDecoded.flags
+      buttonPushed : jsonDecoded
     }
-    
-    const toolCallExtended = {
+     const availableTools = new AvailableTools(userInstance);
+    const toolConfig = await availableTools.toolConfigByFunctionName(functionName);
+
+    const functionCallOptions = {
+      responseId:null,
+      status:"in_progress",
       tool_call_id:requestMsg.refMsgId,
       tool_call_index:0,
       tool_call_type:'function',
       function_name:functionName,
       function_arguments:JSON.stringify(functionArguments),
-      tool_config
+      tool_config:toolConfig,
+      statusMsg:statusMsg
     };
 
     const functionInstance = new FunctionCall({
-      functionCall:toolCallExtended,
+      functionCall:functionCallOptions,
       replyMsgInstance:replyMsg,
       dialogueInstance:dialogue,
       requestMsgInstance:requestMsg,
-      tokensLimitPerCall:0
+      tokensLimitPerCall:0,
+      statusMsg:statusMsg
     });
 
     const outcome = await functionInstance.router();
@@ -607,23 +733,72 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     if(outcome.success === 1){
     const choosenButton = jsonDecoded.label
     const choosenBtnsDescription = otherFunctions.generateButtonDescription([choosenButton],[])
-    const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:JSON.stringify(outcome.buttonsDescription)}]
+    const placeholders = [{key:"[choosenBtnDsc]",filler:JSON.stringify(choosenBtnsDescription)},{key:"[btnsDsc]",filler:outcome.buttonsDescription}]
     
     const fileComment = {
       context: otherFunctions.getLocalizedPhrase("mdjBtns",requestMsg.user.language_code,placeholders),
       public_url:outcome.supportive_data.image_url,
       midjourney_prompt: outcome.supportive_data.midjourney_prompt
     };
-    await dialogue.commitImageToDialogue(outcome.supportive_data.image_url,fileComment)
+
+    await dialogue.commitImageToDialogue(fileComment,{
+      url:outcome.supportive_data.image_url,
+      base64:outcome.supportive_data?.base64,
+      sizeBytes:outcome.supportive_data?.size_bites,
+      mimetype:outcome.supportive_data?.mimetype
+    },0,null);
+
+    } else {
+      dialogue.triggerCallCompletion();
     }
     
+  } else if (callback_event ==="cnsl_proc"){
+
+    const currentCompletionInstance = global.completionInstances ? global.completionInstances[callback_data_input] : null;
+    if(currentCompletionInstance&& currentCompletionInstance.output_items.status === "in_progress"){
+
+      currentCompletionInstance.cancelProcessByUser()
+
+    }
   } else {
     responses = [{text:msqTemplates.unknown_callback}]
   }
 
-  
   return responses
 
+} catch(err){
+  err.place_in_code = err.place_in_code || "routerTelegram.on.callback_query";
+  throw err
+}
+
+}
+
+async function prepareTextForTextToVoice(text,userInstance){
+
+const temperature = 0;
+const model = appsettings.text_to_speach.prepareTextModel;
+const instructions = devPrompts.prepare_text_for_speech()
+const output_format = { "type": "text" };
+const input = [
+            {
+                role: "user",
+                content: text,
+          }];
+const tools = []
+const tool_choice = "auto";
+
+const result  = await openAIApi.responseSync(model,instructions,input,temperature,tools,tool_choice,output_format);
+const {output,usage} = result;
+mongo.insertCreditUsage({
+                          userInstance: userInstance,
+                          creditType: "text_tokens",
+                          creditSubType: "input",
+                          usage: usage.input_tokens,
+                          details: {place_in_code:"getDiagramFromOpenAI"}
+            });
+const {content} = output[0]
+
+return content[0]?.text;
 }
 
 function msgShortener(html){
@@ -635,6 +810,9 @@ function msgShortener(html){
     }
   return new_msg_html
 }
+
+
+
 
 function closeUnclosedTags(htmlString) {
   const tags = [];
@@ -683,11 +861,22 @@ async function infoacceptHandler(requestMsgInstance) {
 
 async function pdfdownloadHandler(replyMsgInstance){
   
-  const downloadedFile = await otherFunctions.fileDownload(appsettings.other_options.pdf_guide_url)
-  console.log("downloadedFile",downloadedFile)
-  const fileName = "Manual";
+  const filename = otherFunctions.getLocalizedPhrase(`manual_file_pdf`,replyMsgInstance.user.language);
+  const formatedHtml = otherFunctions.getManualHTML(replyMsgInstance.user.language)
+  const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
+  const mimetype = "application/pdf"
+  await replyMsgInstance.sendDocumentAsBinary(filebuffer,filename,mimetype)
   
-  await replyMsgInstance.sendDocumentAsBinary(downloadedFile,fileName)
+};
+
+async function htmldownloadHandler(replyMsgInstance){
+  
+  const filename = otherFunctions.getLocalizedPhrase(`manual_file_html`,replyMsgInstance.user.language);
+  const formatedHtml = otherFunctions.getManualHTML(replyMsgInstance.user.language)
+  const filebuffer = otherFunctions.generateTextBuffer(formatedHtml)
+  const mimetype = "text/html"
+  const caption = otherFunctions.getLocalizedPhrase("pdf_html_caption",replyMsgInstance.user.language_code)
+  await replyMsgInstance.sendDocumentAsBinary(filebuffer,filename,mimetype,{caption})
   
 };
 
@@ -725,27 +914,127 @@ async function adminHandler(requestMsgInstance) {
   }
 }
 
-async function uploadFileToS3Handler(requestMsgInstance){
+
+
+async function downloadFileBufferFromTgm(requestMsgInstance){
+
+  try{
+
+    const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+    const mimeType = otherFunctions.getMimeTypeFromUrl(requestMsgInstance.fileLink)
+    const buffer = await otherFunctions.streamToBuffer(downloadStream.data)
+
+    return {buffer,mimeType}
+
+  } catch(err){
+
+    err.user_message = `При обработке файла возникла ошибка.`
+    const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:err.message}]
+    err.systemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
+    
+    err.sendToUser = true;
+    err.details = err.message;
+    err.mongodblog = true;
+    err.adminlog = false;
+
+    throw err;
+  }
+}
+
+async function uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueInstance,resourceId,errorHandlerInstance){
+
+  try{
+  
+  await dialogueInstance.metaOAIStorageFileUploadStarted(requestMsgInstance.msgId)
+
+  const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+  if (downloadStream?.data) {
+    downloadStream.data.path = requestMsgInstance.fileName;       // many libs use .path as the filename
+    downloadStream.data.filename = requestMsgInstance.fileName;   // fallback
+    downloadStream.data.name = requestMsgInstance.fileName; 
+  };
+  const expires_seconds = appsettings?.file_options.openAI_storage_expiration_seconds || 3600;
+  const [{id,created_at,expires_at}, buffer] = await Promise.all(
+    [
+      openAIApi.uploadFile(downloadStream.data,"user_data",expires_seconds),
+      otherFunctions.streamToBuffer(downloadStream.data)
+    ]
+  )
+
+  const data = {
+              "resourceData.OAIStorage.fileId": id,
+              "resourceData.OAIStorage.created_at": new Date(created_at * 1000),
+              "resourceData.OAIStorage.expires_at": new Date(expires_at * 1000)
+            };
+
+  if(requestMsgInstance.fileMimeType === "application/pdf"){
+        
+        let numpages, text, info;
+        try{
+          ({numpages,text,info} = await otherFunctions.parsePDF(buffer));
+        } catch(err){
+          await openAIApi.deleteFile(id)
+          await mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, {error: err.message})
+          err.code = "RQS_ERR1"
+          err.internal_code = "RQS_ERR1"
+          err.sendToUser = true;
+          err.user_message = otherFunctions.getLocalizedPhrase("pdf_parse_error",requestMsgInstance.user.language_code);
+          err.place_in_code = "uploadFileToOpenAIStorageAndDialogue.parsePDF";
+          throw err
+        };
+
+        const textWoLineBreaks = text.replace(/(\r\n|\n|\r)/gm, "");
+        const PDFLimitIsMet = await dialogueInstance.checkPDFLimit(requestMsgInstance.fileSize,numpages);
+        
+        data["resourceData.pageCount"] = numpages;
+
+        if(textWoLineBreaks.length>10){
+            data["resourceData.content_text"] = text;
+            data["resourceData.content_html"] = text;
+            data["resourceData.charCount"] = text.length;
+          }
+
+          if(PDFLimitIsMet){
+             await dialogueInstance.commitPDFByIdToDialogue(resourceId,id,numpages,new Date(expires_at * 1000))
+          }
+    }
+    await mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, data)
+  } catch(err){
+      err.sendToUser = err.sendToUser ?? false;
+      err.details = err.message;
+      err.mongodblog = true;
+      err.adminlog = false;
+      err.place_in_code = err.place_in_code || "uploadFileToOpenAIStorageAndDialogue"
+  if(errorHandlerInstance) errorHandlerInstance.handleError(err);
+  } finally{
+    await dialogueInstance.metaOAIStorageFileUploadCompleted(requestMsgInstance.msgId)
+  }
+}
+
+async function uploadFileToS3(requestMsgInstance,resourceId,errorHandlerInstance){
 
 try{
-const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
-const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
+  const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
+  const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
-let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
-uploadResult.success = 1
+  const uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename);
 
-return uploadResult
+  const dataInDotNotation = { "resourceData.s3Url": uploadResult.Location };
+  await mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, dataInDotNotation);
+
+  return {...{filename},...uploadResult}
+
 } catch(err){
 
-  requestMsgInstance.uploadFileError = err.message
-  requestMsgInstance.unsuccessfullFileUploadUserMsg = `❌ Файл <code>${requestMsgInstance.fileName}</code> не может быть добавлен в наш диалог, т.к. при обработке файла возникла ошибка.`
-  const placeholders = [{key:"[fileName]",filler:requestMsgInstance.fileName},{key:"[uploadFileError]",filler:requestMsgInstance.uploadFileError}]
-  requestMsgInstance.unsuccessfullFileUploadSystemMsg = otherFunctions.getLocalizedPhrase("file_upload_failed",requestMsgInstance.user.language_code,placeholders)
-  
-  let uploadResult = {success:0}
-  return uploadResult
+  err.sendToUser = false;
+  err.details = err.message;
+  err.mongodblog = true;
+  err.adminlog = false;
+  err.place_in_code = "uploadFileToS3"
+  if(errorHandlerInstance) errorHandlerInstance.handleError(err);
 }
 }
+
 
 function sendtomeHandler(requestMsgInstance) {
     const pattern = /\[(.*?)\]/gm; // Regular expression pattern to match strings inside []
@@ -873,92 +1162,61 @@ async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
   }
 }
 
-async function changeRegimeHandlerPromise(obj){
-   
-   await mongo.updateCurrentRegimeSetting(obj.requestMsgInstance);
+async function regimeCommandHandle(obj){
 
-      if (obj.newRegime == "chat") {
-        const previous_dialogue_tokens = await obj.dialogueInstance.metaGetTotalTokens()
+  const {newRegime, previousRegime,requestMsgInstance, dialogueInstance} = obj
+
+   const responses = []
+  if(newRegime != previousRegime){
+    responses.push({operation:"updatePinnedMsg"})
+  }
+   
+   await mongo.updateCurrentRegimeSetting(requestMsgInstance);
+
+      if (newRegime == "chat") {
+        const previous_dialogue_tokens = await dialogueInstance.metaGetTotalTokens()
 
         if (previous_dialogue_tokens > 0) {
-          return {
-            text: modelSettings[obj.newRegime].incomplete_msg
-              .replace(
-                "[temperature]",
-                obj.requestMsgInstance.user.currentTemperature
-              )
-              .replace(
-                "[model]",
-                modelConfig[obj.requestMsgInstance.user.currentModel].name
-              )
-              .replace(
-                "[response_style]",
-                modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.response_style].name
-              )
+          responses.push({
+            text: modelSettings[newRegime].incomplete_msg
               .replace("[previous_dialogue_tokens]", previous_dialogue_tokens)
               .replace(
                 "[request_length_limit_in_tokens]",
-                modelConfig[obj.requestMsgInstance.user.currentModel].request_length_limit_in_tokens
+                modelConfig[requestMsgInstance.user.currentModel].request_length_limit_in_tokens
               ),
-          };
+          buttons: {
+            reply_markup: {
+              keyboard: [['Перезапустить диалог']],
+              resize_keyboard: true,
+              one_time_keyboard: false
+            }
+          },
+          parse_mode: "HTML"
+            
+          });
         } else {
-          return {
-            text: modelSettings[obj.newRegime].welcome_msg
-            .replace(
-              "[temperature]",
-              obj.requestMsgInstance.user.currentTemperature
-            ).replace(
-              "[model]",
-              modelConfig[obj.requestMsgInstance.user.currentModel].name
-            ).replace(
-              "[response_style]",
-              modelSettings[obj.newRegime].options.response_style.options[obj.requestMsgInstance.user.response_style].name
-            ),
-          };
+          responses.push({
+            text: modelSettings[newRegime].welcome_msg,
+            buttons: {
+              reply_markup: {
+                keyboard: [['Перезапустить диалог']],
+                resize_keyboard: true,
+                one_time_keyboard: false
+              }
+            },
+          parse_mode: "HTML"
+          });
         }
-      } else if (obj.newRegime == "translator" || obj.newRegime == "texteditor") {
-        return {
-          text: modelSettings[obj.newRegime].welcome_msg
-          .replace(
-            "[temperature]",
-            obj.requestMsgInstance.user.currentTemperature
-          ).replace(
-            "[model]",
-            modelConfig[obj.requestMsgInstance.user.currentModel].name
-          ),
-        };
+      } else if (newRegime == "translator" || newRegime == "texteditor") {
 
-      } else if (obj.newRegime == "voicetotext") {
-        return {
-          text: modelSettings[obj.newRegime].welcome_msg.replace(
-            "[size]",
-            modelSettings.voicetotext.filesize_limit_mb.toString()
-          ),
-        };
-      } else if (obj.newRegime == "texttospeech"){
-        return {
-          text: modelSettings[obj.newRegime].welcome_msg
-          .replace(
-            "[limit]",
-            appsettings.telegram_options.big_message_threshold
-          )
-          .replace(
-            "[voice]",
-            obj.requestMsgInstance.user.currentVoice
-          ),
-        };
-      } else {
-        return {
-          text: modelSettings[obj.newRegime].welcome_msg
-          .replace(
-            "[temperature]",
-            obj.requestMsgInstance.user.currentTemperature
-          ).replace(
-            "[model]",
-            modelConfig[obj.requestMsgInstance.user.currentModel].name
-          ),
-        };
+        responses.push({
+          text: modelSettings[newRegime].welcome_msg,
+          parse_mode: "HTML"
+        });
+
       }
+
+    return responses;
   };
 
 async function unregisterHandler(requestMsgInstance) {
@@ -976,8 +1234,11 @@ async function unregisterHandler(requestMsgInstance) {
     );
 
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
+    await mongo.deleteTempStorageByUserId(requestMsgInstance.user.userid),
+    await mongo.deleteOutputStorageByUserId(requestMsgInstance.user.userid),
     await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
     await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
+    await mongo.deleteDialogueMeta(requestMsgInstance.user.userid)
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
@@ -992,25 +1253,20 @@ async function createNewFreeAccount(){
   return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/${process.env.TELEGRTAM_BOT_NAME}?start=${accountToken}`}
 }
 
-async function resetTranslatorDialogHandler(requestMsgInstance) {
-  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "translator");
-  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,"translator") //to delete tater
-  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"translator")
+
+async function resetNonDialogueHandler(requestMsgInstance) {
+  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], requestMsgInstance.user.currentRegime);
+  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
+  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
   return;
 }
-
-async function resetTexteditorDialogHandler(requestMsgInstance) {
-  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], "texteditor");
-  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,"texteditor") //to delete tater
-  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),"texteditor")
-  return;
-}
-
 
 async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
-
+  
+  const userInstance = requestMsgInstance.user;
+  let responses = [];
   let callbackArray = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
-
+  
   if(requestMsgInstance.callback_data){
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
       callbackArray =  callbackArray.concat(callback_data)
@@ -1033,17 +1289,29 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
       objectToParce = objectToParce[part].options;
     });
 
-    const result = await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
+    await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
+    await userInstance.updateUserProperties(pathString, end_value)
 
-    if(callbackArray.includes("response_style") && callbackArray.includes("chat") && end_value !="neutral"){
-      let devPrompt = "";
-      devPrompt +=otherFunctions.getLocalizedPhrase("and_now",requestMsgInstance.user.language_code)
-      devPrompt += otherFunctions.getLocalizedPhrase("response_style_"+end_value,requestMsgInstance.user.language_code)
-      await dialogueInstance.commitDevPromptToDialogue(devPrompt)
+    if(callbackArray.includes(requestMsgInstance.user.currentRegime) && (callbackArray.includes("model") || callbackArray.includes("response_style"))){
+      responses.push({operation:"updatePinnedMsg"})
+    }
+
+    if(callbackArray.includes("pinnedHeaderAllowed")){
+      if(end_value === "true"){
+        responses.push({operation:"updatePinnedMsg"})
+      } else {
+        responses.push({operation:"removePinnedMsg"})
+      }
     }
 
     //console.log("Обновление результатов",result)
-    return {operation:"insert",text:templateResponseMsg.replace("[value]", objectToParce[end_value].name)}
+    responses.push({
+      operation:"insertSettingsResponse",
+      text:templateResponseMsg.replace("[value]", objectToParce[end_value].name),
+      parse_mode:"HTML"
+    }
+    )
+    return responses
 }
 
 async function reportsSendHandler(requestMsgInstance) {
@@ -1200,17 +1468,40 @@ async function reportsOptionsHandler(requestMsgInstance) {
 
 async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
 
-    let callback_data_array = [requestMsgInstance.commandName ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
+
+    const responses = [];
+    const callsource = requestMsgInstance.commandName ? "command" : "callback";
+    let callback_data_array = [callsource === "command" ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
     if(requestMsgInstance.callback_data){
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
       callback_data_array =  callback_data_array.concat(callback_data)
     }
+    
 
     if(callback_data_array.includes("currentsettings")){
-      return {operation:"insert", text: msqTemplates.current_settings.replace("[settings]",JSON.stringify(requestMsgInstance.user.settings,null,2)) };
-    } else if (callback_data_array.includes("back")) {
+      responses.push({
+        operation:"insertSettingsResponse", 
+        text: msqTemplates.current_settings.replace("[settings]",JSON.stringify(requestMsgInstance.user.settings,null,2)),
+        buttons:{reply_markup:{
+          one_time_keyboard: true,
+          inline_keyboard: [[{
+            text: "Закрыть",
+            callback_data: JSON.stringify({e:"close"}),
+          }]],
+        }}
+      })
+      return responses
+    } else if (callback_data_array.includes("close_settings")){
+      responses.push({
+        operation:"closeMessage", 
+        message_id: requestMsgInstance.refMsgId
+      })
+      return responses
+      
+    }else if (callback_data_array.includes("back")) {
       callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
+      
       requestMsgInstance.callback_data = await otherFunctions.encodeJson(callback_data.slice(0, callback_data.length - 2)); //убираем последний участок пути, чтобы переключиться на предыдущий уровень
       //console.log("back trigger",callbackArray)
     }
@@ -1243,21 +1534,25 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
       
        
       //console.log("Обновленная клавиатура",settingsKeyboard)
-      return {
-        operation:"update",
+
+      responses.push({
+        operation:callsource === "command" ? "insertSettings" : "updateSettings",
         text: msgText,
+        message_id: callsource === "command" ? null : requestMsgInstance.refMsgId,
         buttons: {
           reply_markup: {
             inline_keyboard: settingsKeyboard,
             resize_keyboard: true,
           },
         },
-      };
+      })
+
+      return responses;
     } else {
       //выполняем изменение конфига
       //console.log("Выполняем действие")
-      const response = await settingsChangeHandler(requestMsgInstance,dialogueInstance);
-      return response;
+      const responses = await settingsChangeHandler(requestMsgInstance,dialogueInstance);
+      return responses;
     }
 };
 
@@ -1330,7 +1625,7 @@ module.exports = {
   noMessageText,
   unregisterHandler,
   infoacceptHandler,
-  changeRegimeHandlerPromise,
+  regimeCommandHandle,
   sendtoallHandler,
   sendtomeHandler,
   adminHandler,
@@ -1344,5 +1639,6 @@ module.exports = {
   messageBlock,
   callbackBlock,
   handleCancelCommand,
-  callbackRouter
+  callbackRouter,
+  updateAllUsersMCPToolsLists
 };
