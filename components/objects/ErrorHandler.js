@@ -75,9 +75,10 @@ if(err.consolelog){
 if(err.sendToUser){
     err.sendToUserText = "❗️" + " " + (err.user_message || msqTemplates.error_strange)
     let reply_markup = null;
+    console.log("error",err)
     if(err.mongodblog && err.details){
-    const detailsHtml = `<pre>Код ошибки: ${err.internal_code}. Запись в логе _id=<code>${err.mongodblog_id}</code></pre>\n\nПодробности:<pre><code class="json">${JSON.stringify(err.details,null,4)}</code></pre>`
-    reply_markup = await this.replyMarkupForDetails(detailsHtml,err.sendToUserText)
+        const detailsHtml = `<pre>Код ошибки: ${err.internal_code}. Запись в логе _id=<code>${err.mongodblog_id}</code></pre>\n\nПодробности:<pre><code class="json">${JSON.stringify(err.details,null,4)}</code></pre>`
+        reply_markup = await this.replyMarkupForDetails(detailsHtml,err.sendToUserText)
     }
   /*  if(this.#replyMsgInstance.lastMsgSentId){
         await this.#replyMsgInstance.simpleMessageUpdate(err.sendToUserText,{
@@ -100,12 +101,13 @@ if(err.systemMsg){
 
 //Send details to the admin
 if( this.#replyMsgInstance.user.isAdmin && err.adminlog && err.mongodblog){
+    
     let unfolded_text = JSON.stringify(error_to_log,null,4)
     unfolded_text = otherFunctions.wireHtml(unfolded_text)
 
-    const unfoldedTextHtml = `<b>Error details:</b>\n<pre><code class="json">${JSON.stringify(error_to_log,null,4)}</code></pre>`
+    const unfoldedTextHtml = `<b>Error details:</b>\n<pre><code class="json">${unfolded_text}</code></pre>`
     const sendToAdminText = "Детали ошибки из лога Mongo DB"
-
+    
     let infoForUserEncoded = await otherFunctions.encodeJson({unfolded_text:unfoldedTextHtml,folded_text:sendToAdminText})
     
     const replyMarkap = {

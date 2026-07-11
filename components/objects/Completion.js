@@ -110,7 +110,7 @@ class Completion extends EventEmitter {
       userFirstName: this.#user.user_first_name,
       userLastName: this.#user.user_last_name,
       model: this.#user.currentModel,
-      regime: this.#user.currentRegime,
+      agent: this.#user.currentAgent,
       includeInSearch: true
     }
     this.#errorHandlerInstance = new ErrorHandler({ replyMsgInstance: this.#replyMsg, dialogueInstance: this.#dialogue });
@@ -829,15 +829,21 @@ class Completion extends EventEmitter {
     const { output_index, item } = event;
     const { content = [] } = item;
     this.#output_items[output_index].status = item?.status;
+    const annotations = content[0] ? content[0].annotations : null;
+    
     if (this.#message_items[output_index].text != "") {
       this.#message_items[output_index].status = item?.status;
       this.#message_items[output_index].content = [item?.content[0]];
+      if(this.#message_items[output_index].content[0]?.annotations){
+        this.#message_items[output_index].content[0]?.annotations.forEach(a => { a.index = 1; })
+      }
       const completionObj = this.#message_items[output_index];
       this.#commitToDBQueue.add(() => this.#dialogue.commitCompletionDialogue(completionObj));
     }
 
-    const annotations = content[0] ? content[0].annotations : null;
+    
     if (annotations) {
+      console.log("Annotations found in message content:", JSON.stringify(annotations, null, 4));
       const fileCitations = annotations
         .filter(ann => ann.type === "container_file_citation")
         .map(ann => {
@@ -1169,7 +1175,7 @@ class Completion extends EventEmitter {
 
           const mime_type = otherFunctions.getMimeTypeFromPath(`test.${output_format}`);
           const imageBuffer = Buffer.from(result, 'base64');
-          const filename = otherFunctions.valueToMD5(String(this.#user.userid)) + "_" + this.#user.currentRegime + "_" + otherFunctions.valueToMD5(String(this.#output_items[output_index].imageMsgId)) + "." + output_format;
+          const filename = otherFunctions.valueToMD5(String(this.#user.userid)) + "_" + this.#user.currentAgent + "_" + otherFunctions.valueToMD5(String(this.#output_items[output_index].imageMsgId)) + "." + output_format;
           const { Location } = await awsApi.uploadFileToS3FromBuffer(imageBuffer, filename)
           this.#output_items[output_index].details = `генерация завершена`;
           this.#output_items[output_index].status = "completed";
@@ -1213,6 +1219,7 @@ class Completion extends EventEmitter {
             creditType: "oai_image_generation",
             creditSubType: "create",
             usage: 1,
+            agent: this.#user.currentAgent,
             details: { place_in_code: "imageGenerationCall" }
           })
         }
@@ -1269,6 +1276,7 @@ class Completion extends EventEmitter {
             creditType: "code_interpreter",
             creditSubType: item.container_id,
             usage: 1,
+            agent: this.#user.currentAgent,
             details: { place_in_code: "codeInterpreterCall" }
           })
         }
@@ -1385,6 +1393,7 @@ class Completion extends EventEmitter {
       const item_type = item.type;
 
       const availableTools = new AvailableTools(this.#user);
+      
       const toolConfig = await availableTools.toolConfigByFunctionName(name);
 
       this.#output_items[output_index].friendlyName = toolConfig?.friendly_name || name;
@@ -1549,7 +1558,7 @@ class Completion extends EventEmitter {
       let currentText = "initial"
 
       while (await this.#dialogue.metaOAIStorageFilesUploadInProgress()) {
-
+        console.log("currentText", currentText,"files are still uploading...")
         if (currentText == "initial") {
           const msg = otherFunctions.getLocalizedPhrase(`files_loading_msg`, this.#user.language)
           this.updateStatusMsg(msg, this.#statusMsg.message_id, this.#statusMsg.chat.id)
@@ -1995,12 +2004,6 @@ class Completion extends EventEmitter {
         one_time_keyboard: true,
         inline_keyboard: [],
       };
-
-      /*
-    const regenerateButtons = {
-        text: "🔄",
-        callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
-    };*/
 
       const callbackData = await otherFunctions.encodeJson({ text })
 

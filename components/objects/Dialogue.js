@@ -44,7 +44,6 @@ class Dialogue {
         this.#userid = this.#user.userid;
         this.#replyMsg = obj.replyMsgInstance;
         this.#requestMsg = obj.requestMsgInstance;
-
     };
 
     async triggerCallCompletion() {
@@ -72,27 +71,44 @@ class Dialogue {
 
     async getLastCompletionDoc() {
 
-        const lastCompletionDoc = await mongo.getLastCompletion(this.#user.userid, this.#user.currentRegime)
+        const lastCompletionDoc = await mongo.getLastCompletion(this.#user.userid, this.#user.currentAgent)
         return lastCompletionDoc
     };
 
-    async getDialogueForRequest(model, regime) {
+    async getDialogueForRequest(model) {
+
+        const {id:agent,system_prompt,include_current_time} = this.#user.currentAgentSettings || {};
+
+        const dealogueForRequest = [];
+
+        if (system_prompt) {
+            const initialPrompt = await this.initialSystemPromptForDialogue(system_prompt);
+            dealogueForRequest.push(initialPrompt)
+        }
+        
+        if (include_current_time) {
+            const dateTimePrompt = await this.dateTimeSystemPromptForDialogue();
+            dealogueForRequest.push(dateTimePrompt)
+        }
+        
+        const mcpTools = await this.mcpToolsForDialogue();
+        if (mcpTools && mcpTools.length > 0) dealogueForRequest.push(...mcpTools);
+        
         const image_size_limit = modelConfig[model]?.image_input_limit_bites ?? 1024 * 1024
         const image_count_limit = modelConfig[model]?.image_input_limit_count ?? 5
         const canUseReasoning = modelConfig[model]?.canUseReasoning ?? false
-        const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid, this.#user.currentRegime) || []
+        const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid, agent) || []
         const dialogueWoExpired = dialogueFromDB.filter(doc => !doc.expires_at || doc.expires_at > new Date())
         const dialogueFilteredByReasoning = this.reasoningInputFileter(dialogueWoExpired, canUseReasoning)
         const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFilteredByReasoning, image_size_limit, image_count_limit)
         const mappedDialogue = this.mapValuesToDialogue(dialogueFilteredByImageLimit);
-        
-        const dateTimePrompt = await this.dateTimeSystemPromptForDialogue();
-        const initialPrompt = await this.initialSystemPromptForDialogue(regime);
-        const mcpPrompts = await this.mcpToolsSystemPromptForDialogue(regime);
-        
-        otherFunctions.saveTextToTempFile( JSON.stringify([initialPrompt, dateTimePrompt,...mcpPrompts, ...mappedDialogue], null, 2),"dialogueForRequest.json")
         otherFunctions.saveTextToTempFile( JSON.stringify(mappedDialogue, null, 2),"dialogueFromDB.json")
-        return [initialPrompt, dateTimePrompt,...mcpPrompts, ...mappedDialogue]
+
+        if (mappedDialogue && mappedDialogue.length > 0) dealogueForRequest.push(...mappedDialogue);
+        
+        otherFunctions.saveTextToTempFile( JSON.stringify(dealogueForRequest, null, 2),"dialogueForRequest.json")
+
+        return dealogueForRequest
     };
 
     async getDialogueForSearch(function_call_id, model) {
@@ -101,7 +117,7 @@ class Dialogue {
         const image_size_limit = modelConfig[model]?.image_input_limit_bites ?? 1024 * 1024
         const image_count_limit = modelConfig[model]?.image_input_limit_count ?? 5
 
-        const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid, this.#user.currentRegime) || []
+        const dialogueFromDB = await mongo.getDialogueFromDB(this.#user.userid, this.#user.currentAgent) || []
         const dialogueFiltereByFunctionCall = dialogueFromDB.filter(doc => !doc.tool_call_id || doc.tool_call_id !== function_call_id)
         const dialogueFiltereBySearchFlag = dialogueFiltereByFunctionCall.filter(doc => doc.includeInSearch)
         const dialogueFilteredByImageLimit = this.imageInputFilter(dialogueFiltereBySearchFlag, image_size_limit, image_count_limit)
@@ -307,7 +323,7 @@ class Dialogue {
         let lastTgmMsgIdsFromCompletions = new Set();
 
         const [documentsWithBtns, tempReplyMarkup] = await Promise.all([
-            mongo.getDocByTgmBtnsFlag(this.#user.userid, this.#user.currentRegime),
+            mongo.getDocByTgmBtnsFlag(this.#user.userid, this.#user.currentAgent),
             mongo.getTempReplyMarkup(this.#user.userid)
         ])
 
@@ -345,7 +361,7 @@ class Dialogue {
             return
         }
 
-        const documentsWithRegenerateBtns = await mongo.getDocByTgmRegenerateBtnFlag(this.#user.userid, this.#user.currentRegime)
+        const documentsWithRegenerateBtns = await mongo.getDocByTgmRegenerateBtnFlag(this.#user.userid, this.#user.currentAgent)
 
 
         if (documentsWithRegenerateBtns.length === 0) {
@@ -499,7 +515,7 @@ class Dialogue {
 
     async resetDialogue() {
 
-        const agent = this.#user.currentRegime;
+        const agent = this.#user.currentAgent;
         const oaiStorageFiles = await mongo.getOAIStorageFiles(this.#userid, agent) || [];
 
         const [
@@ -513,11 +529,11 @@ class Dialogue {
             deleteMetaResult] = await Promise.all(
                 [
                     this.deleteAllInlineButtons(),
-                    mongo.deleteDialogByUserPromise([this.#userid], "chat"),
+                    mongo.deleteDialogByUserPromise([this.#userid], agent),
                     mongo.deleteTempStorageByUserIdAndAgent(this.#userid, agent),
                     mongo.deleteOutputStorageByUserIdAndAgent(this.#userid, agent),
-                    awsApi.deleteS3FilesByPefix(this.#userid, this.#user.currentRegime), //to delete later
-                    awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)), this.#user.currentRegime),
+                    awsApi.deleteS3FilesByPefix(this.#userid, agent), //to delete later
+                    awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(this.#userid)), agent),
                     this.deleteOAIFilesFromStorage(oaiStorageFiles),
                     this.deleteMeta()
                 ]);
@@ -540,7 +556,7 @@ class Dialogue {
     }
 
     async getMetaFromDB() {
-        this.#metaObject = await mongo.readDialogueMeta(this.#userid)
+        this.#metaObject = await mongo.readDialogueMeta(this.#userid, this.#user.currentAgent)
 
         if (this.#metaObject === null) {
             await this.createMeta()
@@ -549,13 +565,14 @@ class Dialogue {
     }
 
     async deleteMeta() {
-        const result = await mongo.deleteDialogueMeta(this.#userid)
+        const result = await mongo.deleteDialogueMeta(this.#userid, this.#user.currentAgent)
         this.#metaObject = this.#defaultMetaObject
     }
 
     async createMeta() {
         this.#metaObject = this.#defaultMetaObject
         this.#metaObject.userid = this.#userid
+        this.#metaObject.agent = this.#user.currentAgent;
         await mongo.createDialogueMeta(this.#metaObject)
     }
 
@@ -564,7 +581,7 @@ class Dialogue {
         this.#metaObject.image_input_bites += size_bites;
         this.#metaObject.image_input_count += image_count;
 
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         return {
             image_input_bites: this.#metaObject.image_input_bites,
             image_input_count: this.#metaObject.image_input_count
@@ -576,7 +593,7 @@ class Dialogue {
         this.#metaObject.pdf_input_bites += size_bites;
         this.#metaObject.pdf_input_pages += size_pages;
 
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         return {
             pdf_input_bites: this.#metaObject.pdf_input_bites,
             pdf_input_pages: this.#metaObject.pdf_input_pages
@@ -585,7 +602,7 @@ class Dialogue {
 
     async metaImageInputLimitExceeded() {
         this.#metaObject.image_input_limit_exceeded = true;
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         return this.#metaObject.image_input_limit_exceeded
     }
 
@@ -595,7 +612,7 @@ class Dialogue {
         }
         const msgidStr = String(msgid)
         this.#metaObject.oai_storage_files_in_progress[msgidStr] = true;
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
     };
 
     async metaOAIStorageFileUploadCompleted(msgid) {
@@ -609,7 +626,7 @@ class Dialogue {
             this.#metaObject.oai_storage_files_in_progress = {};
         };
         this.#metaObject.oai_storage_files_in_progress[msgidStr] = false;
-        await mongo.updateDotNotationDialogueMeta(this.#userid, data)
+        await mongo.updateDotNotationDialogueMeta(this.#userid, this.#user.currentAgent, data)
         await this.getMetaFromDB();
     }
 
@@ -621,7 +638,7 @@ class Dialogue {
 
     async metaPdfInputLimitExceeded() {
         this.#metaObject.pdf_input_limit_exceeded = true;
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         return this.#metaObject.pdf_input_limit_exceeded
     }
 
@@ -642,7 +659,7 @@ class Dialogue {
             }
             this.#metaObject.function_calls.failedRuns[functionName] = 1;
         }
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         return this.#metaObject.function_calls.failedRuns[functionName]
     }
 
@@ -650,7 +667,7 @@ class Dialogue {
 
         if (this.#metaObject.function_calls?.failedRuns && this.#metaObject.function_calls.failedRuns[functionName] > 0) {
             delete this.#metaObject.function_calls.failedRuns[functionName]
-            await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+            await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         }
     }
 
@@ -659,13 +676,13 @@ class Dialogue {
             this.#metaObject.server_errors_count = 0
         }
         this.#metaObject.server_errors_count += 1
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         return this.#metaObject.server_errors_count
     }
 
     async clearServerErrorsCount() {
         this.#metaObject.server_errors_count = 0
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
     }
 
     get server_errors_count() {
@@ -674,14 +691,13 @@ class Dialogue {
 
     async metaUpdateTotalTokens(tokens = 0) {
         this.#metaObject.total_tokens = tokens
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
-    }
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
+    };
 
     async metaGetTotalTokens() {
-        const result = await mongo.readDialogueMeta(this.#userid)
-
-        this.#metaObject.total_tokens = result.total_tokens || 0;
-        return this.#metaObject.total_tokens
+        const result = await mongo.readDialogueMeta(this.#userid, this.#user.currentAgent);
+        this.#metaObject.total_tokens = result?.total_tokens || 0;
+        return this.#metaObject.total_tokens;
     }
 
     metaGetNumberOfFailedFunctionRuns(functionName) {
@@ -706,14 +722,14 @@ class Dialogue {
         });
 
         if (buttonsAdded > 0) {
-            await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+            await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
         };
         return buttonsAdded
     }
 
     async metaSetAllFunctionsInProgressStatus(value) {
         this.#metaObject.function_calls.inProgress = value;
-        await mongo.updateDialogueMeta(this.#userid, this.#metaObject)
+        await mongo.updateDialogueMeta(this.#userid, this.#user.currentAgent, this.#metaObject)
     }
 
     get anyFunctionInProgress() {
@@ -745,7 +761,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: currentRole,
             content: content,
             status: "completed",
@@ -785,7 +801,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: currentRole,
             content: content,
             status: "completed",
@@ -816,7 +832,7 @@ class Dialogue {
             chatid: requestInstance.chatId,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: currentRole,
             content: [{ type: "input_text", text: text }],
             status: "completed",
@@ -836,7 +852,7 @@ class Dialogue {
         await mongo.addTokensUsage(sourceid, numberOfTokens)
     }
 
-    async dateTimeSystemPromptForDialogue(regime) {
+    async dateTimeSystemPromptForDialogue() {
 
         const datetime = new Date();
         const text = `Current date and time is: ${datetime.toISOString()} (UTC). Use it when applicable`
@@ -849,27 +865,13 @@ class Dialogue {
         }
     }
 
-    async mcpToolsSystemPromptForDialogue(regime) {
+    async mcpToolsForDialogue() {
 
-        if (regime !== "chat") {
-            return []
-        };
         const mcp_tools = Object.values(this.#user?.mcp?.tools || {});
         return mcp_tools;
     };
 
-    async initialSystemPromptForDialogue(regime) {
-
-        let promptText = "";
-        if (regime === "chat") {
-            promptText = otherFunctions.startDeveloperPrompt(this.#user)
-        } else if (regime === "translator") {
-            promptText = devPrompts.translator_start_prompt()
-        } else if (regime === "texteditor") {
-            promptText = devPrompts.texteditor_start_prompt()
-        } else {
-            promptText = ""
-        }
+    async initialSystemPromptForDialogue(promptText) {
 
         return {
             role: "developer",
@@ -893,7 +895,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "developer",
             content: [{
                 text: text,
@@ -925,7 +927,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "assistant",
             responseId: responseId,
             mcp_tool_call_id: id,
@@ -960,7 +962,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "assistant",
             responseId: responseId,
             mcp_approval_request_id: id,
@@ -995,7 +997,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "assistant",
             responseId: responseId,
             mcp_call_id: id,
@@ -1031,7 +1033,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "assistant",
             status: "completed",
             responseId: responseId,
@@ -1062,7 +1064,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "user",
             responseId: responseId,
             mcp_approval_response_id: response_id,
@@ -1097,7 +1099,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "assistant",
             responseId: responseId,
             code_id: id,
@@ -1141,7 +1143,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "developer",
             code_id: id,
             code: code,
@@ -1253,7 +1255,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "user",
             content: content,
             status: "completed",
@@ -1290,7 +1292,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: "assistant",
             image_id: id,
             image_result_base64: result,
@@ -1315,7 +1317,7 @@ class Dialogue {
 
         const object = {
             userid: this.#userid,
-            agent: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             resourceType: type,
             resourceId: resourceId,
             extracted: false,
@@ -1363,7 +1365,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: 'user',
             content: content,
             status: "completed",
@@ -1400,7 +1402,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: 'user',
             content: content,
             status: "completed",
@@ -1439,7 +1441,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: 'user',
             content: content,
             status: "completed",
@@ -1495,7 +1497,7 @@ class Dialogue {
             userid: this.#user.userid,
             userFirstName: this.#user.user_first_name,
             userLastName: this.#user.user_last_name,
-            regime: this.#user.currentRegime,
+            agent: this.#user.currentAgent,
             role: 'user',
             content: content,
             status: "completed",
@@ -1525,7 +1527,7 @@ class Dialogue {
             userFirstName: userInstance.user_first_name,
             userLastName: userInstance.user_last_name,
             userid: userInstance.userid,
-            regime: userInstance.currentRegime,
+            agent: userInstance.currentAgent,
             tool_call_id: functionCall.tool_call_id,
             function_name: functionCall.function_name,
             function_arguments: functionCall.function_arguments,
@@ -1560,7 +1562,7 @@ class Dialogue {
             userFirstName: userInstance.user_first_name,
             userLastName: userInstance.user_last_name,
             userid: userInstance.userid,
-            regime: userInstance.currentRegime,
+            agent: userInstance.currentAgent,
             content: "result is pending ...",
             tool_call_id: functionReply.tool_call_id,
             function_name: functionReply.function_name,
@@ -1617,6 +1619,7 @@ class Dialogue {
                 creditType: "text_tokens",
                 creditSubType: "input",
                 usage: tokenUsage.input_tokens,
+                agent: this.#user.currentAgent,
                 details: { place_in_code: "finalizeTokenUsage" }
             })
 
@@ -1625,6 +1628,7 @@ class Dialogue {
                 creditType: "text_tokens",
                 creditSubType: "output",
                 usage: tokenUsage.output_tokens,
+                agent: this.#user.currentAgent,
                 details: { place_in_code: "finalizeTokenUsage" }
             })
         }

@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 const modelSettings = require("../../config/telegramModelsSettings");
+const Agents = require("../objects/Agents");
+const agentsInstance = new Agents();
 const { error } = require("pdf-lib");
 const { auth } = require("@modelcontextprotocol/sdk/client/auth.js");
 
@@ -17,8 +19,10 @@ const ProfileSheema = new Schema(
     last_name: { type: String },
     username: { type: String },
     language_code: { type: String },
+    allow_auto_user_memory: { type: Boolean, default: true },
+    current_agent: { type: String, default: "main" },
+    agents : { type: Array, default: agentsInstance.defaultBuiltIn},
     settings: {
-      current_regime: { type: String, default: "chat" },
       pinnedHeaderAllowed: { type: Boolean, default: true },
       showDetails: { type: Boolean, default: false },
       chat: {
@@ -227,7 +231,7 @@ const FunctionUsageLogSheema = new Schema(
     tool_reply: { type: Object,description: "Function output. Hint: for correct filtering on this field first fetch all the unique values." },
     call_duration: {type: Number},
     call_number: {type: String},
-    regime: { type: String,description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
+    agent: { type: String,description: "Agent used by user. Hint: for correct filtering on this field first fetch all the unique values." },
     success:{type:Boolean ,description: "Indicates if the function was successfull."}
   },
   { collection: appsettings.mongodb_names.coll_functions_log }
@@ -241,7 +245,7 @@ const FeatureUsageLogSheema = new Schema(
     userLastName: { type: String },
     username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
     feature:{ type: String, description: "Feature name. Hint: for correct filtering on this field first fetch all the unique values." },
-    regime: { type: String, description: "Chat bot mode used by user. Hint: for correct filtering on this field first fetch all the unique values." },
+    agent: { type: String, description: "Agent used by user. Hint: for correct filtering on this field first fetch all the unique values." },
     featureType: { type: String, description: "Feature details. Hint: for correct filtering on this field first fetch all the unique values." }
   },
   { collection: appsettings.mongodb_names.coll_feature_log}
@@ -253,6 +257,7 @@ const CreditsUsageLogSheema = new Schema(
     userid: { type: Number, index: true },
     userFirstName: { type: String },
     userLastName: { type: String },
+    agent: { type: String, description: "Agent used by user. Hint: for correct filtering on this field first fetch all the unique values." },
     username: { type: String, description: "Use this field as default and primary identificator of a user. Hint: for correct filtering on this field first fetch all the unique values." },
     creditType:{ type: String, description: "Credit type. Hint: for correct filtering on this field first fetch all the unique values." },
     creditSubType: { type: String, description: "Credit subtype. Hint: for correct filtering on this field first fetch all the unique values." },
@@ -311,7 +316,7 @@ const TelegramDialogSheema = new Schema(
     tool_calls:{ type: Object },
     completion_version:{ type: Number},
     completion_ended:{type: Boolean},
-    regime: { type: String },
+    agent: { type: String },
     fullContent: Schema.Types.Mixed,
 //for responce
     tool_call_id: { type: String},
@@ -351,16 +356,17 @@ const TelegramDialogSheema = new Schema(
   { collection: appsettings.mongodb_names.tokens_log }
 );
 
-TelegramDialogSheema.index({ sourceid: -1, regime: -1 });
-TelegramDialogSheema.index({ userid: -1, regime: -1 });
+TelegramDialogSheema.index({ sourceid: -1, agent: -1 });
+TelegramDialogSheema.index({ userid: -1, agent: -1 });
 TelegramDialogSheema.index({ userid: -1, TelegramMsgId: -1 });
 TelegramDialogSheema.index({ sourceid: -1});
-TelegramDialogSheema.index({ regime: -1 });
+TelegramDialogSheema.index({ agent: -1 });
 TelegramDialogSheema.index({ userid: -1 });
 
 const DialogMetaSheema = new Schema(
   {
     userid: { type: Number, index: true },
+    agent: { type: String, index: true },
     server_errors_count: { type: Number, default: 0 },
     total_tokens: { type: Number},
     image_input_bites: { type: Number},
@@ -374,7 +380,7 @@ const DialogMetaSheema = new Schema(
   },
   { collection: appsettings.mongodb_names.col_dialogue_meta }
 );
-DialogMetaSheema.index({ userid: -1 });
+DialogMetaSheema.index({ userid: -1, agent: -1 });
 
 const FunctionQueueSheema = new Schema(
   {

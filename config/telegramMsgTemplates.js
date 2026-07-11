@@ -1,6 +1,7 @@
 module.exports = {
     "register_deprecated":"Команда /register более не используется для регистрации. Вместо нее используйте коданду /start с указанием кода регистрации после пробела.",
-    "bot_description":"R2D2 - это \"ИИ помощник\", оснащенный множеством нейронных сетей. Полную инструкцию можно найти в меню Помощь.",
+    "ru_bot_description":"R2D2 - это \"ИИ помощник\", оснащенный множеством нейронных сетей. Полную инструкцию можно найти в меню Помощь.",
+    "default_bot_description":"R2D2 is an \"AI Assistant\" equipped with multiple neural networks. Full instructions can be found in the Help menu.",
     "info":"<b>🤖 R2D2 - ИИ помощник</b>\n\n" +
            "<b>Быстрый старт:</b>\n" +
            "• Просто напишите вопрос или задачу\n" +
@@ -58,6 +59,10 @@ module.exports = {
         "en":"Unfortunately, the size of the dialogue exceeded the limit. The dialogue was automatically restarted",
         "ru":"К сожалению, размер диалога превысил лимит. Диалог был автоматически перезапущен."
     },
+    "choose_agent":{
+        "en":"Please choose an agent",
+        "ru":"Выберите агента"
+    },
     "mcp_approval_required":{
         "en":"MCP approval is required to proceed with this request. Push 'Approve' or 'Cancel'.",
         "ru":"Сначала нужно ответить на запрос. Нажмите 'Подтвердить' или 'Отменить'."
@@ -105,10 +110,14 @@ module.exports = {
         "en":"...",
         "ru":"..."
         },
+    "unavailableAgents":{
+        "en":"Unfortunately, this agent is not available for your subscription. Please choose another agent or upgrade your subscription.",
+        "ru":"К сожалению, данный агент недоступен для ваше. Пожалуйста, выберите другого агента или обновите вашу подписку."
+    },
     "files_loading_msg": {
         "en":"⏳ One moment please... finishing file uploads and will start shortly ...",
         "ru":"⏳ Минутку ... сейчас закончим загрузку файлов и сразу приступим ..."
-        },
+    },
     "DB_ERROR":"Ошибка базы данных. Обратитесь к администратору. https://t.me/Truvoruwka",
     "MDJ_ERR1":"Midjourney отклонил запрос из-за превышения месячного лимита. Обратитесь к администратору. https://t.me/Truvoruwka",
     "MDJ_ERR2":"R2D2 не смог получить доступ к указанному файлу c картинкой. Возможно, после загрузки файла вы перезапустили диалог, что привело к удалению файла из временного хранилища. Загрузите файл повторно и повторите Ваш запрос.",
@@ -135,7 +144,7 @@ module.exports = {
     "documentDownload_progress":{
         "en":"Preparing document...",
         "ru":"Готовлю документ..."
-        },
+    },
     "latexFormula_progress":{
         "en":"Preparing formulas...",
         "ru":"Готовлю формулы..."
@@ -143,7 +152,7 @@ module.exports = {
     "mdj_lacks_prompt":"Промпт не найден. Добавьте промт после /imagine.",
     "texttospeech_length_error":"Текст для преобразования в голос не должен превышать [limit] символов. Сократите текст и повторите запрос.",
     "file_handler_is_not_realized":"Данный формат файла пока не обрабатывается.",
-    "file_handler_wrong_regime":"Данный режим не пердполагает обработку файлов.",
+
     "file_is_not_handled_in_the_regime":"В данном режиме не предусмотрена обработка файлов. Пришлите текс для преобразования в голос.",
     "file_type_cannot_be_converted_to_text":"В данном режиме обрабатываются файлы только следующих форматов: mp3, mpeg, mpga, m4a, wav, or webm.",
     "unknown_command":"Неизвестная команда. Бот не умеет обрабатываеть данную команду.",

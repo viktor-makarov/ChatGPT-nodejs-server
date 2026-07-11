@@ -1,6 +1,6 @@
 
 const axios = require("axios");
-const FormData = require("form-data");
+const { FormData} = globalThis;
 
 
 const DEFAULT_ELEVENLABS_API_URL = process.env.ELEVENLABS_API_URL || "https://api.elevenlabs.io";
@@ -32,6 +32,7 @@ const options = {
     return result.data.voices;
 }
 
+
 async function speechToText(audioReadStream){
 
     const formData = new FormData();
@@ -41,7 +42,7 @@ async function speechToText(audioReadStream){
     
     const headers = {
       "xi-api-key": process.env.ELEVENLABS_API_TOKEN,
-      ...formData.getHeaders(),
+      ...(typeof formData.getHeaders === 'function' ? formData.getHeaders() : {})
     };
 
   const result =await axios.post(

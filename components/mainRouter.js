@@ -8,16 +8,7 @@ const ReplyMsg = require("./objects/ReplyMsg.js");
 const RequestMsg  = require("./objects/RequestMsg.js");
 const User = require("./objects/User.js");
 const Dialogue = require("./objects/Dialogue.js");
-const MdjApi = require("./apis/midjourney_API.js");
 const otherFunctions = require("./common_functions.js");
-const modelSettings = require("../config/telegramModelsSettings.js");
-const modelConfig = require("../config/modelConfig.js");
-const { chat } = require("../config/telegramModelsSettings.js");
-
-async function MdjAccountInfo(){
-  const info = await MdjApi.executeInfo()
-   console.log(new Date(),"Midjournet account info",info)
-}
 
 async function UpdateGlobalVariables() {
 
@@ -30,7 +21,7 @@ async function UpdateGlobalVariables() {
 
     setInterval(telegramCmdHandler.updateAllUsersMCPToolsLists,appsettings.mcp_options.tools_update_interval_ms);
     console.log(new Date(), "Success! MCP Tools update interval set to" ,appsettings.mcp_options.tools_update_interval_ms,"ms");
-}
+};
 
 async function GetLibrariesFromAPIs() {
     const oai_models_array = await openAIApi.getModels(); //обновляем список моделей в базе
@@ -55,14 +46,23 @@ async function GetLibrariesFromAPIs() {
 };
 
 async function setBotParameters(botInstance) {
+    
+  // Очищаем scope AllPrivateChats (если когда-либо устанавливался)
+    await botInstance.deleteMyCommands({ scope: { type: 'all_private_chats' } });
+    await botInstance.deleteMyCommands({ scope: { type: 'all_private_chats' }, language_code: 'ru' });
+    await botInstance.setMyCommands(appsettings.telegram_options.default_commands);
+    await botInstance.setMyCommands(appsettings.telegram_options.default_commands, { scope: { type: 'all_private_chats' } });
+    await botInstance.setMyCommands(appsettings.telegram_options.ru_commands,{ language_code: 'ru' });
+    await botInstance.setMyCommands(appsettings.telegram_options.ru_commands,{ language_code: 'ru' }, { scope: { type: 'all_private_chats' } });
 
-    await botInstance.setMyCommands(appsettings.telegram_options.commands);
-    await botInstance.setMyDescription({description:msqTemplates.bot_description});
-    await botInstance.setMyShortDescription({short_description:msqTemplates.bot_description})
+    await botInstance.setMyDescription({description:msqTemplates.default_bot_description});
+    await botInstance.setMyDescription({description:msqTemplates.ru_bot_description,language_code: 'ru'});
+    await botInstance.setMyShortDescription({short_description:msqTemplates.default_bot_description})
+    await botInstance.setMyShortDescription({short_description:msqTemplates.ru_bot_description,language_code: 'ru'})
     const botInfo = await botInstance.getMe();
     await mongo.registerBotUser(botInfo)
     console.log(new Date(),"Success! Bot parameters setted");
-}
+};
 
 function router(botInstance) {
   
@@ -70,10 +70,9 @@ function router(botInstance) {
   botInstance.on("inline_query", (inlineQuery) => inlineQueryRouter(inlineQuery,botInstance))
   botInstance.on("callback_query", (event) => eventRouter(event,botInstance))
   console.log(new Date(), "Telegram bot started and listening for messages...","TelegramBot options:",botInstance.options);
-}
+};
 
 async function inlineQueryRouter(inlineQuery,botInstance){
-
 const {query,id} = inlineQuery;
 console.log(new Date(),"Inline query received:",query,id);
 
@@ -92,11 +91,10 @@ const results = [{
   }];
 
 await botInstance.answerInlineQuery(id, results);
-
-
 }
 
 async function eventRouter(event,botInstance){
+  
   
   let user,requestMsg,replyMsg;
   
@@ -104,8 +102,9 @@ async function eventRouter(event,botInstance){
   let ErrorHandlerInstance;
   try {
     
+
     user = new User(event.from)
-    await user.getUserProfileFromDB()
+    await user.getUserProfileFromDB();
 
     requestMsg = new RequestMsg({
       requestMsg:event,
@@ -119,14 +118,14 @@ async function eventRouter(event,botInstance){
       userInstance:user
     });
     
-    const authResult = requestMsg.authenticateRequest()
+    const authResult = requestMsg.authenticateRequest();
 
     if(!authResult.passed){
       for (const response of authResult.response){
         await replyMsg.sendToNewMessage(response.text,response?.buttons?.reply_markup,response.parse_mode);
       }
       return
-    }
+    };
 
     const dialogue = new Dialogue({
       replyMsgInstance:replyMsg,
@@ -152,19 +151,17 @@ async function eventRouter(event,botInstance){
           responses = await telegramCmdHandler.fileRouter(requestMsg,replyMsg,dialogue)
           break;
         case "text_message":
-            responses = await telegramCmdHandler.textMsgRouter(requestMsg,replyMsg,dialogue)
-            break;
+          responses = await telegramCmdHandler.textMsgRouter(requestMsg,replyMsg,dialogue)
+          break;
         case "callback_query":
-              responses = await telegramCmdHandler.callbackRouter(requestMsg,replyMsg,dialogue)
-              break;
+          responses = await telegramCmdHandler.callbackRouter(requestMsg,replyMsg,dialogue)
+          break;
         case "pinned_message":
-              //ignore this type of message
-              break;
+          //ignore this type of message
+          break;
         default:
             responses = [{text:msqTemplates.unknown_msg_type}]
     };
-
-
 
   for (const response of responses){
 
@@ -210,19 +207,6 @@ async function eventRouter(event,botInstance){
   }
 }
 
-function pinnedMsg(userInstance) {
-  const pinnedMSgText = modelSettings[userInstance.currentRegime].header_msg
-              .replace(
-                "[model]",
-                modelConfig[userInstance.currentModel].name
-              )
-              .replace(
-                "[response_style]",
-                modelSettings[userInstance.currentRegime]?.options.response_style?.options[userInstance?.response_style ?? "neutral"].name
-              )
-        return pinnedMSgText
-}
-
 async function unpinAllChatMessages(replyMsg){
      try{
         await replyMsg.unpinAllChatMessages()
@@ -233,7 +217,7 @@ async function unpinAllChatMessages(replyMsg){
 
 async function updatePinnedMsg(requestMsg,replyMsg,ErrorHandlerInstance) {
 
-      const pinnedMsgText = pinnedMsg(requestMsg.user)
+      const pinnedMsgText = requestMsg.user.pinnedHeaderTemplate;
 
       const chatInfo = await requestMsg.getChat()
       const pinnedMessageId = chatInfo?.pinned_message?.message_id;
@@ -273,5 +257,4 @@ module.exports = {
   setBotParameters,
   GetLibrariesFromAPIs,
   UpdateGlobalVariables,
-  MdjAccountInfo
 };

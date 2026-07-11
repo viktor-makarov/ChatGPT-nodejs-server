@@ -1,11 +1,11 @@
 require('dotenv').config(); //Загружаем переменные из .env и добавляем к переменным окружения. .env должен быть в коревом каталоге приложения.
-const yaml = require('js-yaml');
+const YAML = require('yaml');
 const path = require('path');
 const fs = require('fs');
 
 //load config to global var
 const yamlFileContent = fs.readFileSync(path.join(__dirname,'..',"config","main_config.yml"), 'utf8');
-global.appsettings = yaml.load(yamlFileContent);
+global.appsettings = YAML.parse(yamlFileContent);
 
 //Подключаем и настраивам телеграм-бот
 
@@ -17,10 +17,8 @@ global.mongoConnection = await mongoClient.connectToMongo()
 const chromeBrowser = require("../components/apis/chromeBrowser")
 global.chromeBrowserHeadless = await chromeBrowser.launchBrowserHeadless()
 
-//const mdjCLient = require("../components/midjourneyClient")
-//await mdjCLient.initClient()
 const TelegramBot = require('node-telegram-bot-api');
-const telegramRouter = require("../components/mainRouter")
+const telegramRouter = require("../components/mainRouter");
 
 let options = {
     polling:true
@@ -56,7 +54,6 @@ global.bot.setWebHook(webHookUrl)
 .catch((err) => console.log("setWebHook err:",err))
 }
 
-//telegramRouter.MdjAccountInfo()
 await telegramRouter.setBotParameters(global.bot) //задаем параметры бота
 await telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
 telegramRouter.GetLibrariesFromAPIs() //получаем список моделей OAI
@@ -67,6 +64,30 @@ console.timeEnd('Server startup');
 }
 
 startServer()
+
+async function gracefulShutdown(signal) {
+    console.log(new Date(), `Received ${signal}. Shutting down gracefully...`);
+    try {
+        const mongoClient = require("../components/apis/mongo");
+        await mongoClient.resetAllInProgressDialogueMeta();
+        if (global.chromeBrowserHeadless) {
+            await global.chromeBrowserHeadless.close();
+            console.log(new Date(), 'Chrome browser closed.');
+        }
+        if (global.mongoConnection) {
+            await global.mongoConnection.close();
+            console.log(new Date(), 'MongoDB connection closed.');
+        }
+    } catch (err) {
+        console.error(new Date(), 'Error during shutdown:', err);
+    } finally {
+        process.exit(0);
+    }
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
 process.on('uncaughtException', async (error) => {
     console.error(new Date(), "Uncaught Exception:", error);
     try {
@@ -77,10 +98,6 @@ process.on('uncaughtException', async (error) => {
             await global.chromeBrowserHeadless.close()
             console.log(new Date(),'Chrome browser closed.');
         }
-        // if(mdjCLient){
-        //     await global.mdjClient.close()
-        //     console.log(new Date(),'Midjourney client closed.');
-        // }
         if (global.mongoConnection) {
             setTimeout(() => {
                 global.mongoConnection.close();

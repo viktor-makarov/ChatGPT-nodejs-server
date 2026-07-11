@@ -14,6 +14,9 @@ const AvailableTools = require("./AvailableTools.js");
 const WebBrowser = require("./WebBrowser.js");
 const { set } = require("mongoose");
 
+const Agents = require("./Agents");
+const agentsInstance = new Agents();
+
 class FunctionCall {
     #replyMsg;
     #requestMsg;
@@ -243,6 +246,7 @@ async router(){
             userInstance:this.#user,
             tool_function:this.#functionName,
             tool_call: this.#functionCall,
+            agent: this.#user.currentAgent,
             tool_reply:{...functionOutcome, supportive_data: undefined},
             call_duration:functionOutcome?.supportive_data?.duration,
             success:functionOutcome.success
@@ -256,7 +260,7 @@ async functionErrorPrompt(errorObject){
     const {tool_call_id, functionName, errorMessage, errorStack, assistant_instructions,user_instructions} = errorObject;
 
 
-    const availableFunctions = await this.#availableToolsInstance.getAvailableToolsForCompletion("main")
+    const availableFunctions = await this.#availableToolsInstance.getToolsAvailableForAgent("main")
     const otherAvailableFunctions = availableFunctions.map(func => func.name).filter(funcName => funcName !== functionName);
 
     let prompt = `
@@ -628,14 +632,7 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
             const truncation = "auto";
             const input = [
                 {role:"developer",
-                    content:`You are an autonomous browser agent. Your mission is to fulfill the user’s request accurately and safely by issuing computer.use commands.
-1. Top priority: deliver the correct end result for the user.  
-2. Secondary priority: use the fewest possible actions.  
-3. Before every computer.use call, think briefly (internally) to confirm the action moves you toward the goal.  
-4. DO not cease the action to get additional info from user. Try to finish the task with available data.
-5. Accept all cookies if proposed by site
-6. Reasoning summary MUST BE in ${users_language}
-`
+                    content: devPrompts.web_browser_agent_prompt.replace("{users_language}", users_language || "ru").replace("{date}", new Date().toLocaleDateString('en-US',{year: 'numeric', month: 'long', day: 'numeric'}))
                 },
             {
                 role:"user",
@@ -959,6 +956,7 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
                 creditType: "computer_use",
                 creditSubType: "computer_use",
                 usage: 1,
+                agent: this.#user.currentAgent,
                 details: {place_in_code:"computerBrowsePipeline"}
             })
         }
@@ -970,6 +968,7 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
             creditType: "text_tokens",
             creditSubType: "input",
             usage: usage.input_tokens,
+            agent: this.#user.currentAgent,
             details: {place_in_code:"computerBrowsePipeline"}
           })
 
@@ -978,6 +977,7 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
             creditType: "text_tokens",
             creditSubType: "output",
             usage: usage.output_tokens,
+            agent: this.#user.currentAgent,
             details: {place_in_code:"computerBrowsePipeline"}
           })
         }
@@ -1034,11 +1034,12 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
           const {output,usage} = response;
 
             mongo.insertCreditUsage({
-                          userInstance: this.#user,
-                          creditType: "text_tokens",
-                          creditSubType: "input",
-                          usage: usage.input_tokens,
-                          details: {place_in_code:"openAISearch"}
+            userInstance: this.#user,
+            creditType: "text_tokens",
+            creditSubType: "input",
+            usage: usage.input_tokens,
+            agent: this.#user.currentAgent,
+            details: {place_in_code:"openAISearch"}
             })
           
             mongo.insertCreditUsage({
@@ -1046,6 +1047,7 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
                 creditType: "text_tokens",
                 creditSubType: "output",
                 usage: usage.output_tokens,
+                agent: this.#user.currentAgent,
                 details: {place_in_code:"openAISearch"}
             })
 
@@ -1058,12 +1060,13 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
 
           if(search_calls.length > 0){
             mongo.insertCreditUsage({
-                        userInstance: this.#user,
-                        creditType: "web_search",
-                        creditSubType: "web_search",
-                        usage:1,
-                        details: {place_in_code:"openAISearch"}
-                      })
+                userInstance: this.#user,
+                creditType: "web_search",
+                creditSubType: "web_search",
+                usage:1,
+                agent: this.#user.currentAgent,
+                details: {place_in_code:"openAISearch"}
+                })
           }
 
             const url_citations_list = [];
@@ -1204,11 +1207,12 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
           const {output,usage} = result;
 
           mongo.insertCreditUsage({
-                          userInstance: this.#user,
-                          creditType: "text_tokens",
-                          creditSubType: "input",
-                          usage: usage.input_tokens,
-                          details: {place_in_code:"getDiagramFromOpenAI"}
+            userInstance: this.#user,
+            creditType: "text_tokens",
+            creditSubType: "input",
+            usage: usage.input_tokens,
+            agent: this.#user.currentAgent,
+            details: {place_in_code:"getDiagramFromOpenAI"}
             })
           
             mongo.insertCreditUsage({
@@ -1216,6 +1220,7 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
                 creditType: "text_tokens",
                 creditSubType: "output",
                 usage: usage.output_tokens,
+                agent: this.#user.currentAgent,
                 details: {place_in_code:"getDiagramFromOpenAI"}
             })
 
@@ -1301,17 +1306,19 @@ async get_data_from_mongoDB_by_pipepine(table_name,argumentsJson){
         const {output,usage} = improvedInstructions;
 
         mongo.insertCreditUsage({
-                        userInstance: this.#user,
-                        creditType: "text_tokens",
-                        creditSubType: "input",
-                        usage: usage.input_tokens,
-                        details: {place_in_code:"improveInstructions"}
+                userInstance: this.#user,
+                creditType: "text_tokens",
+                creditSubType: "input",
+                usage: usage.input_tokens,
+                agent: this.#user.currentAgent,
+                details: {place_in_code:"improveInstructions"}
             });
         mongo.insertCreditUsage({
             userInstance: this.#user,
             creditType: "text_tokens",
             creditSubType: "output",
             usage: usage.output_tokens,
+            agent: this.#user.currentAgent,
             details: {place_in_code:"improveInstructions"}
         });
 
@@ -1879,7 +1886,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
 
         if(status==="inprogress"){ 
 
-            const resultAfterUpdate = await mongo.insertContentToOutputStorage(filename,this.#user.userid,this.#user.currentRegime,content);
+            const resultAfterUpdate = await mongo.insertContentToOutputStorage(filename,this.#user.userid,this.#user.currentAgent,content);
 
             return {success:1,result:`New piece of content for file ${filename} has been added to the temporary storage. You need to send the next piece of content to complete the generation of the file.`};
             
@@ -1936,7 +1943,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
         this.validateRequiredFieldsFor_saveToDocument(argumentsJson)
 
         const {resource_ids,filename,function_description} = argumentsJson
-        const resources = await mongo.getResourcesById(resource_ids,this.#user.currentRegime)
+        const resources = await mongo.getResourcesById(resource_ids)
         if(resources.length===0){
             throw new Error("Resource is not found by id.")
         };
@@ -2002,6 +2009,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                     creditType: "text_to_speech",
                     creditSubType: "elevenlabs",
                     usage:msgResult?.result?.audio?.duration || 0,
+                    agent: this.#user.currentAgent,
                     details: {place_in_code:"textToSpeech function"}
                 })
 
@@ -2123,6 +2131,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                         creditType: "speech_to_text",
                         creditSubType: "elevenlabs",
                         usage:duration || 0,
+                        agent: this.#user.currentAgent,
                         details: {place_in_code:"extractContentWraper"}
                     })
 
@@ -2136,6 +2145,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                         creditType: "ocr",
                         creditSubType: "image",
                         usage: fileSize || 0,
+                        agent: this.#user.currentAgent,
                         details: {place_in_code:"extractContentWraper"}
                     })
 
@@ -2183,6 +2193,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                                 creditType: "ocr",
                                 creditSubType: "pdf",
                                 usage: fileSize || 0,
+                                agent: this.#user.currentAgent,
                                 details: {place_in_code:"extractContentWraper"}
                             })
                         }
@@ -2253,7 +2264,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
         this.validateRequiredFieldsFor_extract_content(argumentsJson)
 
         const {resource_ids} = argumentsJson
-        const resources = await mongo.getResourcesById(resource_ids,this.#user.currentRegime)
+        const resources = await mongo.getResourcesById(resource_ids)
 
         if(resources.length===0){
             throw new Error("Resource is not found by id.")
@@ -2477,7 +2488,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
         const fileName = func.extractFileNameFromURL(tgm_url)
         const fileExtension = func.extractFileExtention(fileName)
         const downloadStream = await func.startFileDownload(tgm_url)
-        const filename = func.valueToMD5(String(userInstance.userid))+ "_" + userInstance.currentRegime + "_" + func.valueToMD5(String(fileName)) + "." + fileExtension;  
+        const filename = func.valueToMD5(String(userInstance.userid))+ "_" + userInstance.currentAgent + "_" + func.valueToMD5(String(fileName)) + "." + fileExtension;  
 
         let uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename)
 
@@ -2518,6 +2529,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                     creditType: "midjourney",
                     creditSubType: "create",
                     usage: 1,
+                    agent: this.#user.currentAgent,
                     details: {place_in_code:"CreateMdjImageRouter"}
                 })
 
@@ -2550,22 +2562,24 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                 const [aws_url, {buffer,mimeType}] = await Promise.all([
                     this.uploadFileToS3FromTgm(sent_result.photo.at(-1).file_id,this.#user),
                     this.downloadFileBufferFromTgm(sent_result.photo.at(-1).file_id)
-                ])
-                const {sizeBytes} = func.calculateFileSize(buffer)
+                ]);
+                
+                const {sizeBytes} = func.calculateFileSize(buffer);
 
                 const buttons = generate_result.mdjMsg?.options || [];
                 const labels = buttons.map(button => button?.label)
                 const buttonsShownBefore = this.#dialogue.metaGetMdjButtonsShown
                 const btnsDescription = func.generateButtonDescription(labels,buttonsShownBefore)
-                await this.#dialogue.metaSetMdjButtonsShown(labels)
+                await this.#dialogue.metaSetMdjButtonsShown(labels);
 
                 mongo.insertCreditUsage({
                     userInstance: this.#user,
                     creditType: "midjourney",
                     creditSubType: buttonPushed.task_type === "upscale" ? "upscale" : "create",
                     usage: 1,
+                    agent: this.#user.currentAgent,
                     details: {place_in_code:"CustomQueryMdjRouter"}
-                })
+                });
 
                 return {
                         success:1,
@@ -2608,6 +2622,7 @@ validateRequiredFieldsFor_createExcelFile(argumentsJson){
                     creditType: "midjourney",
                     creditSubType: "create",
                     usage: 1,
+                    agent: this.#user.currentAgent,
                     details: {place_in_code:"ImagineMdjRouter"}
                 })
 

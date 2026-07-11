@@ -17,11 +17,7 @@ mongodb_names:  #db and collections names for mongodb
 
 mongodb_connections: #stores connection strings to mongo db
   options:
-    useNewUrlParser: true
-    useUnifiedTopology: true
-    useFindAndModify: false
-    useCreateIndex: true
-    poolSize: 100
+    # Removed deprecated options: useFindAndModify, useCreateIndex, poolSize
     maxPoolSize: 100
     socketTimeoutMS: 45000
     connectTimeoutMS: 30000

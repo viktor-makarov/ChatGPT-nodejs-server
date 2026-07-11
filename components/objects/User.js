@@ -16,9 +16,13 @@ class User{
     #image_choice;
     #plan;
     #groups;
-    #currentRegime;
+    #currentAgent
+    #currentAgentProperties
+    #agents = []
     #currentTemperature
     #currentModel
+    #currentReasoningEffort
+    #currentModelMode
     #showSystemMsgs
     #isRegistered
     #hasReadInfo
@@ -45,21 +49,19 @@ class User{
     if (result.length>0){
         this.#fullProfile = result[0]
         this.#settings = result[0]?.settings
-        this.#currentRegime = this.#settings?.current_regime
-        this.#currentTemperature = this.#settings[this.#currentRegime]?.temperature
+
+        this.#currentAgent = result[0].current_agent
+        this.#agents = result[0]?.agents || [];
+        this.updateAgentProperties()
         this.#currentVoice = this.#settings["texttospeech"]?.voice
-        this.#currentModel = this.#settings[this.#currentRegime]?.model
         this.#active = result[0]?.active
         this.#plan = result[0]?.plan
         this.#pinnedHeaderAllowed = this.#settings?.pinnedHeaderAllowed
         this.#groups = result[0]?.permissions?.groups
-        this.#showSystemMsgs = this.#settings[this.#currentRegime]?.sysmsg
         this.#isRegistered = result[0]?.permissions?.registered
         this.#hasReadInfo = result[0]?.permissions?.readInfo
         this.#isAdmin = this.#groups?.includes("admin")
-        this.#prefered_name = this.#settings[this.#currentRegime]?.prefered_name;
-        this.#response_style = this.#settings[this.#currentRegime]?.response_style ?? "neutral";
-        this.#image_choice = this.#settings[this.#currentRegime]?.image_choice ?? "auto";
+
         this.#showDetails = this.#settings?.showDetails ?? false;
 
     } else {
@@ -71,33 +73,59 @@ class User{
     return result
     };
 
+    updateAgentProperties(){
+
+        const {model_mode} = this.getAgentProperties(this.#currentAgent, this.#agents)
+        
+        const {model_modes}  = this.getAgentSettings(this.#currentAgent, this.#agents);
+        const modelModeProperties = model_modes?.find(mode => mode.id === model_mode || mode.id === "default") || {};
+        this.#currentModel = modelModeProperties?.model || null
+        this.#currentModelMode = this.#language_code === "ru" ? modelModeProperties?.ru_name : modelModeProperties?.en_name
+        this.#currentReasoningEffort = modelModeProperties?.reasoning?.effort || null
+    }
+
+    getAgentProperties(agent_id,agents){
+        if(!agent_id || agents.length === 0) return null;
+        const agent = agents.find(a => a.id === agent_id);
+        if(!agent) return null;
+        return agent?.properties || {};
+    };
+
+    getAgentSettings(agent_id,agents){
+        if(!agent_id || agents.length === 0) return null;
+        const agent = agents.find(a => a.id === agent_id);
+        if(!agent) return null;
+        return agent;
+    };
+
+    //depricated
     async updateUserProperties(pathString, value){
         const pathArray = pathString.split(".")
         const parameter = pathArray.pop()
 
         switch (parameter) {
             case "model":
-                if(pathArray.includes(this.#currentRegime)){
+                if(pathArray.includes(this.#currentAgent)){
                     this.#currentModel = value;
-                    this.#settings[this.#currentRegime].model = value;
+                    this.#settings[this.#currentAgent].model = value;
                 }
                 break;
             case "temperature":
-                if(pathArray.includes(this.#currentRegime)){
+                if(pathArray.includes(this.#currentAgent)){
                     this.#currentTemperature = value;
-                    this.#settings[this.#currentRegime].temperature = value;
+                    this.#settings[this.#currentAgent].temperature = value;
                 }
                 break;
             case "response_style":
-                if(pathArray.includes(this.#currentRegime)){
+                if(pathArray.includes(this.#currentAgent)){
                 this.#response_style = value;
-                this.#settings[this.#currentRegime].response_style = value;
+                this.#settings[this.#currentAgent].response_style = value;
                 }
                 break;
 
             case "pinnedHeaderAllowed":
                 this.#pinnedHeaderAllowed = Boolean(value);
-                this.#settings[this.#currentRegime].response_style
+                this.#settings[this.#currentAgent].response_style
                 break;
 
         }
@@ -152,10 +180,62 @@ class User{
         return this.#user_last_name
     }
 
-    get currentRegime(){
-
-        return this.#currentRegime
+    get currentAgent(){
+        return this.#currentAgent
     };
+
+    set currentAgent(value){
+        this.#currentAgent = value
+    }
+
+    get currentAgentSettings(){
+        return this.getAgentSettings(this.#currentAgent, this.#agents)
+    }
+
+    get currentAgentProperties(){
+        return this.getAgentProperties(this.#currentAgent, this.#agents)
+    }
+
+    get availableAgentsForUser(){
+        return this.#agents.filter(agent => {
+            return agent.availableForUserGroups?.some(group => group === "all" || this.#groups.includes(group)) || false;
+        });
+    }
+
+    get unavailableAgentsForUser(){
+
+        return this.#agents.filter(agent => {
+            return !agent.availableForUserGroups?.some(group => group === "all" || this.#groups.includes(group));
+        });
+    }
+
+    agentWelcomeMsg(tokensCount,tokensLimit){
+
+        const {
+            name_ru, 
+            name_en,
+            general_instructions_ru,
+            general_instructions_en,
+            resetchat_instructions_ru,
+            resetchat_instructions_en
+        } = this.currentAgentSettings;
+
+        const agentName = this.language_code === "ru" ? name_ru : name_en || "Агент"
+        
+        if(tokensCount>0){
+            const statisticsMsg = this.language_code === "ru" ?
+            `Использовано токенов: ${tokensCount}/${tokensLimit}` :
+            `Tokens used: ${tokensCount}/${tokensLimit}`
+            const resetInstructions = this.language_code === "ru" ? resetchat_instructions_ru : resetchat_instructions_en;
+            return `<b>${agentName}</b>\n${statisticsMsg}\n${resetInstructions}`
+
+        } else {
+            const generalInstructions = this.language_code === "ru" ? general_instructions_ru : general_instructions_en;
+            return `<b>${agentName}</b>\n${generalInstructions}`
+        }
+
+    }
+
     get currentTemperature(){
         return this.#currentTemperature || 1
     };
@@ -164,9 +244,27 @@ class User{
         return this.#currentVoice
     };
 
+
+    set currentModel(value){
+        this.#currentModel = value
+    }
+
     get currentModel(){
         return this.#currentModel 
     };
+
+    get currentModelMode(){
+        return this.#currentModelMode
+    }
+
+    set currentReasoningEffort(value){
+        this.#currentReasoningEffort = value
+    }
+
+    get currentReasoningEffort(){
+        return this.#currentReasoningEffort
+    };
+
     get showSystemMsgs(){
         return this.#showSystemMsgs
     }
@@ -202,6 +300,32 @@ class User{
         this.#pinnedHeaderAllowed = value
     }
 
+    get pinnedHeaderTemplate(){
+
+        const agentSettings = this.getAgentSettings(this.#currentAgent, this.#agents);
+        
+        if (agentSettings) {
+            const pinnedMsgParts = [];
+            const {name_ru,name_en,properties:{response_style}} = agentSettings;
+
+            if(name_ru && name_en){
+                pinnedMsgParts.push(this.language_code === "ru" ? name_ru : name_en);
+            }
+
+            pinnedMsgParts.push(this.#currentModelMode || "N/A");
+
+            if (response_style) {
+                pinnedMsgParts.push(response_style);
+            }
+            const text = pinnedMsgParts.join(" | ");
+            return text;
+
+        } else {
+            return "Агент не найден"
+        }
+    
+    }
+
     set isRegistered(value){
         this.#isRegistered = value
     }
@@ -213,13 +337,6 @@ class User{
     set hasReadInfo(value){
         this.#hasReadInfo = value
     }
-    set currentRegime(value){
-        this.#currentTemperature = this.#settings[value]?.temperature
-        this.#currentModel = this.#settings[value]?.model
-        this.#currentVoice = this.#settings[value]?.voice
-        this.#showSystemMsgs = this.#settings[value]?.sysmsg       
-        this.#currentRegime = value
-    };
 
     
 };

@@ -526,9 +526,9 @@ async function createDialogueMeta(object){
   }
 }
 
-async function deleteDialogueMeta(userid){
+async function deleteDialogueMeta(userid,agent){
   try {
-    return await dialog_meta_collection.deleteMany({ userid: userid });
+    return await dialog_meta_collection.deleteMany({ userid: userid, agent: agent });
   } catch (err) {
     err.code = "MONGO_ERR";
     err.place_in_code = "deleteDialogueMeta";
@@ -536,10 +536,10 @@ async function deleteDialogueMeta(userid){
   }
 }
 
-async function updateDialogueMeta(userid,object){
+async function updateDialogueMeta(userid,agent,object){
   try {
     return await dialog_meta_collection.updateOne(
-      { userid: userid },
+      { userid: userid, agent: agent },
       object,
       { upsert: true }
     );
@@ -550,10 +550,10 @@ async function updateDialogueMeta(userid,object){
   }
 }
 
-async function updateDotNotationDialogueMeta(userid,object){
+async function updateDotNotationDialogueMeta(userid,agent,object){
   try {
     return await dialog_meta_collection.updateOne(
-      { userid: userid },
+      { userid: userid, agent: agent },
       { $set: object },
       { upsert: true }
     );
@@ -579,9 +579,9 @@ async function resetAllInProgressDialogueMeta(){
   }
 }
 
-async function readDialogueMeta(userid){
+async function readDialogueMeta(userid,agent){
   try {
-    return  await dialog_meta_collection.findOne({ userid: userid },{ _id: 0,__v:0}).lean()
+    return  await dialog_meta_collection.findOne({ userid: userid, agent: agent },{ _id: 0,__v:0}).lean()
   } catch (err) {
     err.code = "MONGO_ERR";
     err.place_in_code = "readDialogueMeta";
@@ -790,6 +790,7 @@ async function insertFunctionUsagePromise(obj){
       tool_call: obj.tool_call,
       tool_reply:obj.tool_reply,
       call_duration:obj.call_duration,
+      agent: obj.agent,
       success:obj.success
     });
 
@@ -810,7 +811,7 @@ async function insertFeatureUsage(obj){
       userLastName: obj.userInstance.user_last_name,
       username: obj.userInstance.user_username,
       feature:obj.feature,
-      regime:obj?.regime,
+      agent:obj?.agent,
       featureType:obj.featureType
     });
 
@@ -833,6 +834,7 @@ async function insertCreditUsage(obj){
       creditType:obj.creditType,
       creditSubType:obj.creditSubType,
       usage:obj.usage,
+      agent:obj?.agent,
       details:obj.details,
     });
 
@@ -1049,7 +1051,7 @@ async function updateInputMsgTokenUsage(documentId,tokens){
     return await dialog_collection.findByIdAndUpdate(
       documentId, 
       { $set: { tokens: tokens } }, 
-      { new: true, useFindAndModify: false }
+      { new: true }
     );
     
   } catch (err) {
@@ -1287,10 +1289,10 @@ const updateOnePromise = async (model, filter, update, options) => {
   }
 };
 
-const getDocByTgmBtnsFlag = async (userid, regime) => {
+const getDocByTgmBtnsFlag = async (userid, agent) => {
 
   try {
-    const filter = { userid: userid, regime: regime,telegramMsgBtns: true };
+    const filter = { userid: userid, agent: agent,telegramMsgBtns: true };
     const result = await dialog_collection
       .find(
         filter,
@@ -1308,10 +1310,10 @@ const getDocByTgmBtnsFlag = async (userid, regime) => {
 };
 
 
-const getDocByTgmRegenerateBtnFlag = async (userid, regime) => {
+const getDocByTgmRegenerateBtnFlag = async (userid, agent) => {
   
   try {
-    const filter = { userid: userid, regime: regime,telegramMsgRegenerateBtns: true };
+    const filter = { userid: userid, agent: agent,telegramMsgRegenerateBtns: true };
     const result = await dialog_collection
       .find(
         filter,
@@ -1329,9 +1331,9 @@ const getDocByTgmRegenerateBtnFlag = async (userid, regime) => {
 };
 
 
-async function getLastCompletion(userid, regime) {
+async function getLastCompletion(userid, agent) {
   try {
-    const filter = { userid: userid, regime: regime, role: "assistant" };
+    const filter = { userid: userid, agent: agent, role: "assistant" };
     const result = await dialog_collection
       .findOne(
         filter
@@ -1347,10 +1349,10 @@ async function getLastCompletion(userid, regime) {
   }
 };
 
-const getDialogueFromDB = async (userid, regime) => {
+const getDialogueFromDB = async (userid, agent) => {
 
   try {
-    const filter = { userid: userid, regime: regime };
+    const filter = { userid: userid, agent: agent };
     const result = await dialog_collection
       .find(
         filter,
@@ -1529,6 +1531,17 @@ async function insert_read_section_migrationPromise(msg) {
   }
 }
 
+
+function updateAgent(a, b) {
+  const skip = new Set(['id', 'properties']);
+  Object.keys(b).forEach(key => {
+    if (!skip.has(key)) {
+      a[key] = b[key];
+    }
+  });
+  return a;
+}
+
 const setDefaultVauesForNonExiting = async () => {
   try {
     const profiles = await telegram_profile_collection.find({}).lean();
@@ -1538,7 +1551,7 @@ const setDefaultVauesForNonExiting = async () => {
     let totalMatched = 0;
     
     const newProfile = new telegram_profile_collection().toObject();
- 
+    
     // Process profiles in batches
     for (let i = 0; i < profiles.length; i += BATCH_SIZE) {
       const batch = profiles.slice(i, i + BATCH_SIZE);
@@ -1553,6 +1566,19 @@ const setDefaultVauesForNonExiting = async () => {
         // Merge the existing profile data with default values
         // This preserves existing data while adding any missing default fields
         const mergedProfile = { ...newProfile, ...profile };
+
+        //Ensure sertain nested fields
+  
+        mergedProfile.agents = mergedProfile.agents.map(agent =>{
+          const {id} = agent;
+          updateAgent(agent, newProfile.agents.find(a => a.id === id));
+          return agent;
+        });
+        // Add agents from newProfile that don't exist in the existing profile
+        const existingAgentIds = new Set(mergedProfile.agents.map(a => a.id));
+        const addedAgents = newProfile.agents.filter(a => !existingAgentIds.has(a.id));
+        mergedProfile.agents = [...mergedProfile.agents, ...addedAgents];
+
         // Add to bulk operations
         bulkOps.push({
           replaceOne: {
@@ -1696,37 +1722,25 @@ async function replaceProfileValues(dry_run = true) {
   }
 }
 
-const get_tokenUsageByRegimes = () => {
-
-  return new Promise(async (resolve, reject) => {
-    try {
-      token_collection
-        .aggregate(
-          [
-            {
-              $group: {
-                _id: {
-                  regime: "$regime",
-                },
-                requests: { $sum: 1 },
-                tokens: { $sum: "$total_tokens" },
-              },
-            },
-          ],
-          function (err, res) {
-            if (err) {
-              err.code = "MONGO_ERR";
-              reject(err);
-            } else {
-              resolve(res);
-            }
-          }
-        )
-        .sort({ requests: "desc" });
-    } catch (err) {
-      reject(err);
-    }
-  });
+const get_tokenUsageByRegimes = async () => {
+  try {
+    const res = await token_collection
+      .aggregate([
+        {
+          $group: {
+            _id: { regime: "$regime" },
+            requests: { $sum: 1 },
+            tokens: { $sum: "$total_tokens" },
+          },
+        },
+      ])
+      .sort({ requests: "desc" })
+      .exec();
+    return res;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
 };
 
 async function profileMigrationScript(path) {
@@ -1764,128 +1778,87 @@ async function profileMigrationScript(path) {
   }
 }
 
-const get_tokenUsageByDates = () => {
+const get_tokenUsageByDates = async () => {
   const func_name = "get_tokenUsageByDates";
-  return new Promise(async (resolve, reject) => {
-    try {
-      const tenDaysAgo = moment().subtract(10, "days").startOf("day").toDate();    
-      token_collection
-        .aggregate(
-          [
-            {
-              $match: {
-                datetimeUTC: { $gte: tenDaysAgo },
+  try {
+    const tenDaysAgo = moment().subtract(10, "days").startOf("day").toDate();
+    const res = await token_collection
+      .aggregate([
+        { $match: { datetimeUTC: { $gte: tenDaysAgo } } },
+        {
+          $group: {
+            _id: {
+              $dateToString: {
+                format: "%d-%m-%Y",
+                date: "$datetimeUTC",
+                timezone: "Europe/Moscow",
               },
             },
-            {
-              $group: {
-                _id: {
-                  $dateToString: {
-                    format: "%d-%m-%Y",
-                    date: "$datetimeUTC",
-                    timezone: "Europe/Moscow",
-                  },
-                },
-                date: { $max: "$datetimeUTC" },
-                requests: { $sum: 1 },
-                tokens: { $sum: "$total_tokens" },
-                uniqueUsers: { $addToSet: "$userid" },
-              },
-            },
-            {
-              $project: {
-                _id: 1,
-                requests: 1,
-                uniqueUsers: { $size: "$uniqueUsers" },
-                tokens: 1,
-              },
-            },
-          ],
-          function (err, res) {
-            if (err) {
-              err.code = "MONGO_ERR";
-              err.place_in_code = func_name;
-              reject(err);
-            } else {
-              resolve(res);
-            }
-          }
-        )
-        .sort({ date: "desc" });
-    } catch (err) {
-      err.place_in_code = func_name;
-      reject(err);
-    }
-  });
+            date: { $max: "$datetimeUTC" },
+            requests: { $sum: 1 },
+            tokens: { $sum: "$total_tokens" },
+            uniqueUsers: { $addToSet: "$userid" },
+          },
+        },
+        {
+          $project: {
+            _id: 1,
+            requests: 1,
+            uniqueUsers: { $size: "$uniqueUsers" },
+            tokens: 1,
+          },
+        },
+      ])
+      .sort({ date: "desc" })
+      .exec();
+    return res;
+  } catch (err) {
+    err.place_in_code = func_name;
+    err.code = err.code || "MONGO_ERR";
+    throw err;
+  }
 };
 
-const get_errorsByMessages = () => {
+const get_errorsByMessages = async () => {
   const func_name = "get_errorsByMessages";
-  return new Promise(async (resolve, reject) => {
-    try {
-
-      error_log_collection
-        .aggregate(
-          [
-            {
-              $group: {
-                _id: "$error.message",
-                count: { $sum: 1 },
-              },
-            },
-          ],
-          function (err, res) {
-            if (err) {
-              err.code = "MONGO_ERR";
-              err.place_in_code = func_name;
-              reject(err);
-            } else {
-              resolve(res);
-            }
-          }
-        )
-        .sort({ count: "desc" });
-    } catch (err) {
-      err.place_in_code = func_name;
-      reject(err);
-    }
-  });
+  try {
+    const res = await error_log_collection
+      .aggregate([
+        { $group: { _id: "$error.message", count: { $sum: 1 } } },
+      ])
+      .sort({ count: "desc" })
+      .exec();
+    return res;
+  } catch (err) {
+    err.place_in_code = func_name;
+    err.code = err.code || "MONGO_ERR";
+    throw err;
+  }
 };
 
-const get_tokenUsageByUsers = () => {
-  return new Promise(async (resolve, reject) => {
-    try {
-      token_collection
-        .aggregate(
-          [
-            {
-              $group: {
-                _id: {
-                  userid: "$userid",
-                },
-                userFirstName: { $max: "$userFirstName" },
-                userLastName: { $max: "$userLastName" },
-                username: { $max: "$username" },
-                requests: { $sum: 1 },
-                tokens: { $sum: "$total_tokens" },
-                last_request: { $max: "$datetimeUTC" },
-              },
-            },
-          ],
-          function (err, res) {
-            if (err) {
-              err.code = "MONGO_ERR";
-              reject(err);
-            } else {
-              resolve(res);
-            }
-          }
-        )
-        .sort({ requests: "desc" });
-    } catch (err) {
-      reject(err);
-    }
-  });
+const get_tokenUsageByUsers = async () => {
+  try {
+    const res = await token_collection
+      .aggregate([
+        {
+          $group: {
+            _id: { userid: "$userid" },
+            userFirstName: { $max: "$userFirstName" },
+            userLastName: { $max: "$userLastName" },
+            username: { $max: "$username" },
+            requests: { $sum: 1 },
+            tokens: { $sum: "$total_tokens" },
+            last_request: { $max: "$datetimeUTC" },
+          },
+        },
+      ])
+      .sort({ requests: "desc" })
+      .exec();
+    return res;
+  } catch (err) {
+    err.code = "MONGO_ERR";
+    throw err;
+  }
 };
 
 
@@ -1948,24 +1921,22 @@ async function UpdateSettingPromise(requestMsgInstance, pathString, value){
 };
 
 
-
-async function updateCurrentRegimeSetting(requestMsgInstance){
+async function updateCurrentAgentSetting(requestMsgInstance){
   try {
 
       const result = await telegram_profile_collection.updateOne(
           { id: requestMsgInstance.user.userid }, 
-          { $set: { "settings.current_regime": requestMsgInstance.user.currentRegime} }
+          { $set: { "current_agent": requestMsgInstance.user.currentAgent} }
       );
       return result;
   } catch (err) {
       if (!err.code) { // Only override code if it's not already set
           err.code = "MONGO_ERR";
       }
-      err.place_in_code = "updateCurrentRegimeSetting";
+      err.place_in_code = "updateCurrentAgentSetting";
       throw err;
   }
 };
-
 
 async function get_all_profiles(){
 
@@ -1997,19 +1968,12 @@ async function get_all_registeredPromise() {
 const get_all_adminPromise = () => {
   return new Promise(async (resolve, reject) => {
     try {
- 
-      telegram_profile_collection
-        .find({ "permissions.admin": true }, function (err, doc) {
-          if (err) {
-            err.code = "MONGO_ERR";
-            err.place_in_code = func_name;
-            reject(err);
-          } else {
-            resolve(doc.map((item) => item.id)); //Возвращаем array idшников
-          }
-        })
+      const docs = await telegram_profile_collection
+        .find({ "permissions.admin": true })
         .lean();
+      resolve(docs.map((item) => item.id));
     } catch (err) {
+      err.code = "MONGO_ERR";
       reject(err);
     }
   });
@@ -2018,21 +1982,12 @@ const get_all_adminPromise = () => {
 const get_all_readPromise = () => {
   return new Promise(async (resolve, reject) => {
     try {
-  
-      telegram_profile_collection
-        .find({ "permissions.readInfo": true }, function (err, doc) {
-          if (err) {
-            err.code = "MONGO_ERR";
-
-            reject(err);
-          } else {
-           // console.log(doc.length);
-            resolve(doc.map((item) => item.id)); //Возвращаем array idшников
-          }
-        })
+      const docs = await telegram_profile_collection
+        .find({ "permissions.readInfo": true })
         .lean();
+      resolve(docs.map((item) => item.id));
     } catch (err) {
-
+      err.code = "MONGO_ERR";
       reject(err);
     }
   });
@@ -2082,26 +2037,17 @@ async function deleteMsgFromDialogByFileId (userid, fileId){
   }
 };
 
-const deleteDialogByUserPromise = (userid, regime) => {
-
+const deleteDialogByUserPromise = (userid, agent) => {
   return new Promise(async (resolve, reject) => {
     try {
-
       let filter;
-      if (regime) {
-        filter = { userid: userid, regime: regime };
+      if (agent) {
+        filter = { userid: userid, agent: agent };
       } else {
         filter = { userid: userid };
       }
-
-      dialog_collection.deleteMany(filter, (err, res) => {
-        if (err) {
-          err.code = "MONGO_ERR";
-          reject(err);
-        } else {
-          resolve(res);
-        }
-      });
+      const res = await dialog_collection.deleteMany(filter);
+      resolve(res);
     } catch (err) {
       err.code = "MONGO_ERR";
       err.place_in_code = "deleteDialogByUserPromise";
@@ -2111,21 +2057,10 @@ const deleteDialogByUserPromise = (userid, regime) => {
 };
 
 const delete_profile_by_id_arrayPromise = (profileIdArray) => {
-
   return new Promise(async (resolve, reject) => {
     try {
-
-      telegram_profile_collection.deleteMany(
-        { id: { $in: profileIdArray } },
-        (err, res) => {
-          if (err) {
-            err.code = "MONGO_ERR";
-            reject(err);
-          } else {
-            resolve(res);
-          }
-        }
-      );
+      const res = await telegram_profile_collection.deleteMany({ id: { $in: profileIdArray } });
+      resolve(res);
     } catch (err) {
       err.code = "MONGO_ERR";
       err.place_in_code = "delete_profile_by_id_arrayPromise";
@@ -2170,7 +2105,7 @@ module.exports = {
   deleteMsgFromDialogById,
   upsertPrompt,
   updateInputMsgTokenUsage,
-  updateCurrentRegimeSetting,
+  updateCurrentAgentSetting,
   updateCompletionInDb,
   insertFunctionObject,
   addMsgIdToToolCall,

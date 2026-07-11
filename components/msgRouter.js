@@ -31,26 +31,16 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
   const errorHandlerInstance = new ErrorHandler({replyMsgInstance: replyMsgInstance, dialogueInstance: dialogueInstance});
   
-  const current_regime = requestMsgInstance.user.currentRegime
   const userInstance = requestMsgInstance.user;
   const fileCaption =  requestMsgInstance.fileCaption
 
   mongo.insertFeatureUsage({
     userInstance: requestMsgInstance.user,
     feature: requestMsgInstance.fileType,
-    regime: current_regime,
+    agent: userInstance.currentAgent,
     featureType: "fileUploaded"
-  })
+  });
 
- if (["chat","translator","texteditor"].includes(current_regime) === false){
-    responses.push({text:msqTemplates.file_handler_wrong_regime})
-    return responses;
- }
-
-  if(current_regime==="translator" || current_regime === "texteditor"){
-        await resetNonDialogueHandler(requestMsgInstance)
-  }
- 
   await requestMsgInstance.getFileLinkFromTgm()
 
   if (requestMsgInstance.fileType === "voice" && !requestMsgInstance.isForwarded && requestMsgInstance.duration_seconds < 300){
@@ -59,21 +49,25 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
 
       let transcript;
       try {
+          console.log("Attempting ElevenLabs STT for voice message")
           const api_result = await elevenLabsApi.speechToText(audioReadStream)
+          console.log("ElevenLabs STT result:")
           const {text} = api_result
           transcript = text;
           mongo.insertCreditUsage({
             userInstance: requestMsgInstance.user,
             creditType: "speech_to_text",
             creditSubType: "elevenlabs",
+            agent: userInstance.currentAgent,
             usage:requestMsgInstance.duration_seconds || 0,
             details: {place_in_code:"fileRouter"}
-          })
+          })  
       } catch(err){
+        console.log("ElevenLabs STT failed, falling back to OpenAI Whisper:", err)
         err.mongodblog = err.mongodblog || true
         err.sendToUser=false
         err.adminlog=false
-        err.code=="ELEVENLABS_ERR"
+        err.code="ELEVENLABS_ERR"
         errorHandlerInstance.handleError(err)
         otherFunctions.voiceToTextConstraintsCheck(requestMsgInstance.fileMimeType,requestMsgInstance.fileSize)
         transcript = await openAIApi.VoiceToText(audioReadStream,userInstance.openAIToken)
@@ -99,8 +93,6 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     if(fileCaption){
       await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
       dialogueInstance.triggerCallCompletion()
-    } else if (current_regime === "translator" || current_regime === "texteditor"){
-      dialogueInstance.triggerCallCompletion()
     }
 
   } else if(requestMsgInstance.fileType === "document"){
@@ -115,8 +107,6 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     
     if(fileCaption){
       await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
-      dialogueInstance.triggerCallCompletion()
-    } else if (current_regime === "translator" || current_regime === "texteditor"){
       dialogueInstance.triggerCallCompletion()
     }
     
@@ -141,11 +131,8 @@ async function fileRouter(requestMsgInstance,replyMsgInstance,dialogueInstance){
     await dialogueInstance.commitImageToDialogue(fileComment,{url:null,base64,sizeBytes,mimetype:downloadBufferResult.mimeType},0,null)
     mongo.updateDataInTempStorage(requestMsgInstance.user.userid, resourceId, {"embeddedInDialogue":true})
 
-    
     if(fileCaption){
       await dialogueInstance.commitPromptToDialogue(fileCaption,requestMsgInstance)
-      dialogueInstance.triggerCallCompletion()
-    } else if (current_regime === "translator" || current_regime === "texteditor"){
       dialogueInstance.triggerCallCompletion()
     }
   }
@@ -160,28 +147,8 @@ async function textMsgRouter(requestMsgInstance,replyMsgInstance,dialogueInstanc
   
   let responses =[];
 
-  switch(requestMsgInstance.user.currentRegime) {
-    case "chat":
-
-      await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-      dialogueInstance.triggerCallCompletion()
-      
-    break;
-    case "translator":
-        await resetNonDialogueHandler(requestMsgInstance)
-        await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-        
-      dialogueInstance.triggerCallCompletion()
-
-    break;
-    case "texteditor":
-        await resetNonDialogueHandler(requestMsgInstance)
-
-        await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
-        dialogueInstance.triggerCallCompletion()
-
-    break;
-    }
+  await dialogueInstance.commitPromptToDialogue(requestMsgInstance.text,requestMsgInstance)
+  dialogueInstance.triggerCallCompletion()
 
   return responses
 }
@@ -192,13 +159,16 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
   const userInstance = requestMsgInstance.user;
   const isRegistered = userInstance.isRegistered
   const isAdmin = userInstance.isAdmin
+
+  const availableAgents = userInstance.availableAgentsForUser;
+  const unavailableAgents = userInstance.unavailableAgentsForUser;
   
   let responses =[];
 
   mongo.insertFeatureUsage({
     userInstance: userInstance,
     feature: cmpName,
-    regime: userInstance.currentRegime,
+    agent: userInstance.currentAgent,
     featureType: "command"
   })
 
@@ -255,20 +225,70 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
     const settingsResponse = await settingsOptionsHandler(requestMsgInstance);
     responses = [...responses,...settingsResponse]
     
-  } else if(cmpName==="chat" || cmpName==="translator" || cmpName==="texteditor"){
+  } else if(cmpName==="main"){
+     
+    const newAgentName = "main"
+    const previousAgent = userInstance.currentAgent;
+    userInstance.currentAgent = newAgentName;
+
+    responses = await agentCommandHandle({
+      newAgent:newAgentName,
+      previousAgent:previousAgent,
+      requestMsgInstance:requestMsgInstance,
+      dialogueInstance:dialogueInstance
+    });
+    
+  } else if(cmpName==="agents"){
+
+    const msgText = otherFunctions.getLocalizedPhrase("choose_agent",userInstance.language_code);
+    console.log("msgText", msgText)
+    const availableAgentsList = userInstance.availableAgentsForUser;
+    
+    const buttonsData = availableAgentsList.map(agent => 
+      {
+        return {
+        text: userInstance.language_code === "ru" ? agent?.name_ru : agent?.name_en, 
+        callback_data: JSON.stringify({e:"agent",d:agent.id})
+        }
+      }
+    );
+
+    let orderedButtons = otherFunctions.buttonsFitToRow(buttonsData);
+
+    orderedButtons.push([{
+      text: userInstance.language_code === "ru" ? "Закрыть" : "Close", 
+      callback_data: JSON.stringify({e:"close"})
+    }]);
+
+    responses.push({ 
+        operation:"insert",
+        text: msgText,
+        buttons: {
+          reply_markup: {
+            inline_keyboard: orderedButtons,
+            resize_keyboard: true,
+          },
+        },
+      })
+
+  } else if(availableAgents.includes(cmpName)){
    
-    const previousRegime = userInstance.currentRegime;
-    userInstance.currentRegime = cmpName
+    const previousAgent = userInstance.currentAgent;
+    userInstance.currentAgent = cmpName
    
-    responses = await regimeCommandHandle({
-      newRegime:cmpName,
-      previousRegime:previousRegime,
+    responses = await agentCommandHandle({
+      newAgent:cmpName,
+      previousAgent:previousAgent,
       requestMsgInstance:requestMsgInstance,
       dialogueInstance:dialogueInstance
     });
 
-  } else if(cmpName==="imagine"){
+  } else if (unavailableAgents.includes(cmpName)){
+    responses.push({
+      text:otherFunctions.getLocalizedPhrase(`unavailableAgents`, userInstance.language_code),
+    })
 
+  } else if(cmpName==="imagine"){
 
     const statusMsg = await replyMsgInstance.sendStatusMsg()
     const prompt = getPromptFromMsg(requestMsgInstance)
@@ -321,7 +341,7 @@ async function textCommandRouter(requestMsgInstance,dialogueInstance,replyMsgIns
 
   } else {
       dialogueInstance.triggerCallCompletion();
-    }
+  }
     
     } else {
       responses.push({text:msqTemplates.mdj_lacks_prompt})
@@ -451,7 +471,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     mongo.insertFeatureUsage({
     userInstance: requestMsg.user,
     feature: callback_event,
-    regime: requestMsg.user.currentRegime,
+    agent: requestMsg.user.currentAgent,
     featureType: "button"
   })
 
@@ -464,6 +484,19 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
 
   } else if (callback_event === "close") {
     await replyMsg.deleteMsgByID(requestMsg.refMsgId)
+  } else if(callback_event === "agent"){
+  
+    const newAgentId = callback_data_input;
+    const previousAgent = requestMsg.user.currentAgent;
+    requestMsg.user.currentAgent = newAgentId;
+
+    responses = await agentCommandHandle({
+      newAgent:newAgentId,
+      previousAgent:previousAgent,
+      requestMsgInstance:requestMsg,
+      dialogueInstance:dialogue
+    });
+    await replyMsg.deleteMsgByID(requestMsg.refMsgId)
   } else if (callback_event === "hashToPDF") {
 
     const msgSent = await replyMsg.sendDocumentDownloadWaiterMsg()
@@ -473,10 +506,10 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const formatedHtml =  otherFunctions.formatHtml(full_report || unfolded_text,filename)
     const filebuffer = await otherFunctions.htmlToPdfBuffer(formatedHtml)
     
-    const mimetype = "application/pdf"
+    const mimetype = "application/pdf";
     const {sizeBytes,sizeString} = otherFunctions.calculateFileSize(filebuffer)
     otherFunctions.checkFileSizeToTgmLimit(sizeBytes,appsettings.telegram_options.file_size_limit)
-    await  replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
+    await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype)
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
   } else if (callback_event === "manualToPDF"){
@@ -521,39 +554,6 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     await replyMsg.sendDocumentAsBinary(filebuffer,filename,mimetype,{caption})
     await replyMsg.deleteMsgByID(msgSent.message_id)
 
-  } /*else if (callback_event === "regenerate"){
-
-    if(requestMsg.user.currentRegime != callback_data_input){
-      responses.push(checkResult.response)
-      return responses;
-    }
-
-    const lastdoc = await dialogue.getLastCompletionDoc()
-    lastdoc?.telegramMsgId && await replyMsg.deleteMsgsByIDs(lastdoc.telegramMsgId)
-    
-    dialogue.regenerateCompletionFlag = true
-
-    dialogue.triggerCallCompletion()
-  }*/ else if (callback_event === "choose_ver"){
-
-    const doc = await dialogue.getLastCompletionDoc()
-    await replyMsg.deleteMsgsByIDs(doc?.telegramMsgId)
-
-    const choosenVersionIndex = callback_data_input
-    
-    const choosenContent = doc.content[choosenVersionIndex-1].text
-    const totalVersionsCount = doc.content.length;
-    const sentResult = await replyMsg.sendChoosenVersion(choosenContent,choosenVersionIndex,totalVersionsCount)
-    const msgIds = sentResult.map(result => result.message_id)
-    
-    await mongo.updateCompletionInDb({
-      filter: {telegramMsgId:{"$in":doc.telegramMsgId}},
-      updateBody:{
-        telegramMsgId:msgIds,
-        completion_version:choosenVersionIndex
-      }
-    })
-
   } else if (callback_event === "mcp_req"){
 
     const response = await otherFunctions.decodeJson(callback_data_input)
@@ -597,6 +597,7 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
       userInstance: requestMsg.user,
       creditType: "text_to_speech",
       creditSubType: "elevenlabs",
+      agent: requestMsg.user.currentAgent,
       usage:msgResult?.result?.audio?.duration || 0,
       details: {place_in_code:"readaloud"}
     });
@@ -606,12 +607,12 @@ async function callbackRouter(requestMsg,replyMsg,dialogue){
     const {unfolded_text,short_report} = await otherFunctions.decodeJson(callback_data_input)
     const unfoldedFileSysMsg = otherFunctions.htmlShorterner(short_report || unfolded_text,appsettings.telegram_options.big_outgoing_message_threshold)
     otherFunctions.saveTextToTempFile(unfoldedFileSysMsg,"unfoldedFileSysMsg.text")
-    
+
     const fold_button = {
       text: "Скрыть",
       callback_data: JSON.stringify({e:"f_f_up",d:callback_data_input}),
     };
-
+    
     const downloadPDF_button = {
       text: "Отчет о выполнении в PDF",
       callback_data: JSON.stringify({e:"hashToPDF",d:callback_data_input}),
@@ -790,12 +791,13 @@ const tool_choice = "auto";
 const result  = await openAIApi.responseSync(model,instructions,input,temperature,tools,tool_choice,output_format);
 const {output,usage} = result;
 mongo.insertCreditUsage({
-                          userInstance: userInstance,
-                          creditType: "text_tokens",
-                          creditSubType: "input",
-                          usage: usage.input_tokens,
-                          details: {place_in_code:"getDiagramFromOpenAI"}
-            });
+  userInstance: userInstance,
+  creditType: "text_tokens",
+  creditSubType: "input",
+  agent: userInstance.currentAgent,
+  usage: usage.input_tokens,
+  details: {place_in_code:"getDiagramFromOpenAI"}
+});
 const {content} = output[0]
 
 return content[0]?.text;
@@ -946,6 +948,7 @@ async function uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueI
   try{
   
   await dialogueInstance.metaOAIStorageFileUploadStarted(requestMsgInstance.msgId)
+  console.log("file load started", requestMsgInstance.msgId)
 
   const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
   if (downloadStream?.data) {
@@ -970,6 +973,7 @@ async function uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueI
   if(requestMsgInstance.fileMimeType === "application/pdf"){
         
         let numpages, text, info;
+
         try{
           ({numpages,text,info} = await otherFunctions.parsePDF(buffer));
         } catch(err){
@@ -991,6 +995,7 @@ async function uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueI
         if(textWoLineBreaks.length>10){
             data["resourceData.content_text"] = text;
             data["resourceData.content_html"] = text;
+            data["extracted"] = true;
             data["resourceData.charCount"] = text.length;
           }
 
@@ -1007,6 +1012,7 @@ async function uploadFileToOpenAIStorageAndDialogue(requestMsgInstance,dialogueI
       err.place_in_code = err.place_in_code || "uploadFileToOpenAIStorageAndDialogue"
   if(errorHandlerInstance) errorHandlerInstance.handleError(err);
   } finally{
+    console.log("file load completed", requestMsgInstance.msgId)
     await dialogueInstance.metaOAIStorageFileUploadCompleted(requestMsgInstance.msgId)
   }
 }
@@ -1015,7 +1021,7 @@ async function uploadFileToS3(requestMsgInstance,resourceId,errorHandlerInstance
 
 try{
   const downloadStream = await otherFunctions.startFileDownload(requestMsgInstance.fileLink)
-  const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentRegime + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
+  const filename = otherFunctions.valueToMD5(String(requestMsgInstance.user.userid))+ "_" + requestMsgInstance.user.currentAgent + "_" + otherFunctions.valueToMD5(String(requestMsgInstance.msgId)) + "." + requestMsgInstance.fileExtention;
 
   const uploadResult  = await awsApi.uploadFileToS3(downloadStream,filename);
 
@@ -1162,60 +1168,31 @@ async function sendtoallHandler(requestMsgInstance,replyMsgInstance) {
   }
 }
 
-async function regimeCommandHandle(obj){
+async function agentCommandHandle(obj){
 
-  const {newRegime, previousRegime,requestMsgInstance, dialogueInstance} = obj
-
-   const responses = []
-  if(newRegime != previousRegime){
+  const {newAgent, previousAgent,requestMsgInstance, dialogueInstance} = obj
+   const responses = [];
+  if(newAgent != previousAgent){
     responses.push({operation:"updatePinnedMsg"})
+    requestMsgInstance.user.updateAgentProperties();
+    await dialogueInstance.getMetaFromDB()
   }
    
-   await mongo.updateCurrentRegimeSetting(requestMsgInstance);
-
-      if (newRegime == "chat") {
-        const previous_dialogue_tokens = await dialogueInstance.metaGetTotalTokens()
-
-        if (previous_dialogue_tokens > 0) {
-          responses.push({
-            text: modelSettings[newRegime].incomplete_msg
-              .replace("[previous_dialogue_tokens]", previous_dialogue_tokens)
-              .replace(
-                "[request_length_limit_in_tokens]",
-                modelConfig[requestMsgInstance.user.currentModel].request_length_limit_in_tokens
-              ),
-          buttons: {
-            reply_markup: {
-              keyboard: [['Перезапустить диалог']],
-              resize_keyboard: true,
-              one_time_keyboard: false
-            }
-          },
-          parse_mode: "HTML"
-            
-          });
-        } else {
-          responses.push({
-            text: modelSettings[newRegime].welcome_msg,
-            buttons: {
-              reply_markup: {
-                keyboard: [['Перезапустить диалог']],
-                resize_keyboard: true,
-                one_time_keyboard: false
-              }
-            },
-          parse_mode: "HTML"
-          });
-        }
-      } else if (newRegime == "translator" || newRegime == "texteditor") {
-
-        responses.push({
-          text: modelSettings[newRegime].welcome_msg,
-          parse_mode: "HTML"
-        });
-
+    await mongo.updateCurrentAgentSetting(requestMsgInstance);
+    const previous_dialogue_tokens = await dialogueInstance.metaGetTotalTokens()
+    const tokensLimit = modelConfig[requestMsgInstance.user.currentModel].request_length_limit_in_tokens;
+    
+    responses.push({
+    text: requestMsgInstance.user.agentWelcomeMsg(previous_dialogue_tokens,tokensLimit),
+    buttons: {
+      reply_markup: {
+        keyboard: [['Перезапустить диалог']],
+        resize_keyboard: true,
+        one_time_keyboard: false
       }
-
+    },
+    parse_mode: "HTML"
+    });
     return responses;
   };
 
@@ -1236,9 +1213,8 @@ async function unregisterHandler(requestMsgInstance) {
     await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], null); //Удаляем диалог данного пользователя
     await mongo.deleteTempStorageByUserId(requestMsgInstance.user.userid),
     await mongo.deleteOutputStorageByUserId(requestMsgInstance.user.userid),
-    await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
-    await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
-    await mongo.deleteDialogueMeta(requestMsgInstance.user.userid)
+    await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentAgent)
+    await mongo.deleteDialogueMeta(requestMsgInstance.user.userid, requestMsgInstance.user.currentAgent)
     //И отправляем сообщение пользователю
     return { text: msqTemplates.unregistered };
 }
@@ -1251,14 +1227,6 @@ async function createNewFreeAccount(){
   const result = await mongo.insert_blank_profile(newToken)
   const accountToken = result.token
   return {text:`Используте линк для регистрации в телеграм боте R2D2\nhttps://t.me/${process.env.TELEGRTAM_BOT_NAME}?start=${accountToken}`}
-}
-
-
-async function resetNonDialogueHandler(requestMsgInstance) {
-  await mongo.deleteDialogByUserPromise([requestMsgInstance.user.userid], requestMsgInstance.user.currentRegime);
-  await awsApi.deleteS3FilesByPefix(requestMsgInstance.user.userid,requestMsgInstance.user.currentRegime) //to delete tater
-  await awsApi.deleteS3FilesByPefix(otherFunctions.valueToMD5(String(requestMsgInstance.user.userid)),requestMsgInstance.user.currentRegime)
-  return;
 }
 
 async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
@@ -1292,9 +1260,9 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
     await mongo.UpdateSettingPromise(requestMsgInstance, pathString, end_value);
     await userInstance.updateUserProperties(pathString, end_value)
 
-    if(callbackArray.includes(requestMsgInstance.user.currentRegime) && (callbackArray.includes("model") || callbackArray.includes("response_style"))){
+    if(callbackArray.includes(requestMsgInstance.user.currentAgent) && (callbackArray.includes("model") || callbackArray.includes("response_style"))){
       responses.push({operation:"updatePinnedMsg"})
-    }
+    };
 
     if(callbackArray.includes("pinnedHeaderAllowed")){
       if(end_value === "true"){
@@ -1302,7 +1270,7 @@ async function settingsChangeHandler(requestMsgInstance,dialogueInstance) {
       } else {
         responses.push({operation:"removePinnedMsg"})
       }
-    }
+    };
 
     //console.log("Обновление результатов",result)
     responses.push({
@@ -1468,16 +1436,15 @@ async function reportsOptionsHandler(requestMsgInstance) {
 
 async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
 
-
     const responses = [];
     const callsource = requestMsgInstance.commandName ? "command" : "callback";
     let callback_data_array = [callsource === "command" ? requestMsgInstance.commandName : requestMsgInstance.callback_event]
+    
     if(requestMsgInstance.callback_data){
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
       callback_data_array =  callback_data_array.concat(callback_data)
-    }
+    };
     
-
     if(callback_data_array.includes("currentsettings")){
       responses.push({
         operation:"insertSettingsResponse", 
@@ -1489,7 +1456,7 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
             callback_data: JSON.stringify({e:"close"}),
           }]],
         }}
-      })
+      });
       return responses
     } else if (callback_data_array.includes("close_settings")){
       responses.push({
@@ -1498,7 +1465,7 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
       })
       return responses
       
-    }else if (callback_data_array.includes("back")) {
+    } else if (callback_data_array.includes("back")) {
       callback_data_array = callback_data_array.slice(0, callback_data_array.length - 2);
       const callback_data = await otherFunctions.decodeJson(requestMsgInstance.callback_data)
       
@@ -1532,7 +1499,6 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
         requestMsgInstance
       );
       
-       
       //console.log("Обновленная клавиатура",settingsKeyboard)
 
       responses.push({
@@ -1545,7 +1511,7 @@ async function settingsOptionsHandler(requestMsgInstance,dialogueInstance) {
             resize_keyboard: true,
           },
         },
-      })
+      });
 
       return responses;
     } else {
@@ -1625,7 +1591,6 @@ module.exports = {
   noMessageText,
   unregisterHandler,
   infoacceptHandler,
-  regimeCommandHandle,
   sendtoallHandler,
   sendtomeHandler,
   adminHandler,

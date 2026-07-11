@@ -9,14 +9,14 @@
 
 const path = require('path');
 const fs = require('fs');
-const yaml = require('js-yaml');
+const YAML = require('yaml');
 
 process.env.NODE_ENV = process.env.NODE_ENV || 'test';
 
 // Загружаем appsettings если не загружены
 if (!global.appsettings) {
   const yamlFileContent = fs.readFileSync(path.join(__dirname, '..', '..', 'config', 'main_config.yml'), 'utf8');
-  global.appsettings = yaml.load(yamlFileContent);
+  global.appsettings = YAML.parse(yamlFileContent);
 }
 
 // Заглушка для mongo, чтобы не падали зависимости ErrorHandler -> mongo.js

@@ -5,12 +5,21 @@ const { Script } = require('vm');
 const cryptofy = require('crypto');
 const axios = require("axios");
 const awsApi = require("./apis/AWS_API.js")
-const mjAPI = require('mathjax-node');
-mjAPI.start();
+const {mathjax} = require('mathjax-full/js/mathjax.js');
+const {TeX} = require('mathjax-full/js/input/tex.js');
+const {SVG} = require('mathjax-full/js/output/svg.js');
+const {liteAdaptor} = require('mathjax-full/js/adaptors/liteAdaptor.js');
+const {RegisterHTMLHandler} = require('mathjax-full/js/handlers/html.js');
+const adaptor = liteAdaptor();
+RegisterHTMLHandler(adaptor);
+const tex = new TeX({packages: ['base','require','ams']});
+const svg = new SVG({fontCache: 'none'});
+const mjDocument = mathjax.document('', {InputJax: tex, OutputJax: svg});
+
 const mongo = require("./apis/mongo.js");
 const googleApi = require("./apis/google_API.js");
 const path = require('path');
-const pdf = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 const { PDFDocument } = require('pdf-lib');
 const Excel = require('exceljs');
 const cheerio = require('cheerio');
@@ -524,25 +533,15 @@ function latexToSvg(latex, options = {}) {
   if (!latex || typeof latex !== 'string') {
     return Promise.reject(new Error('Invalid LaTeX input: must be a non-empty string'));
   }
-
   const { displayMode = false, fontSize = 1.0 } = options;
-
-  return new Promise((resolve, reject) => {
-    mjAPI.typeset({
-      math: latex,
-      format: "TeX",      // Input format
-      svg: true,
-      displayMode: displayMode,
-      ex: 6 * fontSize,
-      linebreaks: true 
-    }, function (data) {
-      if (data.errors) {
-        reject(new Error(`MathJax failed to convert LaTeX: ${data.errors.join(', ')}`));
-      } else {
-        resolve(data.svg);
-      }
-    });
-  });
+  try {
+    const node = mjDocument.convert(latex, {display: displayMode});
+    // scale via style if needed
+    const svgOutput = adaptor.innerHTML(node);
+    return Promise.resolve(svgOutput.replace('<svg ', `<svg style="font-size:${fontSize}em" `));
+  } catch (e) {
+    return Promise.reject(new Error('MathJax convert error: ' + e.message));
+  };
 }
 
 async function convertLatexToPNG(latex, options = {}){
@@ -864,6 +863,26 @@ function wireHtml(text){
 
   return wiredText
 }
+
+function buttonsFitToRow(buttons){
+
+  if (!Array.isArray(buttons) || buttons.length === 0) return [];
+  
+  const orderedButtons = [[]];
+  const symbolsInLineLimit = 25;
+  let rowNumber = 0;
+  buttons.forEach((button) => {
+    const {text} = button;
+    const rowLengthSymbol = orderedButtons[rowNumber].reduce((acc, btn) => acc + btn.text.length, 0);
+    if(rowLengthSymbol<= symbolsInLineLimit){
+      orderedButtons[rowNumber].push(button);
+    } else {
+      orderedButtons.push([button]);
+      rowNumber ++;
+    }
+  });
+  return orderedButtons;
+};
 
   function generateTextBuffer(text) {
     // Convert the text to a buffer using UTF-8 encoding
@@ -1681,7 +1700,6 @@ async function optionsToButtons(object,requestMsgInstance){
   let previousData =  callback_data_decoded ? callback_data_decoded : []
 
   for (const item of listItems){
-
     const call_back_data_array = previousData.concat([item])
     const call_back_data_array_hashed =  await encodeJson(call_back_data_array)
     const callback_data = {
@@ -2630,7 +2648,9 @@ function convertHtmlToText(html){
 
 
 async function parsePDF(pdfBuffer) {
-  return await pdf(pdfBuffer);
+  const uint8 = new Uint8Array(pdfBuffer);
+  const parser = new PDFParse(uint8);
+  return await parser.getText();
 }
 
 // Add this method to your FunctionCall class
@@ -3050,5 +3070,6 @@ module.exports = {
   setIntervalAdvanced,
   splitTextToLimitedChunks,
   wireFunctionName,
-  generateServerInstanceId
+  generateServerInstanceId,
+  buttonsFitToRow
 };

@@ -15,6 +15,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "manage_browser_tabs",
+                id:"fn_manage_browser_tabs",
                 description: "Manages between tabs.",
                 parameters: {
                     type: "object",
@@ -34,48 +35,38 @@ class AvailableTools {
                 friendly_name: "Вкладки браузера",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: [],
                 availableForUserGroups: ["all"],
-                availableForAgents: ["web_browser"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "computer_use_preview",
+                id:"hosted_computer_use_preview",
                 display_width: 1024,
                 display_height: 768,
                 environment: "browser", // other possible values: "mac", "windows", "ubuntu"
-                availableInRegimes: [],
                 availableForUserGroups: ["all"],
-                availableForAgents: ["web_browser"],
-                availableForToolCalls: false,
+                enabled: false,
                 category: "hosted",
-                deprecated: false
             },
             {
                 type: "web_search_preview",
-                availableInRegimes: ["chat"],
+                id:"hosted_web_search_preview",
                 availableForUserGroups: ["all"],
-                availableForAgents: ["web_search","main"],
-                availableForToolCalls: true,
+                enabled: true,
                 category: "hosted",
-                deprecated: false
             },
             {
                 type: "mcp",
                 server_label: "deepwiki",
+                id: "hosted_mcp_deepwiki",
                 server_description: "Deepwiki MCP server. Contains documentation info about popular github repositories",
                 server_url: "https://mcp.deepwiki.com/mcp",
                 require_approval: "never",
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
+                enabled: true,
                 category: "hosted",
-                deprecated: false,
                 authHandle: function (userInstance) {
-
                     const mcpSessionId = userInstance.mcp?.auth?.[this.server_label]?.mcp_session_id
                     if (mcpSessionId) {
                         if(!this.headers) this.headers = {};
@@ -85,25 +76,39 @@ class AvailableTools {
             },
             {
                 type: "mcp",
+                server_label: "bigquery",
+                id: "hosted_mcp_bigquery",
+                server_description: "BigQuery MCP server. Provides access to Google BigQuery.",
+                server_url: "https://bigquery.googleapis.com/mcp",
+                allowed_tools: ["execute_sql"],
+                require_approval: "never",
+                availableForUserGroups: ["admin", "basic"],
+                enabled: true,
+                category: "hosted",
+                headers: {
+                    "Authorization": "Bearer ya29.a0Af...<ваш_OAuth_токен>",
+                    "x-goog-user-project": "outline-1igg3i2i0bh"
+                }
+            },
+            {
+                type: "mcp",
                 server_label: "github",
+                id: "hosted_mcp_github",
                 server_description: "GitHub Copilot MCP server. Provides access to GitHub's repositories.",
                 server_url: "https://api.githubcopilot.com/mcp",
                 allowed_tools:{
                     read_only: true
                 },
                 require_approval: "never",
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
+                enabled: true,
                 category: "hosted",
-                deprecated: false,
                 authHandle: function (userInstance) {
                     const authToken = userInstance.mcp?.auth?.[this.server_label]?.token
                     if (authToken) {
                         this.authorization = authToken;
                     } else {
-                        this.availableForToolCalls = false;
+                        this.enabled = false;
                     }
 
                     const mcpSessionId = userInstance.mcp?.auth?.[this.server_label]?.mcp_session_id
@@ -116,60 +121,50 @@ class AvailableTools {
             {
                 type: "mcp",
                 server_label: "gmail",
+                id:"hosted_mcp_gmail",
                 server_description: "Gmail mailbox connector. Provides access to Gmail's mailbox.",
                 connector_id: "connector_gmail",
                 allowed_tools:{
                     read_only: true
                 },
                 require_approval: "never",
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
+                enabled: true,
                 category: "hosted",
-                deprecated: false,
                 authHandle: function (userInstance) {
                     const authToken = userInstance.mcp?.auth?.[this.server_label]?.token
                     if (authToken) {
                         this.authorization = authToken;
                     } else {
-                        this.availableForToolCalls = false;
+                        this.enabled = false;
                     }
                 }
             },
             {
                 type: "image_generation",
                 model: "gpt-image-1",
+                id:"hosted_image_generation",
                 moderation: "auto",
                 partial_images: 3,
                 output_compression: 100,
                 output_format: "png",
                 quality: "auto",
                 size: "auto",
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                category: "hosted",
-                deprecated: false,
-                imageGenerationHook: function (image_choice) {
-                    if (image_choice === "mdj") {
-                        this.availableInRegimes = this.availableInRegimes.filter(regime => regime !== "chat");
-                    }
-                }
+                enabled: true,
+                category: "hosted"
+
             },
             {
                 type: "code_interpreter",
+                id:"hosted_code_interpreter",
                 container: {
                     type: "auto",
                     file_ids: []
                 },
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
+                enabled: true,
                 category: "hosted",
-                deprecated: false,
                 addFileIdsHook: async function(userid, agent){
                     const filesInStorage = await mongo.getOAIStorageFiles(userid, agent) || [];
                     if(filesInStorage.length === 0) {
@@ -182,6 +177,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "web_search",
+                id:"fn_web_search",
                 description: "Strictly executes a real-time web search, returning only the most relevant, accurate, and recent information on the specified topic.",
                 strict: true,
                 parameters: {
@@ -228,17 +224,15 @@ class AvailableTools {
                     { time_ms: 120000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..." }
                 ],
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
                 model: "gpt-4.1",
-                availableForToolCalls: false,
-                deprecated: false,
+                enabled: false,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "web_browser",
+                id:"fn_web_browser",
                 description: "Uses computer call tool to open a web browser and click on the specified site in real time.",
                 strict: true,
                 parameters: {
@@ -279,17 +273,14 @@ class AvailableTools {
                 friendly_name: "Обзор сайта",
                 timeout_ms: 600_000,
                 try_limit: 3,
-                model: "computer-use-preview",
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: false,
-                deprecated: false,
+                enabled: false,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "create_mermaid_diagram",
+                id:"fn_create_mermaid_diagram",
                 description: "Creates mermaid diagram based on provided description and details.",
                 strict: true,
                 parameters: {
@@ -336,16 +327,14 @@ class AvailableTools {
                 model: "gpt-4o-mini",
                 parallel_runs: 4,
                 attempts_limit: 4,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "get_chatbot_errors",
+                id:"fn_get_chatbot_errors",
                 description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 parameters: {
                     type: "object",
@@ -364,11 +353,8 @@ class AvailableTools {
                 friendly_name: "R2D2 ошибки",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 addPropertiesHook: async function (){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
@@ -380,6 +366,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_functions_usage",
+                id:"fn_get_functions_usage",
                 description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 parameters: {
                     type: "object",
@@ -398,11 +385,8 @@ class AvailableTools {
                 friendly_name: "R2D2 функции",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 addPropertiesHook: async function(){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
@@ -414,6 +398,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_users_activity",
+                id:"fn_get_users_activity",
                 description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 parameters: {
                     type: "object",
@@ -432,10 +417,8 @@ class AvailableTools {
                 friendly_name: "R2D2 использование",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 addPropertiesHook: async function(){
                     const mongooseVersion = mongo.mongooseVersion()
                     const scheemaDescription = JSON.stringify(scheemas.TokensLogSheema.obj)
@@ -447,6 +430,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_knowledge_base_item",
+                id:"fn_get_knowledge_base_item",
                 description: `Error: function description is absent. Run 'await this.addPropertiesHook()' function to get it.`,
                 strict: true,
                 parameters: {
@@ -467,11 +451,8 @@ class AvailableTools {
                 friendly_name: "База знаний",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 addPropertiesHook: async function(userid){
                 
                     const kngBaseItems = await mongo.getKwgItemsForUser(userid)
@@ -482,6 +463,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "get_user_guide",
+                id:"fn_get_user_guide",
                 description: `Returns information about this bot functionality. Use ONLY if user requests information about BOT FUNCTIONS, interface, commands, or asks what the bot can do. DO NOT use for general questions, external tasks, search/lookup/facts, or questions about third-party products!`,
                 parameters: {
                     type: "object",
@@ -496,16 +478,14 @@ class AvailableTools {
                 friendly_name: "Чтение инструкции",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "extract_content",
+                id:"fn_extract_content",
                 description: `Extracts content from documents or images provided by user. Designed to efficiently process multiple resources in a single call.`,
                 strict: true,
                 parameters: {
@@ -531,16 +511,13 @@ class AvailableTools {
                 friendly_name: "Документ",
                 timeout_ms: 180000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom",
                 addResourcesHook: async function(userid, agent){
                     const resourcesToBeExtracted = await mongo.getNotExtractedResourcesShort(userid, agent);
                     if(resourcesToBeExtracted.length === 0) {
-                        this.availableForToolCalls = false;
+                        this.enabled = false;
                         return
                     };
                     this.description = `Extracts content from documents or images provided by user. Designed to efficiently process multiple resources in a single call.\nThe folowing resources are available for extraction:\n${JSON.stringify(resourcesToBeExtracted,null,2)}.\n Refrain from using this function if the resources can be sufficiently understood through computer vision.`
@@ -550,6 +527,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "create_midjourney_image",
+                id:"fn_create_midjourney_image",
                 description: "Create an image with Midjourney service. ",
                 parameters: {
                     type: "object",
@@ -594,22 +572,15 @@ class AvailableTools {
                     { time_ms: 330000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..." }
                 ],
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 queue_name: "midjourney",
-                category: "custom",
-                imageGenerationHook: function (image_choice) {
-                    if (image_choice === "oai") {
-                        this.availableInRegimes = this.availableInRegimes.filter(regime => regime !== "chat");
-                    }
-                }
+                category: "custom"
             },
             {
                 type: "function",
                 name: "imagine_midjourney",
+                id:"fn_imagine_midjourney_image",
                 description: "Creates an image with Midjourney service based on user-provided prompt. ",
                 parameters: {
                     type: "object",
@@ -634,17 +605,15 @@ class AvailableTools {
                     { time_ms: 330000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..." }
                 ],
                 try_limit: 3,
-                availableInRegimes: ["chat", "translator", "texteditor"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: false,
-                deprecated: false,
+                enabled: true,
                 queue_name: "midjourney",
                 category: "custom"
             },
             {
                 type: "function",
                 name: "custom_midjourney",
+                id:"fn_custom_midjourney_action",
                 description: "Sends a request to to Midjourney for a custom action, triggered by a button pushed.",
                 parameters: {
                     type: "object",
@@ -685,17 +654,15 @@ class AvailableTools {
                     { time_ms: 330000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 30 секунд и выключаем ..." }
                 ],
                 try_limit: 3,
-                availableInRegimes: ["chat", "translator", "texteditor"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: false,
-                deprecated: false,
+                enabled: true,
                 queue_name: "midjourney",
                 category: "custom"
             },
             {
                 type: "function",
                 name: "fetch_url_content",
+                id:"fn_fetch_url_content",
                 description: "Fetches content from a url both in text (with urls) and screenshots.",
                 parameters: {
                     type: "object",
@@ -723,16 +690,14 @@ class AvailableTools {
                     { time_ms: 75000, comment: "Похоже, что-то пошло не так.🤷‍♂️ Ждем еще 15 секунд и выключаем ..." }
                 ],
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "run_python_code",
+                id:"fn_run_python_code",
                 description: "Use this function for any calculations (e.g., currency conversion, financial computations, table processing) to ensure accuracy. Always execute Python code for numerical results instead of computing directly in your reply.",
                 parameters: {
                     type: "object",
@@ -751,16 +716,14 @@ class AvailableTools {
                 friendly_name: "Python",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: false,
-                deprecated: true,
+                enabled: false,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "run_javascript_code",
+                id:"fn_run_javascript_code",
                 description: "You can use this function to execute a javascript code. Use this every time you need to do calculations to ensure their accuraсy.",
                 parameters: {
                     type: "object",
@@ -779,16 +742,14 @@ class AvailableTools {
                 friendly_name: "JavaScript",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: true,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "generate_document",
+                id:"fn_generate_document",
                 description: "Generates a document from the specified content and delivers it to the user. This function can create a document from a single piece of content or compile a larger file by aggregating multiple pieces through consecutive function calls. Never shorten text and never add side-comments like: `To be continued in next part...` Ensure that only one document is produced per function call.",
                 strict: true,
                 parameters: {
@@ -822,17 +783,15 @@ class AvailableTools {
                     { time_ms: 30000, comment: "Если в файле должно быть изображение, то обычно требуется больше времени. Подождем ... ☕️" },
                     { time_ms: 60000, comment: "Похоже, файл действительно болшой. Подождем еще немного ... Но если через 30 секунд не закончит, то придется отменить." },
                 ],
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
                 
             },
             {
                 type: "function",
                 name: "save_to_document",
+                id:"fn_save_to_document",
                 description: "Saves a document from the temporary storage of extracted resources 'as is' and sends to the user. Only one file is generated for each function call.",
                 strict: true,
                 parameters: {
@@ -866,16 +825,13 @@ class AvailableTools {
                     { time_ms: 30000, comment: "Если в файле должно быть изображение, то обычно требуется больше времени. Подождем ... ☕️" },
                     { time_ms: 60000, comment: "Похоже, файл действительно болшой. Подождем еще немного ... Но если через 30 секунд не закончит, то придется отменить." },
                 ],
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom",
                 addResourcesHook: async function(userid,agent){
                     const resourcesExtracted = await mongo.getExtractedResourcesShort(userid,agent)
                     if(resourcesExtracted.length === 0) {
-                        this.availableForToolCalls = false;
+                        this.enabled = false;
                         return
                     }
                     this.description = `Creates a document and sends to the user from the temporary storage of resources. Only one file is generated for each function call.\nThe folowing resources in the temporary storage are available for saving:\n${JSON.stringify(resourcesExtracted,null,2)}`
@@ -885,6 +841,7 @@ class AvailableTools {
             {
                 type: "function",
                 name: "create_excel_file",
+                id:"fn_create_excel_file",
                 description: "Creates an Excel file. The file will be sent to the user as a document.",
                 strict: true,
                 parameters: {
@@ -1044,16 +1001,14 @@ class AvailableTools {
                 friendly_name: "Excel",
                 timeout_ms: 60000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "text_to_speech",
+                id:"fn_text_to_speech",
                 description: "Converts provided text into an audio file (text-to-speech). This function is used to generate spoken responses or read aloud content.",
                 parameters: {
                     type: "object",
@@ -1085,16 +1040,14 @@ class AvailableTools {
                 friendly_name: "Генерация речи",
                 timeout_ms: 360000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "currency_converter",
+                id:"fn_currency_converter",
                 description: "Converts currencies using current exchange rates. Designed to efficiently process multiple amount and currency pair queries in a single call. Must be used for current date. Prohibited to use for dates in the past.",
                 strict: true,
                 parameters: {
@@ -1136,16 +1089,14 @@ class AvailableTools {
                 friendly_name: "Конвертация",
                 timeout_ms: 30000,
                 try_limit: 3,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main","web_browser"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 category: "custom"
             },
             {
                 type: "function",
                 name: "get_currency_rates",
+                id:"fn_get_currency_rates",
                 description: "Produces currency historical exchange rates for given dates. Designed to efficiently process multiple date and currency pair queries in a single call. Must be used only for dates in the past. Avoid using for the current date.",
                 strict: true,
                 parameters: {
@@ -1187,11 +1138,8 @@ class AvailableTools {
                 friendly_name: "Курсы валют",
                 timeout_ms: 30000,
                 try_limit: 30,
-                availableInRegimes: ["chat"],
                 availableForUserGroups: ["admin", "basic"],
-                availableForAgents: ["main"],
-                availableForToolCalls: true,
-                deprecated: false,
+                enabled: true,
                 addPropertiesHook: async function(){
                     const currentDate = new Date().toISOString().split("T")[0]; // Get current date in YYYY-MM-DD format
                     this.parameters.properties.exchange_rates.items.properties.date.description = `Date for which exchange rates are requested in YYYY-MM-DD format. Date must not exceed the current date ${currentDate} and must be in the past.`
@@ -1211,7 +1159,6 @@ class AvailableTools {
                 interval_ms: 3000
             }
         };
-
     }
 
     get toolsList() {
@@ -1223,34 +1170,30 @@ class AvailableTools {
     }
 
     // Главный метод для получения доступных инструментов
-    async getToolsAvailableForUser(agent) {
+    async getToolsAvailableForUser(userInstance) {
         // Применяем все методы к инструментам
+        const {userid,currentAgent,image_choice,groups} = userInstance;
         
         for (const tool of this.#toolsList) {
-            tool.addPropertiesHook && await tool.addPropertiesHook(this.#userClass.userid)
-            tool.addResourcesHook && await tool.addResourcesHook(this.#userClass.userid, agent)
-            tool.addFileIdsHook && await tool.addFileIdsHook(this.#userClass.userid, agent)
-            tool.imageGenerationHook && tool.imageGenerationHook(this.#userClass.image_choice)
-            tool.authHandle && tool.authHandle(this.#userClass);
+            tool.addPropertiesHook && await tool.addPropertiesHook(userid)
+            tool.addResourcesHook && await tool.addResourcesHook(userid, currentAgent)
+            tool.addFileIdsHook && await tool.addFileIdsHook(userid, currentAgent)
+            tool.imageGenerationHook && tool.imageGenerationHook(image_choice)
+            tool.authHandle && tool.authHandle(userInstance);
         }
 
-        // Фильтруем инструменты по группам и режимам пользователя
-        const availableForToolCalls = this.#toolsList.filter((tool) => {
-            const availableForUserGroups = tool.availableForUserGroups || [];
-            const userGroups = [...(this.#userClass.groups || []), 'all'];
-            const isInGroup = userGroups.some(group => availableForUserGroups.includes(group));
-
-            return isInGroup;
+        // Фильтруем инструменты по группам пользователя
+        const availableForUser = this.#toolsList.filter((tool) => {
+            return tool.availableForUserGroups?.some(group => group === "all" || groups.includes(group)) || false;
         });
-        return availableForToolCalls;
+        return availableForUser;
     }
 
     async getMCPToolsForCompletion(agent) {
-        const toolsAvailableForCompletion = await this.getToolsAvailableForUser(agent);
+        const toolsAvailableForCompletion = await this.getToolsAvailableForUser(this.#userClass);
         const mcpTools = toolsAvailableForCompletion
         .filter(tool => tool.type === "mcp" && !tool.connector_id
-        && !tool.deprecated
-        && tool.availableForToolCalls)
+        && tool.enabled)
         return mcpTools.map((tool) => ({
             type: tool.type,
             server_label: tool.server_label,
@@ -1263,64 +1206,36 @@ class AvailableTools {
         }))
     }
 
-    async getToolsAvailableForAgent(agent) {
-        const toolsAvailableForUser = await this.getToolsAvailableForUser(agent);
-        const toolsAvailableForAgent = toolsAvailableForUser
-        .filter(tool => 
-            tool.availableForAgents && 
-            !tool.deprecated &&
-            tool.availableForAgents.includes(agent)
-        )
-        .filter(tool => tool.type !== "mcp"); // Exclude MCP tools here
-        return toolsAvailableForAgent.map((tool) => ({
-            type: tool.type,
-            name: tool.name,
-            description: tool.description,
-            display_width: tool.display_width,
-            display_height: tool.display_height,
-            environment: tool.environment,
-            parameters: tool.parameters,
-            strict: tool.strict,
-            container: tool.container,
-            output_format: tool.output_format,
-            partial_images: tool.partial_images,
-            output_compression: tool.output_compression,
-            quality: tool.quality,
-            size: tool.size,
-            server_label: tool.server_label,
-            server_url: tool.server_url,
-            allowed_tools: tool.allowed_tools,
-            server_description: tool.server_description,
-            headers: tool.headers,
-            require_approval: tool.require_approval
-        }));
-    };
+    currentAgentTools(){
 
-    async getAvailableToolsForGroups(){
+        let currentAgentTools = this.#userClass.currentAgentSettings?.tools || [];
+        const {image_choice,currentAgent} = this.#userClass;
+
+        if(currentAgent === "main"){
+            if(image_choice === "mdj"){
+                currentAgentTools = currentAgentTools.filter(tool => tool !== "fn_create_midjourney_image");
+            } else if(image_choice === "oai"){
+                currentAgentTools = currentAgentTools.filter(tool => tool !== "hosted_image_generation");
+            };
+        }
+        return new Set(currentAgentTools);;
     }
 
-    async getAvailableToolsForCompletion(agent) {
-        const toolsAvailableForUser = await this.getToolsAvailableForUser(agent);
+    async getToolsAvailableForAgent(agent) {
+        const toolsAvailableForUser = await this.getToolsAvailableForUser(this.#userClass);
+        const currentAgentTools = this.currentAgentTools();
 
-        const availableForToolCallsForCompletion = toolsAvailableForUser.filter((tool) => {
-            return tool.availableInRegimes.includes(this.#userClass.currentRegime)
-                && !tool.deprecated
-                && tool.availableForToolCalls
-        });
+        const toolsAvailableForAgent = toolsAvailableForUser
+        .filter(tool => tool.enabled)
+        .filter(tool => currentAgentTools.has(tool.id));
 
-        //console.log("Available tools for completion:", JSON.stringify(availableForToolCallsForCompletion.filter(t => t.type === "mcp" && t.server_label ==="gmail"), null, 2));
-        
-       // console.log("Available tools for completion:", JSON.stringify(availableForToolCallsForCompletion.filter(t => t.type === "function" && t.name ==="text_to_speech"), null, 2));
-        
-        return availableForToolCallsForCompletion.map(({
+        return toolsAvailableForAgent.map(({
             friendly_name,
             timeout_ms,
             try_limit,
-            availableInRegimes,
             availableForUserGroups,
-            availableForAgents,
-            availableForToolCalls,
-            deprecated,
+            id,
+            enabled,
             category,
             long_wait_notes,
             parallel_runs,
@@ -1333,12 +1248,16 @@ class AvailableTools {
             addHeadersHook,
             ...rest
         }) => rest);
+    };
+
+    async getAvailableToolsForGroups(){
     }
 
     // Метод для получения конфигурации инструмента по имени функции
     async toolConfigByFunctionName(functionName) {
-        const toolsAvailableForUser = await this.getToolsAvailableForUser();
-        return toolsAvailableForUser.find(doc => doc?.name === functionName && !doc.deprecated);
+        
+        const toolsAvailableForUser = await this.getToolsAvailableForUser(this.#userClass);
+        return toolsAvailableForUser.find(doc => doc?.name === functionName);
     }
 }
 

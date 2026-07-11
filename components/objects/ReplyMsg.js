@@ -2,10 +2,8 @@ const msqTemplates = require("../../config/telegramMsgTemplates");
 const EventEmitter = require('events');
 const otherFunctions = require("../common_functions");
 const ErrorHandler = require("./ErrorHandler.js");
-const FormData = require("form-data");
+const { FormData,Blob} = globalThis;
 const axios = require("axios");
-const mongo = require("../apis/mongo.js");
-const { Readable } = require('stream');
 
 class ReplyMsg extends EventEmitter {
 
@@ -22,7 +20,6 @@ class ReplyMsg extends EventEmitter {
 
 #chatId;
 #lastMsgSentId
-#completionRegenerateButtons;
 
 #versionBtnsAllias = ["1️⃣","2️⃣","3️⃣","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
 
@@ -34,12 +31,6 @@ constructor(obj) {
     this.#botInstance = obj.botInstance
     this.#chatId = obj.chatId
     this.#user = obj.userInstance
-
-    this.#completionRegenerateButtons = 
-      {
-        text: "🔄",
-        callback_data: JSON.stringify({e:"regenerate",d:this.#user.currentRegime}),
-      };
 
       this.#errorHandlerInstance = new ErrorHandler({replyMsgInstance: this});
 };
@@ -105,10 +96,10 @@ async sendAudio(readableStream,filename){
 
       const formData = new FormData();
       formData.append('chat_id', this.#chatId);
-      formData.append('audio', readableStream, {filename: filename || 'audio.mp3'});
+      formData.append('audio', new Blob([readableStream], { type: 'application/octet-stream' }), {filename: filename || 'audio.mp3'});
       const result = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendAudio`, 
           formData, {
-            headers: formData.getHeaders(),
+            headers: typeof formData.getHeaders === 'function' ? formData.getHeaders() : {},
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
           });
@@ -182,12 +173,9 @@ return await this.#botInstance.sendPhoto(
   imageBuffer,
   options
 )
-}
-
+};
 
 async simpleSendNewImageByUrl(obj){
-  
-
   const url = obj.url
   const caption = obj.caption
   const reply_markup = obj.reply_markup
@@ -384,18 +372,17 @@ async updateMediaFromBuffer(msgId,buffer,file_name,type,caption,reply_markup,par
   if(caption) media.caption = caption;
   if(parse_mode) media.parse_mode = parse_mode;
   formData.append('media', JSON.stringify(media));
-  formData.append(file_name, buffer, { filename: file_name });
+  formData.append(file_name, new Blob([buffer], { type: 'application/octet-stream' }), { filename: file_name });
 
   if(reply_markup) formData.append('reply_markup', JSON.stringify(reply_markup));
   
   const result = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/editMessageMedia`, 
           formData, {
-            headers: formData.getHeaders(),
+            headers: typeof formData.getHeaders === 'function' ? formData.getHeaders() : {},
             maxContentLength: Infinity,
             maxBodyLength: Infinity,
             timeout: 180000, // 180 seconds timeout
           });
-      
       return result.data;
 }
 
@@ -432,41 +419,6 @@ async sendDocumentAsBinary(fileBuffer,filename,mimetype,options = {}){
 
 }
 
-async sendChoosenVersion(text,version,versionsCount){
-
-  let buttons = {
-    one_time_keyboard: true,
-    inline_keyboard: [],
-  };
-
-  buttons = this.generateVersionButtons(version,versionsCount,buttons)
-
-  const completionContent = await otherFunctions.encodeJson({text})
-  
-  const redaloudButtons = {
-        text: "🔊",
-        callback_data: JSON.stringify({e:"readaloud",d:completionContent}),
-      };
-
-      const PDFButtons = {
-        text: "PDF",
-        callback_data: JSON.stringify({e:"respToPDF",d:completionContent}),
-      };
-
-      const HTMLButtons = {
-        text: "🌐",
-        callback_data: JSON.stringify({e:"respToHTML",d:completionContent}),
-      };
-
-  const downRow = [redaloudButtons,HTMLButtons,PDFButtons,]
-
-  if(versionsCount<10){
-    downRow.unshift(this.#completionRegenerateButtons)
-  }
-
-  buttons.inline_keyboard.push(downRow)
-  return await this.deliverNewCompletionVersion(text,buttons,"HTML")
-}
 
 async sendToNewMessageWithCheck(text,reply_markup){
 

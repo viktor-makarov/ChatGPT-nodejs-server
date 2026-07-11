@@ -1,15 +1,11 @@
 
 const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
+const { BigQuery } = require('@google-cloud/bigquery');
 
 
-
-async function ocr_document(fileBuffer, mimeType,index=0){
-
-    const location = process.env.GOOGLE_DOCUMENTAI_LOCATION
-    const projectId = process.env.GOOGLE_DOCUMENTAI_PROJECT_ID
-    const processorId = process.env.GOOGLE_DOCUMENTAI_PROCESSOR_ID
-
-    const serviceAccountKeys = {
+// Собирает ключи сервисного аккаунта Google из переменных окружения
+function getServiceAccountKeys(){
+    return {
         type: "service_account",
         project_id: process.env.GOOGLE_AUTH_PROJECT_ID,
         private_key_id: process.env.GOOGLE_AUTH_PRIVATE_KEY_ID,
@@ -22,6 +18,16 @@ async function ocr_document(fileBuffer, mimeType,index=0){
         client_x509_cert_url: process.env.GOOGLE_AUTH_CERT_URL,
         universe_domain: "googleapis.com"
       };
+}
+
+
+async function ocr_document(fileBuffer, mimeType,index=0){
+
+    const location = process.env.GOOGLE_DOCUMENTAI_LOCATION
+    const projectId = process.env.GOOGLE_DOCUMENTAI_PROJECT_ID
+    const processorId = process.env.GOOGLE_DOCUMENTAI_PROCESSOR_ID
+
+    const serviceAccountKeys = getServiceAccountKeys();
     
     const client = new DocumentProcessorServiceClient({
         credentials: serviceAccountKeys,
@@ -51,6 +57,49 @@ async function ocr_document(fileBuffer, mimeType,index=0){
 }
 
 
+// AI-поиск (векторный семантический поиск) по таблице BigQuery через AI.SEARCH.
+// return_fields — список полей таблицы, которые нужно вернуть (помимо distance).
+async function ai_search(query_text, project_id, dataset_name, table_name, search_field, return_fields = [], limit = 5){
+
+    const bigquery = new BigQuery({
+        projectId: process.env.GOOGLE_DOCUMENTAI_PROJECT_ID,
+        credentials: getServiceAccountKeys()
+    });
+
+    // Имена проекта/датасета/таблицы/поля нельзя передать параметрами запроса,
+    // поэтому подставляем их в текст запроса. Идентификаторы GCP не содержат
+    // обратных кавычек — убираем их на всякий случай, чтобы избежать инъекции.
+    const strip = (v) => String(v).replace(/`/g, '');
+    const tableRef = `\`${strip(project_id)}.${strip(dataset_name)}.${strip(table_name)}\``;
+    const fieldLiteral = `'${strip(search_field).replace(/'/g, "\\'")}'`;
+
+    // Формируем список выбираемых полей: base.<field>, ..., distance
+    const selectedFields = (Array.isArray(return_fields) ? return_fields : [return_fields])
+        .filter(Boolean)
+        .map((f) => `base.\`${strip(f)}\``);
+    const selectClause = [...selectedFields, 'distance'].join(', ');
+
+    const query = `
+        SELECT ${selectClause}
+        FROM AI.SEARCH(
+          TABLE ${tableRef},
+          ${fieldLiteral},
+          @query_text
+        )
+        ORDER BY distance
+        LIMIT @limit`;
+
+    const options = {
+        query,
+        params: { query_text, limit },
+    };
+
+    const [rows] = await bigquery.query(options);
+    return rows;
+}
+
+
 module.exports = {
-ocr_document
+ocr_document,
+ai_search
 }

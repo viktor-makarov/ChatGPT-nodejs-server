@@ -1,6 +1,6 @@
 //Подключаем и настраиваем OpenAI
 
-const FormData = require("form-data");
+const { FormData} = globalThis;
 const msqTemplates = require("../../config/telegramMsgTemplates.js");
 const modelSettings = require("../../config/telegramModelsSettings.js");
 const modelConfig = require("../../config/modelConfig.js");
@@ -10,15 +10,6 @@ const axios = require("axios");
 const OpenAI = require("openai");
 const AvailableTools = require("../objects/AvailableTools.js");
 const otherFunctions = require("../common_functions.js");
-
-// Polyfill global File (and Blob) for Node < 20 to support file uploads in OpenAI SDK
-if (typeof globalThis.File === "undefined") {
-    const { File, Blob } = require("node:buffer");
-    globalThis.File = File;
-    if (typeof globalThis.Blob === "undefined" && Blob) {
-      globalThis.Blob = Blob;
-    }
-}
 
 async function uploadFile(fileStream,purpose ='user_data',expires_seconds){
 
@@ -73,7 +64,7 @@ const openai = new OpenAI({
   timeout: modelConfig[model].timeout_ms || 180000
 });
 
-const input = await dialogueClass.getDialogueForRequest(model,userInstance.currentRegime)
+const input = await dialogueClass.getDialogueForRequest(model)
 
 const options = {
     model: model,
@@ -92,6 +83,7 @@ if (includeUsage) {
 const reasoningConfig = modelConfig[model].reasoning;
 if (reasoningConfig) {
     options.reasoning = reasoningConfig;
+    options.reasoning.effort = userInstance.currentReasoningEffort || "medium";
 }
 
 if (instructions){
@@ -105,7 +97,7 @@ if (modelCanUseTemperature) {
 }
 
 const availableToolsInstance = new AvailableTools(userInstance);
-const available_tools =  await availableToolsInstance.getAvailableToolsForCompletion(userInstance.currentRegime);
+const available_tools =  await availableToolsInstance.getToolsAvailableForAgent(userInstance.currentAgent);
 const modelCanUseTools = modelConfig[model].canUseTool
 
 if(available_tools && available_tools.length > 0 && modelCanUseTools){
@@ -178,7 +170,7 @@ async function VoiceToText(audioReadStream,openAIToken) {
     
     const headers = {
       Authorization: `Bearer ${openAIToken}`,
-      ...formData.getHeaders(),
+      ...(typeof formData.getHeaders === 'function' ? formData.getHeaders() : {})
     };
 
     var openai_resp;
@@ -276,7 +268,7 @@ const options = {
 
     const response = await axios.post(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendAudio`, 
     formData, {
-      headers: formData.getHeaders(),
+      headers: typeof formData.getHeaders === 'function' ? formData.getHeaders() : {},
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
     });

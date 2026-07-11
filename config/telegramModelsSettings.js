@@ -1,9 +1,5 @@
 module.exports = {
     "chat": {
-        "header_msg": "Основной диалог | [model] | [response_style]",
-        "welcome_msg": "<b>Основной диалог</b>\nНапишите сообщение, чтобы начать новый диалог.",
-        "incomplete_msg": "<b>Основной диалог</b>\nРазмер диалога = [previous_dialogue_tokens] токенов (из [request_length_limit_in_tokens]).\n" +
-            "Чтобы начать новый диалог, изпользуйте /resetchat. ",
         "name": "Основной диалог",
         "options_desc": "Параметры работы Основного диалога:",
         "options": {
@@ -12,20 +8,14 @@ module.exports = {
                 "options_desc": "Выберите версию модели:",
                 "templateRespMsg": "Модель для функции Диалог изменена на <b>[value]</b>.",
                 "options": {
-                    "gpt-4o": {
-                        "name": "gpt-4o",
-                    },
-                    "gpt-4.1": {
-                        "name": "GPT-4.1",
-                    },
                     "gpt-5": {
                         "name": "GPT-5",
                     },
-                    "o3": {
-                        "name": "O3",
+                    "gpt-5.1": {
+                        "name": "GPT-5.1",
                     },
-                    "o4-mini": {
-                        "name": "O4 Мини",
+                    "gpt-5.2": {
+                        "name": "GPT-5.2",
                     },
                     "back": {
                         "name": "<< Назад"
@@ -105,13 +95,11 @@ module.exports = {
             }
         },
         "hostname": `https://${process.env.OAI_URL}`,
-        "default_model": 'gpt-4.1',
+        "default_model": 'gpt-5.2',
         "url_path": '/v1/chat/completions',
         "default_dialogue_ttl_ms": 3600000,
     },
     "translator": {
-        "header_msg": "Переводчик | [model]",
-        "welcome_msg": "<b>Переводчик</b>\nДостаточно прислать текст. Русский текст будет переведен на английский. Текст на любом другом языке будет переведен на русский.",
         "name": "Переводчик",
         "options_desc": "Параметры работы Переводчика:",
         "options": {
@@ -120,11 +108,14 @@ module.exports = {
                 "options_desc": "Выберите версию модели:",
                 "templateRespMsg": "Модель для режима Переводчик изменена на <b>[value]</b>.",
                 "options": {
-                    "gpt-4.1": {
-                        "name": "GPT-4.1",
-                    },
                     "gpt-5": {
                         "name": "GPT-5",
+                    },
+                    "gpt-5.1": {
+                        "name": "GPT-5.1",
+                    },
+                    "gpt-5.2": {
+                        "name": "GPT-5.2",
                     },
                     "back": {
                         "name": "<< Назад"
@@ -142,13 +133,11 @@ module.exports = {
             }
         },
         "hostname": `https://${process.env.OAI_URL}`,
-        "default_model": 'gpt-4o',
+        "default_model": 'gpt-5.2',
         "url_path": '/v1/chat/completions',
         "default_dialogue_ttl_ms": 3600000,
     },
     "texteditor": {
-        "header_msg": "Редактор | [model]",
-        "welcome_msg": "<b>Редактор</b>\nПросто пришлите Ваш текст в виде сообщения и я помогу его отредактировать.",
         "name": "Редактор",
         "options_desc": "Параметры работы Редактора:",
         "options": {
@@ -157,11 +146,14 @@ module.exports = {
                 "options_desc": "Выберите версию модели:",
                 "templateRespMsg": "Модель для режима Редактор изменена на <b>[value]</b>.",
                 "options": {
-                    "gpt-4.1": {
-                        "name": "GPT-4.1",
-                    },
                     "gpt-5": {
                         "name": "GPT-5",
+                    },
+                    "gpt-5.1": {
+                        "name": "GPT-5.1",
+                    },
+                    "gpt-5.2": {
+                        "name": "GPT-5.2",
                     },
                     "back": {
                         "name": "<< Назад"
@@ -179,13 +171,11 @@ module.exports = {
             }
         },
         "hostname": `https://${process.env.OAI_URL}`,
-        "default_model": 'gpt-4o',
+        "default_model": 'gpt-5.2',
         "url_path": '/v1/chat/completions',
         "default_dialogue_ttl_ms": 3600000,
     },
     "texttospeech": {
-        "header_msg": "Текст в голос | [voice]",
-        "welcome_msg": "Преобразовывает текст в аудио запись. Пришлите текст, который нужно преобразовать. Длина текста не должна превышать [limit] символов.",
         "name": "Текст в голос",
         "hostname": `https://${process.env.OAI_URL}`,
         // "default_model":'tts-1-hd',
