@@ -2,6 +2,7 @@ const mongo = require("../apis/mongo.js");
 const scheemas = require("../apis/mongo_Schemas.js");
 const ExRateAPI = require("../apis/exchangerate_API.js");
 const cbrAPI = require("../apis/cbr_API.js");
+const otherFunctions = require("../common_functions.js");
 
 class AvailableTools {
 
@@ -78,16 +79,21 @@ class AvailableTools {
                 type: "mcp",
                 server_label: "bigquery",
                 id: "hosted_mcp_bigquery",
-                server_description: "BigQuery MCP server. Provides access to Google BigQuery.",
+                server_description: "BigQuery MCP server. Provides read-only access to Google BigQuery.",
                 server_url: "https://bigquery.googleapis.com/mcp",
-                allowed_tools: ["execute_sql"],
+                allowed_tools: ["execute_sql_readonly", "list_dataset_ids", "list_table_ids", "get_dataset_info", "get_table_info"],
                 require_approval: "never",
-                availableForUserGroups: ["admin", "basic"],
+                availableForUserGroups: ["admin"],
                 enabled: true,
                 category: "hosted",
                 headers: {
-                    "Authorization": "Bearer ya29.a0Af...<ваш_OAuth_токен>",
-                    "x-goog-user-project": "outline-1igg3i2i0bh"
+                    "x-goog-user-project": process.env.BIGQUERY_PROJECT_ID
+                },
+                authHandle: function () {
+                    const token = otherFunctions.getCachedBigQueryToken();
+                    if (!token) { this.enabled = false; return; }
+                    if (!this.headers) this.headers = {};
+                    this.headers["Authorization"] = `Bearer ${token}`;
                 }
             },
             {
@@ -1039,6 +1045,84 @@ class AvailableTools {
                 },
                 friendly_name: "Генерация речи",
                 timeout_ms: 360000,
+                try_limit: 3,
+                availableForUserGroups: ["admin", "basic"],
+                enabled: true,
+                category: "custom"
+            },
+            {
+                type: "function",
+                name: "insert_grocery_data",
+                id:"fn_insert_grocery_data",
+                description: "Inserts grocery data into the BigQuery database based on INSERT INTO query. Designed to handle multiple entries in a single call.",
+                strict: true,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        function_description: {
+                            type: "string",
+                            description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                        },
+                        insert_queries: {
+                            type: "array",
+                            description: "Array of INSERT INTO queries, allowing multiple entries to be processed simultaneously. Each item specifies a single INSERT INTO query.",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    insert_query: {
+                                        type: "string",
+                                        description: "A single INSERT INTO query."
+                                    }
+                                },
+                                required: ["insert_query"],
+                                additionalProperties: false
+                            }
+                        }
+                    },
+                    required: ["function_description", "insert_queries"],
+                    additionalProperties: false
+                },
+                friendly_name: "Запись данных о покупках",
+                timeout_ms: 90000,  
+                try_limit: 3,
+                availableForUserGroups: ["admin", "basic"],
+                enabled: true,
+                category: "custom"
+            },
+            {
+                type: "function",
+                name: "receipt_details_categoriser",
+                id:"fn_receipt_details_categoriser",
+                description: "Categorises receipt details. Designed to handle multiple receipt entries in a single call.",
+                strict: true,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        function_description: {
+                            type: "string",
+                            description: `Provide a concise description of the requested action, using present tense and avoiding any mention of the user. Required: Output must be EXACTLY 5 words or fewer. Output language MUST exactly match the language of the input prompt.`
+                        },
+                        receipt_details: {
+                            type: "array",
+                            description: "Array of receipt details in english, allowing multiple entries to be processed simultaneously. Each item specifies the details of a single receipt item.",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    receipt_item_details: {
+                                        type: "string",
+                                        description: "Details of the receipt item in english."
+                                    }
+                                },
+                                required: ["receipt_item_details"],
+                                additionalProperties: false
+                            }
+                        }
+                    },
+                    required: ["function_description", "receipt_details"],
+                    additionalProperties: false
+                },
+                friendly_name: "Классификатор позиций чека",
+                timeout_ms: 90000,
                 try_limit: 3,
                 availableForUserGroups: ["admin", "basic"],
                 enabled: true,

@@ -58,6 +58,10 @@ await telegramRouter.setBotParameters(global.bot) //задаем парамет�
 await telegramRouter.UpdateGlobalVariables() //обновляем глобальные переменные
 telegramRouter.GetLibrariesFromAPIs() //получаем список моделей OAI
 
+const otherFunctions = require("../components/common_functions.js");
+await otherFunctions.refreshBigQueryAccessToken() //прогрев токена BigQuery MCP на старте
+setInterval(() => otherFunctions.refreshBigQueryAccessToken(), 50 * 60 * 1000) //обновление раз в 50 мин
+
 telegramRouter.router(global.bot) //включаем роутер
 console.log("Server Instance ID:", global.serverInstanceId)
 console.timeEnd('Server startup');

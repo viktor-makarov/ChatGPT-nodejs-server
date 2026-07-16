@@ -14,6 +14,7 @@
     "cheerio": "^1.1.2",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
+    "google-auth-library": "^10.9.0",
     "gpt-3-encoder": "^1.1.4",
     "html-to-text": "^9.0.5",
     "mathjax-full": "^3.2.1",
@@ -43,7 +44,8 @@
     "dev": "node --trace-warnings bin/www_prod",
     "test:mcp": "powershell -Command \"$env:NODE_ENV='test'; node tests/intergarion_tests/mcpAPIIntegration.tests.js\"",
     "test:google": "powershell -Command \"$env:NODE_ENV='test'; node tests/intergarion_tests/googleAPIIntegration.tests.js\"",
-    "test": "npm run test:google",
+    "test:functions": "powershell -Command \"$env:NODE_ENV='test'; node tests/intergarion_tests/functionsTest.js\"",
+    "test": "npm run test:functions",
     "deps:unused": "depcheck"
   },
   "author": "Truvouwka",

@@ -32,11 +32,11 @@ try {
 const { ai_search } = require('../../components/apis/google_API.js');
 
 // Параметры теста
-const PROJECT_ID    = process.env.BQ_PROJECT_ID    || 'outline-1igg3i2i0bh';
-const DATASET       = process.env.BQ_DATASET       || 'Shoping';
-const TABLE         = process.env.BQ_TABLE         || 'purchases_from_csv';
-const SEARCH_FIELD  = process.env.BQ_SEARCH_FIELD  || 'item_desc';
-const RETURN_FIELDS = (process.env.BQ_RETURN_FIELDS || 'item_desc,product_name')
+const PROJECT_ID    = process.env.BIGQUERY_PROJECT_ID;
+const DATASET       = process.env.BIGQUERY_DATASET;
+const TABLE         = process.env.BIGQUERY_TABLE;
+const SEARCH_FIELD  = process.env.BIGQUERY_SEARCH_FIELD;
+const RETURN_FIELDS = (process.env.BIGQUERY_RETURN_FIELDS || 'item_desc,product_name')
   .split(',').map(s => s.trim()).filter(Boolean);
 const QUERY_TEXT    = process.env.BQ_QUERY_TEXT    || 'cottage cheese';
 const LIMIT         = parseInt(process.env.BQ_LIMIT || '5', 10);

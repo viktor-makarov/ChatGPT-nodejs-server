@@ -1224,6 +1224,22 @@ return {text}
 
 }
 
+async function grocery_table_vector_search(query_text){
+
+  const project_id = process.env.BIGQUERY_PROJECT_ID
+  const dataset_name = process.env.GROCERY_DATASET;
+  const table_name = process.env.GROCERY_TABLE;
+  const search_field = 'item_desc';
+  const return_fields = ['item_desc,product_name,product_category'];
+  const limit = 5
+
+  return await googleApi.ai_search(query_text, project_id, dataset_name, table_name, search_field, return_fields, limit)
+}
+
+async function grocery_table_insert(query_text){
+  return await googleApi.big_query(query_text)
+};
+
 async function documentOCR(url,mine_type){
 
 const fileBuffer = await fileDownload(url)
@@ -2971,9 +2987,17 @@ async function commitMCPSessionIdsToProfile(userid,session_id_item) {
             console.log("MCP SESSION IDS COMMITED TO PROFILE")
         };
 
+// --- BigQuery MCP: прокси к google_API для получения/обновления токена ---
+async function refreshBigQueryAccessToken() {
+    return await googleApi.refreshBigQueryAccessToken();
+}
+function getCachedBigQueryToken() {
+    return googleApi.getCachedBigQueryToken();
+}
+
 function generateServerInstanceId(){
 
-  const host = os.hostname();           
+  const host = os.hostname();
   const ts = Date.now().toString(36);   
   const uuid = cryptofy.randomUUID().replace(/-/g, '').substring(0, 8);   
   return `${host}-${ts}-${uuid}`;
@@ -3071,5 +3095,9 @@ module.exports = {
   splitTextToLimitedChunks,
   wireFunctionName,
   generateServerInstanceId,
-  buttonsFitToRow
+  buttonsFitToRow,
+  grocery_table_vector_search,
+  grocery_table_insert,
+  refreshBigQueryAccessToken,
+  getCachedBigQueryToken
 };

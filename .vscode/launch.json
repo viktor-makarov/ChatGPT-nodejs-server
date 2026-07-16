@@ -1,0 +1,26 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug categoriseReceiptDetails",
+      "skipFiles": ["<node_internals>/**"],
+      "program": "${workspaceFolder}/tests/debug/categoriseReceiptDetails.debug.js",
+      "args": ["Milk 3.2% 1L 1pc"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Debug categoriseReceiptDetails (mocked externals)",
+      "skipFiles": ["<node_internals>/**"],
+      "program": "${workspaceFolder}/tests/debug/categoriseReceiptDetails.debug.js",
+      "args": ["Milk 3.2% 1L 1pc"],
+      "env": { "MOCK_VECTOR": "1", "MOCK_OPENAI": "1" },
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

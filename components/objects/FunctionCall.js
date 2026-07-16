@@ -409,6 +409,8 @@ async selectAndExecuteFunction(argumentsJson) {
         "run_python_code": () => this.runPythonCode(argumentsJson),
         //Special capabilities
         "currency_converter": () => this.currencyConverter(argumentsJson),
+        "receipt_details_categoriser": () => this.receiptDetailsCategoriser(argumentsJson),
+        "insert_grocery_data": () => this.insertGroceryData(argumentsJson),
         "get_currency_rates": () => this.getCurrencyRates(argumentsJson),
         "web_search": () => this.webSearch(argumentsJson),
         "create_mermaid_diagram": () => this.createMermaidDiagrams(argumentsJson),
@@ -1425,6 +1427,64 @@ ${diagram_body}`;
             return {date,from_currency,to_currency,ex_rate:Math.round(ex_rate * 10000) / 10000};
         }
 
+        async insertGroceryData(argumentsJson){
+
+            this.validateRequiredFieldsFor_insertGroceryData(argumentsJson)
+            const {insert_queries} = argumentsJson
+
+            try{
+                const queryPromises = insert_queries.map(item => func.grocery_table_insert(item.insert_query))
+                const promiseResult = await Promise.all(queryPromises)
+                return {success:1, result: promiseResult}
+            } catch(err){
+                return {success:0,error:err.message}
+            }
+        }
+
+        async receiptDetailsCategoriser(argumentsJson){
+
+            this.validateRequiredFieldsFor_receiptDetailsCategoriser(argumentsJson)
+            const {receipt_details} = argumentsJson
+            const queryPromises = receipt_details.map(item => this.categoriseReceiptDetails(item.receipt_item_details))
+            const promiseResult = await Promise.all(queryPromises)
+
+            return {success:1, result: promiseResult,instructions:"Add these fields to the main dataset."}
+        }
+
+        async categoriseReceiptDetails(item_desc){
+
+            try{
+            const examples_from_db = await func.grocery_table_vector_search(item_desc)
+
+            const model = "gpt-4.1-mini"
+            const instructions = "";
+            const temperature = 0;
+            const input = [{"role":"developer", "content": devPrompts.receipt_details_categoriser(item_desc,JSON.stringify(examples_from_db,null,2))}];
+            const tools = [{
+                type: "web_search_preview",
+            }]
+            const output_format = { 
+                "type": "json_schema",
+                "name":"item_desc_categorized",
+                    "schema":{
+                    "type": "object",
+                    "properties": {
+                            "product_name": { "type": "string" },
+                            "product_category": { "type": "string" }
+                        },
+                        "required": ["product_name", "product_category"],
+                        "additionalProperties": false
+                    } 
+                };
+
+            const improvedInstructions = await openAIApi.responseSync(model,instructions,input,temperature,tools, "auto", output_format);
+            const {output,usage} = improvedInstructions;
+            const result = output[0].content[0].text;
+                return {success:1, item_desc: item_desc, result: result, usage: {model: model, tokens_usage: usage}, instructions:"Add these fields to the main dataset."}
+            } catch(err){
+                return {success:0, item_desc: item_desc, error: err.message}
+            }
+        }
 
         async currencyConverter(argumentsJson){
 
@@ -1437,7 +1497,6 @@ ${diagram_body}`;
 
             return {success:1, result: promiseResult,instructions:"Provide the user with the specific date and time when the exchange rate was applied based on timestamp provided, as well as the exact exchange rate value that was used for the calculation."}
         }
-
 
         async handleConversionQuery(query_params){
 
@@ -1697,6 +1756,51 @@ error.assistant_instructions = "Fix the error and retry the function."
         throw error
     }
     
+}
+
+
+validateRequiredFieldsFor_insertGroceryData(argumentsJson){
+
+    const {insert_queries} = argumentsJson
+
+    let error = new Error();
+    error.assistant_instructions = "Fix the error and retry the function."
+
+    if(!insert_queries || !Array.isArray(insert_queries) || insert_queries.length === 0){
+        error.message = `insert_queries' parameter is missing or not an array. Provide the value for the argument.`
+        throw error
+    }
+
+    for(let i = 0; i < insert_queries.length; i++){
+            const {insert_query} = insert_queries[i]
+            
+        if(!insert_query || typeof insert_query !== 'string'){
+            error.message = `insert_query' parameter for index ${i} must be a string.`
+            throw error
+        }
+    }
+}
+
+validateRequiredFieldsFor_receiptDetailsCategoriser(argumentsJson){
+
+    const {receipt_details} = argumentsJson
+
+    let error = new Error();
+    error.assistant_instructions = "Fix the error and retry the function."
+
+    if(!receipt_details || !Array.isArray(receipt_details) || receipt_details.length === 0){
+        error.message = `'receipt_details' parameter is missing or not an array. Provide the value for the argument.`
+        throw error
+    }
+
+    for(let i = 0; i < receipt_details.length; i++){
+            const {receipt_item_details} = receipt_details[i]
+            
+        if(!receipt_item_details || typeof receipt_item_details !== 'string'){
+            error.message = `'receipt_item_details' parameter for index ${i} must be a string.`
+            throw error
+        }
+    }
 }
 
 validateRequiredFieldsFor_getCurrencyRates(argumentsJson){
